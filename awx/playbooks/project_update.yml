@@ -40,6 +40,19 @@
         scm_version: "{{ scm_result['after'] }}"
       when: "'after' in scm_result"
 
+    - name: obtain existing scm revision
+      git:
+        dest: "{{project_path|quote}}"
+        repo: "{{scm_url}}"
+        force: no
+        clone: no
+        update: no
+      register: test_result
+      when:
+        - scm_type == 'git'
+        - scm_accept_hostkey is not defined
+        - not scm_clean
+
     - name: update project using git
       git:
         dest: "{{project_path|quote}}"
@@ -48,7 +61,10 @@
         force: "{{scm_clean}}"
         #clone: "{{ scm_full_checkout }}"
         #update: "{{ scm_full_checkout }}"
-      when: scm_type == 'git' and scm_accept_hostkey is not defined
+      when:
+        - scm_type == 'git'
+        - scm_accept_hostkey is not defined
+        - test_result is not defined or test_result.before != scm_branch
       register: scm_result
 
     - name: Set the git repository version
