@@ -81,6 +81,7 @@ from awx.api.serializers import * # noqa
 from awx.api.metadata import RoleMetadata, JobTypeMetadata
 from awx.main.consumers import emit_channel_notification
 from awx.main.models.unified_jobs import ACTIVE_STATES
+from awx.main.models.jobs import ask_mapping
 from awx.main.scheduler.tasks import run_job_complete
 
 logger = logging.getLogger('awx.api.views')
@@ -604,6 +605,38 @@ class ScheduleDetail(RetrieveUpdateDestroyAPIView):
     model = Schedule
     serializer_class = ScheduleSerializer
     new_in_148 = True
+
+
+class LaunchConfigCredentialsBase(SubListAttachDetachAPIView):
+
+    model = Credential
+    serializer_class = CredentialSerializer
+    relationship = 'credentials'
+
+    def is_valid_relation(self, parent, sub, created=False):
+        # TODO: change field name after multi-cred merge
+        ask_field_name = ask_mapping['credential']
+        if not parent.unified_job_template:
+            return {"msg": _("Cannot assign credential when related template is null.")}
+        elif not hasattr(parent, ask_field_name):
+            return {"msg": _("Related template cannot accept credentials on launch.")}
+        elif not getattr(parent, ask_field_name):
+            return {"msg": _("Related template is not configured to accept credentials on launch.")}
+        elif parent.credentials.filter(credential_type__kind=sub.kind).exists():
+            return {"msg": _("This launch configuration already provides a {} credential.".format(sub.kind))}
+        # elif sub.pk in parent.unified_job_template.credentials.values_list('pk', flat=True):
+        #     return {"msg": _("Related template already uses {} credential.")}
+        # TODO: uncomment that final condition after multi-cred merge
+
+        # None means there were no validation errors
+        return None
+
+
+class ScheduleCredentialsList(LaunchConfigCredentialsBase):
+
+    parent_model = Schedule
+    new_in_330 = True
+    new_in_api_v2 = True
 
 
 class ScheduleUnifiedJobsList(SubListAPIView):
@@ -2709,10 +2742,10 @@ class JobTemplateLaunch(RetrieveAPIView):
                 extra_vars.setdefault(v, u'')
             if extra_vars:
                 data['extra_vars'] = extra_vars
-            ask_for_vars_dict = obj._ask_for_vars_dict()
-            ask_for_vars_dict.pop('extra_vars')
-            for field in ask_for_vars_dict:
-                if not ask_for_vars_dict[field]:
+            modified_ask_mapping = ask_mapping.copy()
+            modified_ask_mapping.pop('extra_vars')
+            for field, ask_field_name in modified_ask_mapping.items():
+                if not getattr(obj, ask_field_name):
                     data.pop(field, None)
                 elif field == 'inventory':
                     data[field] = getattrd(obj, "%s.%s" % (field, 'id'), None)
@@ -2790,6 +2823,7 @@ class JobTemplateLaunch(RetrieveAPIView):
         prompted_fields = _accepted_or_ignored[0]
         ignored_fields.update(_accepted_or_ignored[1])
 
+<<<<<<< HEAD
         fd = 'inventory'
         if fd in prompted_fields and prompted_fields[fd] != getattrd(obj, '{}.pk'.format(fd), None):
             new_res = get_object_or_400(Inventory, pk=get_pk_from_dict(prompted_fields, fd))
@@ -2798,6 +2832,23 @@ class JobTemplateLaunch(RetrieveAPIView):
                 raise PermissionDenied()
 
         for cred in prompted_fields.get('credentials', []):
+=======
+        # TODO: use this permission check after the merge
+        if not request.user.can_access(JobLaunchConfig, 'add', prompted_fields):
+            raise PermissionDenied()
+
+        for fd, model in (
+                ('credential', Credential),
+                ('vault_credential', Credential),
+                ('inventory', Inventory)):
+            if fd in prompted_fields and prompted_fields[fd] != getattrd(obj, '{}.pk'.format(fd), None):
+                new_res = get_object_or_400(model, pk=get_pk_from_dict(prompted_fields, fd))
+                use_role = getattr(new_res, 'use_role')
+                if request.user not in use_role:
+                    raise PermissionDenied()
+
+        for cred in prompted_fields.get('extra_credentials', []):
+>>>>>>> Feature: saved launchtime configurations
             new_credential = get_object_or_400(Credential, pk=cred)
             if request.user not in new_credential.use_role:
                 raise PermissionDenied()
@@ -3233,10 +3284,20 @@ class WorkflowJobNodeDetail(WorkflowsEnforcementMixin, RetrieveAPIView):
     new_in_310 = True
 
 
+class WorkflowJobNodeCredentialsList(SubListAPIView):
+
+    model = Credential
+    serializer_class = CredentialSerializer
+    parent_model = WorkflowJobNode
+    relationship = 'credentials'
+    new_in_330 = True
+    new_in_api_v2 = True
+
+
 class WorkflowJobTemplateNodeList(WorkflowsEnforcementMixin, ListCreateAPIView):
 
     model = WorkflowJobTemplateNode
-    serializer_class = WorkflowJobTemplateNodeListSerializer
+    serializer_class = WorkflowJobTemplateNodeSerializer
     new_in_310 = True
 
 
@@ -3246,21 +3307,18 @@ class WorkflowJobTemplateNodeDetail(WorkflowsEnforcementMixin, RetrieveUpdateDes
     serializer_class = WorkflowJobTemplateNodeDetailSerializer
     new_in_310 = True
 
-    def update_raw_data(self, data):
-        for fd in ['job_type', 'job_tags', 'skip_tags', 'limit', 'skip_tags']:
-            data[fd] = None
-        try:
-            obj = self.get_object()
-            data.update(obj.char_prompts)
-        except Exception:
-            pass
-        return super(WorkflowJobTemplateNodeDetail, self).update_raw_data(data)
+
+class WorkflowJobTemplateNodeCredentialsList(LaunchConfigCredentialsBase):
+
+    parent_model = WorkflowJobTemplateNode
+    new_in_330 = True
+    new_in_api_v2 = True
 
 
 class WorkflowJobTemplateNodeChildrenBaseList(WorkflowsEnforcementMixin, EnforceParentRelationshipMixin, SubListCreateAttachDetachAPIView):
 
     model = WorkflowJobTemplateNode
-    serializer_class = WorkflowJobTemplateNodeListSerializer
+    serializer_class = WorkflowJobTemplateNodeSerializer
     always_allow_superuser = True
     parent_model = WorkflowJobTemplateNode
     relationship = ''
@@ -3442,7 +3500,7 @@ class WorkflowJobTemplateLaunch(WorkflowsEnforcementMixin, RetrieveAPIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        prompted_fields, ignored_fields = obj._accept_or_ignore_job_kwargs(**request.data)
+        prompted_fields, ignored_fields, errors = obj._accept_or_ignore_job_kwargs(**request.data)
 
         new_job = obj.create_unified_job(**prompted_fields)
         new_job.signal_start()
@@ -3484,16 +3542,11 @@ class WorkflowJobRelaunch(WorkflowsEnforcementMixin, GenericAPIView):
 class WorkflowJobTemplateWorkflowNodesList(WorkflowsEnforcementMixin, SubListCreateAPIView):
 
     model = WorkflowJobTemplateNode
-    serializer_class = WorkflowJobTemplateNodeListSerializer
+    serializer_class = WorkflowJobTemplateNodeSerializer
     parent_model = WorkflowJobTemplate
     relationship = 'workflow_job_template_nodes'
     parent_key = 'workflow_job_template'
     new_in_310 = True
-
-    def update_raw_data(self, data):
-        for fd in ['job_type', 'job_tags', 'skip_tags', 'limit', 'skip_tags']:
-            data[fd] = None
-        return super(WorkflowJobTemplateWorkflowNodesList, self).update_raw_data(data)
 
     def get_queryset(self):
         return super(WorkflowJobTemplateWorkflowNodesList, self).get_queryset().order_by('id')

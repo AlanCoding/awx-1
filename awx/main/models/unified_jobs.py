@@ -21,6 +21,9 @@ from django.utils.encoding import smart_text
 from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 
+# REST Framework
+from rest_framework.exceptions import ParseError
+
 # Django-Polymorphic
 from polymorphic.models import PolymorphicModel
 
@@ -29,7 +32,6 @@ from django_celery_results.models import TaskResult
 
 # AWX
 from awx.main.models.base import * # noqa
-from awx.main.models.schedules import Schedule
 from awx.main.models.mixins import ResourceMixin, TaskManagerUnifiedJobMixin
 from awx.main.utils import (
     decrypt_field, _inventory_updates,
@@ -149,10 +151,10 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         default='ok',
         editable=False,
     )
-    credentials = models.ManyToManyField(
+    credentials = mark_ask(models.ManyToManyField(
         'Credential',
         related_name='%(class)ss',
-    )
+    ), ask_alias='credential')
     labels = models.ManyToManyField(
         "Label",
         blank=True,
@@ -251,6 +253,7 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         return self.last_job_run
 
     def update_computed_fields(self):
+        Schedule = self._meta.get_field('schedules').related_model
         related_schedules = Schedule.objects.filter(enabled=True, unified_job_template=self, next_run__isnull=False).order_by('-next_run')
         if related_schedules.exists():
             self.next_schedule = related_schedules[0]
@@ -388,6 +391,31 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         unified_jt.save()
         copy_m2m_relationships(self, unified_jt, fields)
         return unified_jt
+
+    def accept_or_ignore_variables(self, data, errors=None):
+        '''
+        If subclasses accept any `variables` or `extra_vars`, they should
+        define _accept_or_ignore_variables to place those variables in the accepted dict,
+        according to the acceptance rules of the template.
+        '''
+        if errors is None:
+            errors = []
+        if not isinstance(data, dict):
+            try:
+                data = parse_yaml_or_json(data, silent_failure=False)
+            except ParseError as exc:
+                errors.append(str(exc))
+                return ({}, data, errors)
+        if hasattr(self, '_accept_or_ignore_variables'):
+            # SurveyJobTemplateMixin cannot override any methods because of
+            # resolution order, forced by how metaclass processes fields,
+            # thus the need for hasattr check
+            return self._accept_or_ignore_variables(data, errors)
+        elif data:
+            errors.append(
+                _('Variables {list_of_keys} provided, but this template cannot accept variables.'.format(
+                    list_of_keys=', '.join(data.keys()))))
+        return ({}, data, errors)
 
 
 class UnifiedJobTypeStringMixin(object):

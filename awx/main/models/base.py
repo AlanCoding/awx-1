@@ -16,7 +16,8 @@ from crum import get_current_user
 # AWX
 from awx.main.utils import encrypt_field, parse_yaml_or_json
 
-__all__ = ['prevent_search', 'VarsDictProperty', 'BaseModel', 'CreatedModifiedModel',
+__all__ = ['prevent_search', 'mark_ask',
+           'VarsDictProperty', 'BaseModel', 'CreatedModifiedModel',
            'PasswordFieldsModel', 'PrimordialModel', 'CommonModel',
            'CommonModelNameNotUnique', 'NotificationFieldsModel',
            'PERM_INVENTORY_DEPLOY', 'PERM_INVENTORY_SCAN',
@@ -353,3 +354,16 @@ def prevent_search(relation):
     """
     setattr(relation, '__prevent_search__', True)
     return relation
+
+
+def mark_ask(field, ask_alias=None):
+    '''
+    Sets a marker on a field to denote its corresponding `ask_xxxx_on_launch`
+    on templates that enable prompting for it
+    '''
+    if ask_alias is not None:
+        field._ask_var = ask_alias
+    else:
+        # Field name is not defined until set by Model metaclass, placeholder here
+        field._ask_var = '__default__'
+    return field

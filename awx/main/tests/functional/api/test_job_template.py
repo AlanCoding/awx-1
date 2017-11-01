@@ -488,9 +488,59 @@ def test_launch_with_extra_credentials_not_allowed(get, post, organization_facto
         dict(
             credentials=[machine_credential.pk, credential.pk, net_credential.pk]
         ),
-        objs.superusers.admin
+        objs.superusers.admin, expect=400
     )
     assert 'credentials' in resp.data['ignored_fields'].keys()
+
+
+@pytest.mark.django_db
+def test_launch_with_extra_credentials_from_jt(get, post, organization_factory,
+                                               job_template_factory, machine_credential,
+                                               credential, net_credential):
+    objs = organization_factory("org", superusers=['admin'])
+    jt = job_template_factory("jt", organization=objs.organization,
+                              inventory='test_inv', project='test_proj').job_template
+    jt.ask_credential_on_launch = True
+    jt.extra_credentials.add(credential)
+    jt.extra_credentials.add(net_credential)
+    jt.save()
+
+    resp = post(
+        reverse('api:job_template_launch', kwargs={'pk': jt.pk}),
+        dict(
+            credential=machine_credential.pk
+        ),
+        objs.superusers.admin, expect=201
+    )
+    job_pk = resp.data.get('id')
+
+    resp = get(reverse('api:job_extra_credentials_list', kwargs={'pk': job_pk}), objs.superusers.admin)
+    assert resp.data.get('count') == 2
+
+    resp = get(reverse('api:job_template_extra_credentials_list', kwargs={'pk': jt.pk}), objs.superusers.admin)
+    assert resp.data.get('count') == 2
+
+
+@pytest.mark.django_db
+def test_launch_with_empty_extra_credentials(get, post, organization_factory,
+                                             job_template_factory, machine_credential,
+                                             credential, net_credential):
+    objs = organization_factory("org", superusers=['admin'])
+    jt = job_template_factory("jt", organization=objs.organization,
+                              inventory='test_inv', project='test_proj').job_template
+    jt.ask_credential_on_launch = True
+    jt.extra_credentials.add(credential)
+    jt.extra_credentials.add(net_credential)
+    jt.save()
+
+    resp = post(
+        reverse('api:job_template_launch', kwargs={'pk': jt.pk}),
+        dict(
+            credential=machine_credential.pk,
+            extra_credentials=[],
+        ),
+        objs.superusers.admin, expect=201
+    )
     job_pk = resp.data.get('id')
 
     resp = get(reverse('api:job_extra_credentials_list', kwargs={'pk': job_pk}), objs.superusers.admin)
