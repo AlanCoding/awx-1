@@ -2,18 +2,21 @@ import pytest
 
 from awx.main.access import (
     JobAccess,
+    JobLaunchConfigAccess,
     AdHocCommandAccess,
     InventoryUpdateAccess,
     ProjectUpdateAccess
 )
 from awx.main.models import (
     Job,
+    JobLaunchConfig,
     JobTemplate,
     AdHocCommand,
     InventoryUpdate,
     InventorySource,
     ProjectUpdate,
-    User
+    User,
+    Credential
 )
 
 
@@ -269,3 +272,50 @@ class TestJobAndUpdateCancels:
         project_update = ProjectUpdate(project=project, created_by=admin_user)
         access = ProjectUpdateAccess(proj_updater)
         assert not access.can_cancel(project_update)
+
+
+@pytest.mark.django_db
+class TestLaunchConfigAccess:
+
+    def _make_two_credentials(self, cred_type):
+        return (
+            Credential.objects.create(
+                credential_type=cred_type, name='machine-cred-1',
+                inputs={'username': 'test_user', 'password': 'pas4word'}),
+            Credential.objects.create(
+                credential_type=cred_type, name='machine-cred-2',
+                inputs={'username': 'test_user', 'password': 'pas4word'})
+        )
+
+    def test_new_credentials_access(self, credentialtype_ssh, rando):
+        access = JobLaunchConfigAccess(rando)
+        cred1, cred2 = self._make_two_credentials(credentialtype_ssh)
+
+        assert not access.can_add({'credentials': [cred1, cred2]})  # can't add either
+        cred1.use_role.members.add(rando)
+        assert not access.can_add({'credentials': [cred1, cred2]})  # can't add 1
+        cred2.use_role.members.add(rando)
+        assert access.can_add({'credentials': [cred1, cred2]})  # can add both
+
+    def test_obj_credentials_access(self, credentialtype_ssh, rando):
+        job = Job.objects.create()
+        config = JobLaunchConfig.objects.create(job=job)
+        access = JobLaunchConfigAccess(rando)
+        cred1, cred2 = self._make_two_credentials(credentialtype_ssh)
+
+        assert access.has_credentials_access(config)  # has access if 0 creds
+        config.credentials.add(cred1, cred2)
+        assert not access.has_credentials_access(config)  # lacks access to both
+        cred1.use_role.members.add(rando)
+        assert not access.has_credentials_access(config)  # lacks access to 1
+        cred2.use_role.members.add(rando)
+        assert access.has_credentials_access(config)  # has access to both
+
+    def test_can_use_minor(self, rando):
+        # Config object only has flat-field overrides, no RBAC restrictions
+        job = Job.objects.create()
+        config = JobLaunchConfig.objects.create(job=job)
+        access = JobLaunchConfigAccess(rando)
+
+        assert access.can_use(config)
+        assert rando.can_access(JobLaunchConfig, 'use', config)

@@ -21,7 +21,7 @@ from dateutil.tz import tzutc
 from django.utils.encoding import force_text, smart_str
 from django.utils.timezone import utc
 from django.utils.translation import ugettext_lazy as _
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, FieldDoesNotExist
 
 # REST Framework
 from rest_framework.exceptions import ParseError
@@ -41,7 +41,7 @@ from awx.main.utils import (
 from awx.main.fields import ImplicitRoleField
 from awx.main.models.mixins import ResourceMixin, SurveyJobTemplateMixin, SurveyJobMixin, TaskManagerJobMixin
 from awx.main.models.base import PERM_INVENTORY_SCAN
-from awx.main.fields import JSONField
+from awx.main.fields import JSONField, AskForField
 
 from awx.main.consumers import emit_channel_notification
 
@@ -50,7 +50,8 @@ logger = logging.getLogger('awx.main.models.jobs')
 analytics_logger = logging.getLogger('awx.analytics.job_events')
 system_tracking_logger = logging.getLogger('awx.analytics.system_tracking')
 
-__all__ = ['JobTemplate', 'Job', 'JobHostSummary', 'JobEvent', 'SystemJobOptions', 'SystemJobTemplate', 'SystemJob']
+__all__ = ['JobTemplate', 'JobLaunchConfig', 'Job', 'JobHostSummary', 'JobEvent',
+           'SystemJobOptions', 'SystemJobTemplate', 'SystemJob']
 
 
 class JobOptions(BaseModel):
@@ -211,6 +212,9 @@ class JobOptions(BaseModel):
     def passwords_needed_to_start(self):
         '''Return list of password field names needed to start the job.'''
         needed = []
+        # Unsaved credential objects can not require passwords
+        if not self.pk:
+            return needed
         for cred in self.credentials.all():
             needed.extend(cred.passwords_needed)
         return needed
@@ -232,41 +236,39 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         blank=True,
         default='',
     )
-    ask_diff_mode_on_launch = models.BooleanField(
+    ask_diff_mode_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_variables_on_launch = models.BooleanField(
+    ask_limit_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_limit_on_launch = models.BooleanField(
+    ask_tags_on_launch = AskForField(
+        blank=True,
+        default=False,
+        allows_field='job_tags'
+    )
+    ask_skip_tags_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_tags_on_launch = models.BooleanField(
+    ask_job_type_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_skip_tags_on_launch = models.BooleanField(
+    ask_verbosity_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_job_type_on_launch = models.BooleanField(
+    ask_inventory_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_verbosity_on_launch = models.BooleanField(
+    ask_credential_on_launch = AskForField(
         blank=True,
         default=False,
-    )
-    ask_inventory_on_launch = models.BooleanField(
-        blank=True,
-        default=False,
-    )
-    ask_credential_on_launch = models.BooleanField(
-        blank=True,
-        default=False,
+        allows_field='credentials'
     )
     admin_role = ImplicitRoleField(
         parent_role=['project.organization.admin_role', 'inventory.organization.admin_role']
@@ -293,30 +295,21 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
                 'allow_simultaneous', 'timeout', 'use_fact_cache',
                 'diff_mode',]
 
-    def resource_validation_data(self):
+    @property
+    def validation_errors(self):
         '''
-        Process consistency errors and need-for-launch related fields.
+        Fields needed to start, which cannot be given on launch, invalid state.
         '''
-        resources_needed_to_start = []
         validation_errors = {}
-
-        # Inventory and Credential related checks
-        if self.inventory is None:
-            resources_needed_to_start.append('inventory')
-            if not self.ask_inventory_on_launch:
-                validation_errors['inventory'] = [_("Job Template must provide 'inventory' or allow prompting for it."),]
-
-        # Job type dependent checks
+        if self.inventory is None and not self.ask_inventory_on_launch:
+            validation_errors['inventory'] = [_("Job Template must provide 'inventory' or allow prompting for it."),]
         if self.project is None:
-            resources_needed_to_start.append('project')
             validation_errors['project'] = [_("Job types 'run' and 'check' must have assigned a project."),]
-
-        return (validation_errors, resources_needed_to_start)
+        return validation_errors
 
     @property
     def resources_needed_to_start(self):
-        validation_errors, resources_needed_to_start = self.resource_validation_data()
-        return resources_needed_to_start
+        return [fd for fd in ['project', 'inventory'] if not getattr(self, '{}_id'.format(fd))]
 
     def create_job(self, **kwargs):
         '''
@@ -346,54 +339,74 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         # that of job template launch, so prompting_needed should
         # not block a provisioning callback from creating/launching jobs.
         if callback_extra_vars is None:
-            for value in self._ask_for_vars_dict().values():
-                if value:
+            for ask_field_name in set(self.ask_mapping.values()):
+                if getattr(self, ask_field_name):
                     prompting_needed = True
+                    break
         return (not prompting_needed and
                 not self.passwords_needed_to_start and
                 not variables_needed)
 
-    def _ask_for_vars_dict(self):
-        return dict(
-            diff_mode=self.ask_diff_mode_on_launch,
-            extra_vars=self.ask_variables_on_launch,
-            limit=self.ask_limit_on_launch,
-            job_tags=self.ask_tags_on_launch,
-            skip_tags=self.ask_skip_tags_on_launch,
-            job_type=self.ask_job_type_on_launch,
-            verbosity=self.ask_verbosity_on_launch,
-            inventory=self.ask_inventory_on_launch,
-            credentials=self.ask_credential_on_launch,
-        )
-
     def _accept_or_ignore_job_kwargs(self, **kwargs):
-        # Sort the runtime fields allowed and disallowed by job template
-        ignored_fields = {}
         prompted_fields = {}
+        rejected_fields = {}
+        accepted_vars, rejected_vars, errors_dict = self.accept_or_ignore_variables(kwargs.get('extra_vars', {}))
+        if accepted_vars:
+            prompted_fields['extra_vars'] = accepted_vars
+        if rejected_vars:
+            rejected_fields['extra_vars'] = rejected_vars
 
-        ask_for_vars_dict = self._ask_for_vars_dict()
+        # Handle all the other fields that follow the simple prompting rule
+        for field_name, ask_field_name in self.ask_mapping.items():
+            if field_name not in kwargs or field_name == 'extra_vars' or kwargs[field_name] is None:
+                continue
 
-        for field in ask_for_vars_dict:
-            if field in kwargs:
-                if field == 'extra_vars':
-                    prompted_fields[field] = {}
-                    ignored_fields[field] = {}
-                if ask_for_vars_dict[field]:
-                    prompted_fields[field] = kwargs[field]
+            new_value = kwargs[field_name]
+            old_value = getattr(self, field_name)
+
+            field = self._meta.get_field(field_name)
+            if isinstance(field, models.ManyToManyField):
+                old_value = set(old_value.all())
+                # TODO: get answer on this, remove _is_manual_launch functionality, depending on triage
+                # Special processing of no-ops for many-to-many field
+                if getattr(self, '_is_manual_launch', False):
+                    # pass
+                    new_value = set(kwargs[field_name])
                 else:
-                    if field == 'extra_vars' and self.survey_enabled and self.survey_spec:
-                        # Accept vars defined in the survey and no others
-                        survey_vars = [question['variable'] for question in self.survey_spec.get('spec', [])]
-                        extra_vars = parse_yaml_or_json(kwargs[field])
-                        for key in extra_vars:
-                            if key in survey_vars:
-                                prompted_fields[field][key] = extra_vars[key]
-                            else:
-                                ignored_fields[field][key] = extra_vars[key]
-                    else:
-                        ignored_fields[field] = kwargs[field]
+                    new_value = set(kwargs[field_name]) - old_value
+                    if not new_value:
+                        continue
 
-        return prompted_fields, ignored_fields
+            if new_value == old_value:
+                # no-op case: Fields the same as template's value
+                # counted as neither accepted or ignored
+                continue
+            elif getattr(self, ask_field_name):
+                # accepted prompt
+                prompted_fields[field_name] = new_value
+            else:
+                # unprompted - template is not configured to accept field on launch
+                rejected_fields[field_name] = new_value
+                # Not considered an error for manual launch, to support old
+                # behavior of putting them in ignored_fields and launching anyway
+                if not getattr(self, '_is_manual_launch', False):
+                    errors_dict[field_name] = _('Field is not configured to prompt on launch.').format(field_name=field_name)
+
+        if not getattr(self, '_is_manual_launch', False) and self.passwords_needed_to_start:
+            errors_dict['passwords_needed_to_start'] = _(
+                'Saved launch configurations cannot provide passwords needed to start.')
+
+        needed = self.resources_needed_to_start
+        if needed:
+            needed_errors = []
+            for resource in needed:
+                if resource in prompted_fields:
+                    continue
+                needed_errors.append(_("Job Template {} is missing or undefined.").format(resource))
+            if needed_errors:
+                errors_dict['resources_needed_to_start'] = needed_errors
+
+        return prompted_fields, rejected_fields, errors_dict
 
     def _extra_job_type_errors(self, data):
         """
@@ -571,6 +584,34 @@ class Job(UnifiedJob, JobOptions, SurveyJobMixin, JobNotificationMixin, TaskMana
 
     def get_passwords_needed_to_start(self):
         return self.passwords_needed_to_start
+
+    def create_config_from_prompts(self, validated_data):
+        many_related = {}
+        is_null = True
+        obj = JobLaunchConfig(job=self)
+        for field_name in JobTemplate.ask_mapping.keys():
+            if field_name not in validated_data or validated_data[field_name] in (None, {}, []):
+                continue
+            is_null = False
+            val = validated_data[field_name]
+            try:
+                f = JobLaunchConfig._meta.get_field(field_name)
+                if isinstance(f, models.ManyToManyField):
+                    many_related[field_name] = validated_data[field_name]
+                elif isinstance(f, models.ForeignKey):
+                    if isinstance(val, int):
+                        setattr(obj, '{}_id'.format(field_name), val)
+                    else:
+                        setattr(obj, field_name, val)
+            except FieldDoesNotExist:
+                setattr(obj, field_name, val)
+        if is_null:
+            # Will not create launch config object if no prompts exist to track
+            return None
+        obj.save()
+        for field_name, pk_list in many_related.items():
+            getattr(obj, field_name).add(*pk_list)
+        return obj
 
     def _get_hosts(self, **kwargs):
         Host = JobHostSummary._meta.get_field('host').related_model
@@ -787,6 +828,134 @@ class Job(UnifiedJob, JobOptions, SurveyJobMixin, JobNotificationMixin, TaskMana
                     extra=dict(inventory_id=host.inventory.id, host_name=host.name,
                                ansible_facts=host.ansible_facts,
                                ansible_facts_modified=host.ansible_facts_modified.isoformat()))
+
+
+# Add on aliases for the non-related-model fields
+class NullablePromptPsuedoField(object):
+    """
+    Interface for psuedo-property stored in `char_prompts` dict
+    Used in LaunchTimeConfig and submodels
+    """
+    def __init__(self, field_name):
+        self.field_name = field_name
+
+    def __get__(self, instance, type=None):
+        return instance.char_prompts.get(self.field_name, None)
+
+    def __set__(self, instance, value):
+        if value in (None, {}):
+            instance.char_prompts.pop(self.field_name, None)
+        else:
+            instance.char_prompts[self.field_name] = value
+
+
+class LaunchTimeConfig(BaseModel):
+    '''
+    Common model for all objects that save details of a saved launch config
+    WFJT / WJ nodes, schedules, and job launch configs (not all implemented yet)
+    '''
+    class Meta:
+        abstract = True
+
+    # Prompting-related fields that have to be handled as special cases
+    credentials = models.ManyToManyField(
+        'Credential',
+        related_name='%(class)ss'
+    )
+    inventory = models.ForeignKey(
+        'Inventory',
+        related_name='%(class)ss',
+        blank=True,
+        null=True,
+        default=None,
+        on_delete=models.SET_NULL,
+    )
+    extra_data = JSONField(
+        blank=True,
+        default={}
+    )
+    survey_passwords = prevent_search(JSONField(
+        blank=True,
+        default={},
+        editable=False,
+    ))
+    # All standard fields are stored in this dictionary field
+    # This is a solution to the nullable CharField problem, specific to prompting
+    char_prompts = JSONField(
+        blank=True,
+        default={}
+    )
+
+    def prompts_dict(self):
+        data = {}
+        field_names = [field.name for field in self._meta.fields]
+        # ManyToManyField not picked up in normal field list
+        field_names.append('credentials')
+        for prompt_name in JobTemplate.ask_mapping.keys():
+            if prompt_name in field_names:
+                field = self._meta.get_field(prompt_name)
+                if isinstance(field, models.ForeignKey):
+                    prompt_val = getattr(self, '{}_id'.format(prompt_name))
+                    if prompt_val is not None:
+                        data[prompt_name] = prompt_val
+                elif isinstance(field, models.ManyToManyField):
+                    if not self.pk:
+                        # unsaved object can't have related many-to-many
+                        continue
+                    prompt_val = getattr(self, prompt_name).values_list('pk', flat=True)
+                    if len(prompt_val) > 0:
+                        data[prompt_name] = prompt_val
+                else:
+                    # TODO process extra vars
+                    pass
+            elif prompt_name in self.char_prompts:
+                data[prompt_name] = self.char_prompts[prompt_name]
+        return data
+
+    @property
+    def _credential(self):
+        '''
+        Only used for workflow nodes to support backward compatibility.
+        '''
+        try:
+            return [cred for cred in self.credentials.all() if cred.credential_type.kind == 'ssh'][0]
+        except IndexError:
+            return None
+
+    @property
+    def credential(self):
+        '''
+        Returns an integer so it can be used as IntegerField in serializer
+        '''
+        cred = self._credential
+        if cred is not None:
+            return cred.pk
+        else:
+            return None
+
+
+for field_name in JobTemplate.ask_mapping.keys():
+    try:
+        LaunchTimeConfig._meta.get_field(field_name)
+    except FieldDoesNotExist:
+        setattr(LaunchTimeConfig, field_name, NullablePromptPsuedoField(field_name))
+
+
+class JobLaunchConfig(LaunchTimeConfig):
+    '''
+    Historical record of user launch-time overrides for a job
+    Not exposed in the API
+    Used for relaunch, scheduling, etc.
+    '''
+    class Meta:
+        app_label = 'main'
+
+    job = models.OneToOneField(
+        'UnifiedJob',
+        related_name='launch_configs',
+        on_delete=models.CASCADE,
+        editable=False,
+    )
 
 
 class JobHostSummary(CreatedModifiedModel):
@@ -1388,6 +1557,40 @@ class SystemJobTemplate(UnifiedJobTemplate, SystemJobOptions):
         return dict(error=list(error_notification_templates),
                     success=list(success_notification_templates),
                     any=list(any_notification_templates))
+
+    def _accept_or_ignore_variables(self, data, errors):
+        '''
+        Unlike other templates, like project updates and inventory sources,
+        system job templates can accept a limited number of fields
+        used as options for the management commands.
+        '''
+        rejected = {}
+        allowed_vars = set(['days', 'older_than', 'granularity'])
+        given_vars = set(data.keys())
+        unallowed_vars = given_vars - (allowed_vars & given_vars)
+        errors_list = []
+        if unallowed_vars:
+            errors_list.append(_('Variables {list_of_keys} are not allowed for system jobs.').format(
+                list_of_keys=', '.join(unallowed_vars)))
+            for key in unallowed_vars:
+                rejected[key] = data.pop(key)
+
+        if 'days' in data:
+            try:
+                if type(data['days']) is bool:
+                    raise ValueError
+                if float(data['days']) != int(data['days']):
+                    raise ValueError
+                days = int(data['days'])
+                if days < 0:
+                    raise ValueError
+            except ValueError:
+                errors_list.append(_("days must be a positive integer."))
+                rejected['days'] = data.pop('days')
+
+        if errors_list:
+            errors['extra_vars'] = errors_list
+        return (data, rejected, errors)
 
 
 class SystemJob(UnifiedJob, SystemJobOptions, JobNotificationMixin):

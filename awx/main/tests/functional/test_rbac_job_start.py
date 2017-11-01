@@ -69,7 +69,7 @@ class TestJobRelaunchAccess:
         )
         new_cred.save()
         new_inv = Inventory.objects.create(name='new-inv', organization=organization)
-        return jt.create_unified_job(credentials=[new_cred.pk], inventory=new_inv)
+        return jt.create_unified_job(credentials=[new_cred], inventory=new_inv)
 
     def test_normal_relaunch_via_job_template(self, job_no_prompts, rando):
         "Has JT execute_role, job unchanged relative to JT"
