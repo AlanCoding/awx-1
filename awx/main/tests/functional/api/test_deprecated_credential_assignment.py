@@ -337,7 +337,8 @@ def test_extra_creds_prompted_at_launch(get, post, job_template, admin, net_cred
 @pytest.mark.django_db
 def test_invalid_mixed_credentials_specification(get, post, job_template, admin, net_credential):
     url = reverse('api:job_template_launch', kwargs={'pk': job_template.pk})
-    post(url, {'credentials': [net_credential.pk], 'extra_credentials': [net_credential.pk]}, admin, expect=400)
+    post(url=url, data={'credentials': [net_credential.pk], 'extra_credentials': [net_credential.pk]},
+         user=admin, expect=400)
 
 
 @pytest.mark.django_db
@@ -352,9 +353,11 @@ def test_rbac_default_credential_usage(get, post, job_template, alice, machine_c
     post(url, {'credential': machine_credential.pk}, alice, expect=201)
 
     # make (copy) a _new_ SSH cred
-    new_cred = machine_credential
-    new_cred.pk = None
-    new_cred.save()
+    new_cred = Credential.objects.create(
+        name=machine_credential.name,
+        credential_type=machine_credential.credential_type,
+        inputs=machine_credential.inputs
+    )
 
     # alice is attempting to launch with a *different* SSH cred, but
     # she does not have access to it, so she cannot launch
