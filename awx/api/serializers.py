@@ -2922,7 +2922,7 @@ class WorkflowJobCancelSerializer(WorkflowJobSerializer):
         fields = ('can_cancel',)
 
 
-class LaunchConfigurationBase(BaseSerializer):
+class LaunchConfigurationBaseSerializer(BaseSerializer):
     job_type = serializers.ChoiceField(allow_blank=True, allow_null=True, required=False, default=None,
                                        choices=JOB_TYPE_CHOICES)
     job_tags = serializers.CharField(allow_blank=True, allow_null=True, required=False, default=None)
@@ -2937,7 +2937,7 @@ class LaunchConfigurationBase(BaseSerializer):
                   'job_type', 'job_tags', 'skip_tags', 'limit', 'skip_tags', 'diff_mode', 'verbosity')
 
     def get_related(self, obj):
-        res = super(LaunchConfigurationBase, self).get_related(obj)
+        res = super(LaunchConfigurationBaseSerializer, self).get_related(obj)
         if obj.inventory_id:
             res['inventory'] = self.reverse('api:inventory_detail', kwargs={'pk': obj.inventory_id})
         res['credentials'] = self.reverse(
@@ -2959,25 +2959,24 @@ class LaunchConfigurationBase(BaseSerializer):
         return mock_obj
 
     def validate(self, attrs):
-        attrs = super(LaunchConfigurationBase, self).validate(attrs)
+        attrs = super(LaunchConfigurationBaseSerializer, self).validate(attrs)
         # Verify that fields do not violate template's prompting rules
         attrs['char_prompts'] = self._build_mock_obj(attrs).char_prompts
         return attrs
 
 
-class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBase):
-    credentials = models.PositiveIntegerField(
+class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBaseSerializer):
+    credential = models.PositiveIntegerField(
         blank=True, null=True, default=None,
-        help_text='This resource has been deprecated and will be removed in a future release'
-    )
+        help_text='This resource has been deprecated and will be removed in a future release')
     success_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     failure_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     always_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
 
     class Meta:
         model = WorkflowJobTemplateNode
-        fields = ('workflow_job_template', '-name', '-description', 'id', 'url', 'related',
-                  'unified_job_template', 'success_nodes', 'failure_nodes', 'always_nodes', 'credential', '*',)
+        fields = ('*', 'credential', 'workflow_job_template', '-name', '-description', 'id', 'url', 'related',
+                  'unified_job_template', 'success_nodes', 'failure_nodes', 'always_nodes',)
 
     def get_related(self, obj):
         res = super(WorkflowJobTemplateNodeSerializer, self).get_related(obj)
@@ -2990,13 +2989,32 @@ class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBase):
             res['workflow_job_template'] = self.reverse('api:workflow_job_template_detail', kwargs={'pk': obj.workflow_job_template.pk})
         return res
 
+    def build_field(self, field_name, info, model_class, nested_depth):
+        # have to special-case the field so that DRF will not automagically make it
+        # read-only because it's a property on the model.
+        if field_name == 'credential':
+            return self.build_standard_field(field_name,
+                                             self.credential)
+        return super(WorkflowJobTemplateNodeSerializer, self).build_field(field_name, info, model_class, nested_depth)
+
     def validate(self, attrs):
+        print ' attrs ' + str(attrs)
+        deprecated_fields = {}
+        if 'credential' in attrs:
+            deprecated_fields['credential'] = attrs.pop('credential')
+        view = self.context.get('view')
         if self.instance is None and ('workflow_job_template' not in attrs or
                                       attrs['workflow_job_template'] is None):
             raise serializers.ValidationError({
                 "workflow_job_template": _("Workflow job template is missing during creation.")
             })
-        ujt_obj = attrs.get('unified_job_template', None)
+        if 'unified_job_template' in attrs:
+            ujt_obj = attrs['unified_job_template']
+        elif self.instance:
+            ujt_obj = self.instance.unified_job_template
+        else:
+            raise serializers.ValidationError({
+                "unified_job_template": _("Node needs to have a template attached.")})
         if isinstance(ujt_obj, (WorkflowJobTemplate, SystemJobTemplate)):
             raise serializers.ValidationError({
                 "unified_job_template": _("Cannot nest a %s inside a WorkflowJobTemplate") % ujt_obj.__class__.__name__})
@@ -3004,11 +3022,14 @@ class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBase):
         accepted, rejected, errors = ujt_obj._accept_or_ignore_job_kwargs(**self._build_mock_obj(attrs).prompts_dict())
         if errors:
             raise serializers.ValidationError(errors)
-        if 'credential' in attrs:
-            cred = Credential.objects.get(pk=pk)
-            view = self.context.get('view', None)
-            if (not view) or (not view.request) or (view.request.user not in cred.use_role):
-                raise PermissionDenied()
+        if 'credential' in deprecated_fields:
+            cred = deprecated_fields['credential']
+            attrs['credential'] = cred
+            if cred is not None:
+                cred = Credential.objects.get(pk=cred)
+                view = self.context.get('view', None)
+                if (not view) or (not view.request) or (view.request.user not in cred.use_role):
+                    raise PermissionDenied()
         return attrs
 
     def create(self, validated_data):
@@ -3017,14 +3038,15 @@ class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBase):
             deprecated_fields['credential'] = validated_data.pop('credential')
         obj = super(WorkflowJobTemplateNodeSerializer, self).create(validated_data)
         if 'credential' in deprecated_fields:
-            obj.credentials.add(deprecated_fields['credential'])
+            if deprecated_fields['credential']:
+                obj.credentials.add(deprecated_fields['credential'])
         return obj
 
     def update(self, obj, validated_data):
         deprecated_fields = {}
         if 'credential' in validated_data:
             deprecated_fields['credential'] = validated_data.pop('credential')
-        obj = super(WorkflowJobTemplateNodeSerializer, self).create(obj, validated_data)
+        obj = super(WorkflowJobTemplateNodeSerializer, self).update(obj, validated_data)
         if 'credential' in deprecated_fields:
             for cred in obj.credentials.filter(credential_type__kind='ssh'):
                 obj.credentials.remove(cred)
@@ -3033,19 +3055,18 @@ class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBase):
         return obj
 
 
-class WorkflowJobNodeSerializer(LaunchConfigurationBase):
-    credentials = models.PositiveIntegerField(
-        blank=True, null=True,
-        help_text='This resource has been deprecated and will be removed in a future release'
-    )
+class WorkflowJobNodeSerializer(LaunchConfigurationBaseSerializer):
+    credential = models.PositiveIntegerField(
+        blank=True, null=True, default=None,
+        help_text='This resource has been deprecated and will be removed in a future release')
     success_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     failure_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     always_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
 
     class Meta:
         model = WorkflowJobNode
-        fields = ('job', 'workflow_job', '-name', '-description', 'id', 'url', 'related',
-                  'unified_job_template', 'success_nodes', 'failure_nodes', 'always_nodes', 'credential', '*',)
+        fields = ('*', 'credential', 'job', 'workflow_job', '-name', '-description', 'id', 'url', 'related',
+                  'unified_job_template', 'success_nodes', 'failure_nodes', 'always_nodes',)
 
     def get_related(self, obj):
         res = super(WorkflowJobNodeSerializer, self).get_related(obj)
@@ -3591,7 +3612,7 @@ class LabelSerializer(BaseSerializer):
         return res
 
 
-class ScheduleSerializer(LaunchConfigurationBase):
+class ScheduleSerializer(LaunchConfigurationBaseSerializer):
     show_capabilities = ['edit', 'delete']
 
     class Meta:
