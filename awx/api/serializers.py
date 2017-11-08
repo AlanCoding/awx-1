@@ -2922,7 +2922,7 @@ class WorkflowJobCancelSerializer(WorkflowJobSerializer):
         fields = ('can_cancel',)
 
 
-class WorkflowNodeBaseSerializer(BaseSerializer):
+class LaunchConfigurationBase(BaseSerializer):
     job_type = serializers.ChoiceField(allow_blank=True, allow_null=True, required=False, default=None,
                                        choices=JOB_TYPE_CHOICES)
     job_tags = serializers.CharField(allow_blank=True, allow_null=True, required=False, default=None)
@@ -2931,33 +2931,61 @@ class WorkflowNodeBaseSerializer(BaseSerializer):
     diff_mode = serializers.NullBooleanField(required=False, default=None)
     verbosity = serializers.ChoiceField(allow_null=True, required=False, default=None,
                                         choices=VERBOSITY_CHOICES)
+
+    class Meta:
+        fields = ('*', 'extra_data', 'inventory', # Saved launch-time config fields
+                  'job_type', 'job_tags', 'skip_tags', 'limit', 'skip_tags', 'diff_mode', 'verbosity')
+
+    def get_related(self, obj):
+        res = super(LaunchConfigurationBase, self).get_related(obj)
+        if obj.inventory_id:
+            res['inventory'] = self.reverse('api:inventory_detail', kwargs={'pk': obj.inventory_id})
+        res['credentials'] = self.reverse(
+            'api:{}_credentials_list'.format(get_type_for_model(self.Meta.model)),
+            kwargs={'pk': obj.pk}
+        )
+        return res
+
+    def _build_mock_obj(self, attrs):
+        mock_obj = self.Meta.model()
+        if self.instance:
+            for field in self.instance._meta.fields:
+                setattr(mock_obj, field.name, getattr(self.instance, field.name))
+        field_names = set(field.name for field in self.Meta.model._meta.fields)
+        for field_name, value in attrs.items():
+            setattr(mock_obj, field_name, value)
+            if field_name not in field_names:
+                attrs.pop(field_name)
+        return mock_obj
+
+    def validate(self, attrs):
+        attrs = super(LaunchConfigurationBase, self).validate(attrs)
+        # Verify that fields do not violate template's prompting rules
+        attrs['char_prompts'] = self._build_mock_obj(attrs).char_prompts
+        return attrs
+
+
+class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBase):
+    credentials = models.PositiveIntegerField(
+        blank=True, null=True, default=None,
+        help_text='This resource has been deprecated and will be removed in a future release'
+    )
     success_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     failure_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     always_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
 
     class Meta:
-        fields = ('*', '-name', '-description', 'id', 'url', 'related',
-                  'unified_job_template', 'success_nodes', 'failure_nodes', 'always_nodes',
-                  'inventory', 'credential',
-                  'job_type', 'job_tags', 'skip_tags', 'limit', 'skip_tags', 'diff_mode', 'verbosity')
-
-    def get_related(self, obj):
-        res = super(WorkflowNodeBaseSerializer, self).get_related(obj)
-        if obj.unified_job_template:
-            res['unified_job_template'] = obj.unified_job_template.get_absolute_url(self.context.get('request'))
-        return res
-
-
-class WorkflowJobTemplateNodeSerializer(WorkflowNodeBaseSerializer):
-    class Meta:
         model = WorkflowJobTemplateNode
-        fields = ('*', 'workflow_job_template',)
+        fields = ('workflow_job_template', '-name', '-description', 'id', 'url', 'related',
+                  'unified_job_template', 'success_nodes', 'failure_nodes', 'always_nodes', 'credential', '*',)
 
     def get_related(self, obj):
         res = super(WorkflowJobTemplateNodeSerializer, self).get_related(obj)
         res['success_nodes'] = self.reverse('api:workflow_job_template_node_success_nodes_list', kwargs={'pk': obj.pk})
         res['failure_nodes'] = self.reverse('api:workflow_job_template_node_failure_nodes_list', kwargs={'pk': obj.pk})
         res['always_nodes'] = self.reverse('api:workflow_job_template_node_always_nodes_list', kwargs={'pk': obj.pk})
+        if obj.unified_job_template:
+            res['unified_job_template'] = obj.unified_job_template.get_absolute_url(self.context.get('request'))
         if obj.workflow_job_template:
             res['workflow_job_template'] = self.reverse('api:workflow_job_template_detail', kwargs={'pk': obj.workflow_job_template.pk})
         return res
@@ -2972,30 +3000,60 @@ class WorkflowJobTemplateNodeSerializer(WorkflowNodeBaseSerializer):
         if isinstance(ujt_obj, (WorkflowJobTemplate, SystemJobTemplate)):
             raise serializers.ValidationError({
                 "unified_job_template": _("Cannot nest a %s inside a WorkflowJobTemplate") % ujt_obj.__class__.__name__})
-        r = super(WorkflowJobTemplateNodeSerializer, self).validate(attrs)
-        # Verify that fields do not violate template's prompting rules
-        mock_obj = self.Meta.model()
-        if self.instance:
-            for field in self.instance._meta.fields:
-                setattr(mock_obj, field.name, getattr(self.instance, field.name))
-        for field_name, value in attrs.items():
-            setattr(mock_obj, field_name, value)
-        accepted, rejected, errors = ujt_obj._accept_or_ignore_job_kwargs(**mock_obj.prompts_dict())
+        attrs = super(WorkflowJobTemplateNodeSerializer, self).validate(attrs)
+        accepted, rejected, errors = ujt_obj._accept_or_ignore_job_kwargs(**self._build_mock_obj(attrs).prompts_dict())
         if errors:
             raise serializers.ValidationError(errors)
-        return r
+        if 'credential' in attrs:
+            cred = Credential.objects.get(pk=pk)
+            view = self.context.get('view', None)
+            if (not view) or (not view.request) or (view.request.user not in cred.use_role):
+                raise PermissionDenied()
+        return attrs
+
+    def create(self, validated_data):
+        deprecated_fields = {}
+        if 'credential' in validated_data:
+            deprecated_fields['credential'] = validated_data.pop('credential')
+        obj = super(WorkflowJobTemplateNodeSerializer, self).create(validated_data)
+        if 'credential' in deprecated_fields:
+            obj.credentials.add(deprecated_fields['credential'])
+        return obj
+
+    def update(self, obj, validated_data):
+        deprecated_fields = {}
+        if 'credential' in validated_data:
+            deprecated_fields['credential'] = validated_data.pop('credential')
+        obj = super(WorkflowJobTemplateNodeSerializer, self).create(obj, validated_data)
+        if 'credential' in deprecated_fields:
+            for cred in obj.credentials.filter(credential_type__kind='ssh'):
+                obj.credentials.remove(cred)
+            if deprecated_fields['credential']:
+                obj.credentials.add(deprecated_fields['credential'])
+        return obj
 
 
-class WorkflowJobNodeSerializer(WorkflowNodeBaseSerializer):
+class WorkflowJobNodeSerializer(LaunchConfigurationBase):
+    credentials = models.PositiveIntegerField(
+        blank=True, null=True,
+        help_text='This resource has been deprecated and will be removed in a future release'
+    )
+    success_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    failure_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    always_nodes = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+
     class Meta:
         model = WorkflowJobNode
-        fields = ('*', 'job', 'workflow_job',)
+        fields = ('job', 'workflow_job', '-name', '-description', 'id', 'url', 'related',
+                  'unified_job_template', 'success_nodes', 'failure_nodes', 'always_nodes', 'credential', '*',)
 
     def get_related(self, obj):
         res = super(WorkflowJobNodeSerializer, self).get_related(obj)
         res['success_nodes'] = self.reverse('api:workflow_job_node_success_nodes_list', kwargs={'pk': obj.pk})
         res['failure_nodes'] = self.reverse('api:workflow_job_node_failure_nodes_list', kwargs={'pk': obj.pk})
         res['always_nodes'] = self.reverse('api:workflow_job_node_always_nodes_list', kwargs={'pk': obj.pk})
+        if obj.unified_job_template:
+            res['unified_job_template'] = obj.unified_job_template.get_absolute_url(self.context.get('request'))
         if obj.job:
             res['job'] = obj.job.get_absolute_url(self.context.get('request'))
         if obj.workflow_job:
@@ -3533,12 +3591,12 @@ class LabelSerializer(BaseSerializer):
         return res
 
 
-class ScheduleSerializer(BaseSerializer):
+class ScheduleSerializer(LaunchConfigurationBase):
     show_capabilities = ['edit', 'delete']
 
     class Meta:
         model = Schedule
-        fields = ('*', 'unified_job_template', 'enabled', 'dtstart', 'dtend', 'rrule', 'next_run', 'extra_data')
+        fields = ('*', 'unified_job_template', 'enabled', 'dtstart', 'dtend', 'rrule', 'next_run',)
 
     def get_related(self, obj):
         res = super(ScheduleSerializer, self).get_related(obj)

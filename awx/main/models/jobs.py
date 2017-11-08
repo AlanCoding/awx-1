@@ -139,6 +139,7 @@ for field in JobPromptsOptions._meta.fields:
 # Special cases TODO: re-disposition these after credential changes land
 ask_mapping['vault_credential'] = 'ask_credential_on_launch'
 ask_mapping['extra_credentials'] = 'ask_credential_on_launch'
+ask_mapping['credentials'] = 'ask_credential_on_launch'
 
 
 class LaunchTimeConfig(BaseModel):
@@ -149,6 +150,30 @@ class LaunchTimeConfig(BaseModel):
     class Meta:
         abstract = True
 
+    # Prompting-related fields that have to be handled as special cases
+    credentials = models.ManyToManyField(
+        'Credential',
+        related_name='%(class)ss'
+    )
+    inventory = models.ForeignKey(
+        'Inventory',
+        related_name='%(class)ss',
+        blank=True,
+        null=True,
+        default=None,
+        on_delete=models.SET_NULL,
+    )
+    extra_data = JSONField(
+        blank=True,
+        default={}
+    )
+    survey_passwords = prevent_search(JSONField(
+        blank=True,
+        default={},
+        editable=False,
+    ))
+    # All standard fields are stored in this dictionary field
+    # This is a solution to the nullable CharField problem, specific to prompting
     char_prompts = JSONField(
         blank=True,
         default={}
@@ -157,19 +182,55 @@ class LaunchTimeConfig(BaseModel):
     def prompts_dict(self):
         data = {}
         field_names = [field.name for field in self._meta.fields]
-        for fd in ask_mapping.keys():
-            if fd in field_names:
-                # ForeignKey fields are maintained directly on model
-                fd_val = getattr(self, '{}_id'.format(fd))
-                if fd_val is not None:
-                    data[fd] = fd_val
-            elif fd in self.char_prompts:
-                data[fd] = self.char_prompts[fd]
+        # ManyToManyField not picked up in normal field list
+        field_names.append('credentials')
+        for prompt_name in ask_mapping.keys():
+            if prompt_name in field_names:
+                if prompt_name == 'credentials' and not self.pk:
+                    # unsaved object can't have related credentials
+                    continue
+                field = self._meta.get_field(prompt_name)
+                if isinstance(field, models.ForeignKey):
+                    prompt_val = getattr(self, '{}_id'.format(prompt_name))
+                    if prompt_val is not None:
+                        data[prompt_name] = prompt_val
+                elif isinstance(field, models.ManyToManyField):
+                    prompt_val = []
+                    for rel_obj in getattr(self, prompt_name).all():
+                        prompt_val.append(rel_obj.pk)
+                    if len(prompt_val) > 0:
+                        data[prompt_name] = prompt_val
+                else:
+                    # TODO process extra vars
+                    pass
+            elif prompt_name in self.char_prompts:
+                data[prompt_name] = self.char_prompts[prompt_name]
         return data
+
+    @property
+    def _credential(self):
+        '''
+        Only used for workflow nodes to support backward compatibility.
+        '''
+        try:
+            return [cred for cred in self.credentials.all() if cred.credential_type.kind == 'ssh'][0]
+        except IndexError:
+            return None
+
+    @property
+    def credential(self):
+        '''
+        Returns an integer so it can be used as IntegerField in serializer
+        '''
+        cred = self._credential
+        if cred is not None:
+            return cred.pk
+        else:
+            return None
 
 
 # Add on aliases for the non-related-model fields
-class extracted_field(object):
+class NullablePromptPsuedoField(object):
     """
     Interface for psuedo-property stored in `char_prompts` dict
     """
@@ -180,7 +241,7 @@ class extracted_field(object):
         return instance.char_prompts.get(self.field_name, None)
 
     def __set__(self, instance, value):
-        if value is None:
+        if not value:
             instance.char_prompts.pop(self.field_name, None)
         else:
             instance.char_prompts[self.field_name] = value
@@ -188,7 +249,24 @@ class extracted_field(object):
 
 for field in JobPromptsOptions._meta.fields:
     if hasattr(field, '_ask_var') and (not isinstance(field, (models.ForeignKey, models.ManyToManyField))):
-        setattr(LaunchTimeConfig, field.name, extracted_field(field.name))
+        setattr(LaunchTimeConfig, field.name, NullablePromptPsuedoField(field.name))
+
+
+class JobLaunchConfig(LaunchTimeConfig):
+    '''
+    Historical record of user launch-time overrides for a job
+    Not exposed in the API
+    Used for relaunch, scheduling, etc.
+    '''
+    class Meta:
+        app_label = 'main'
+
+    job = models.ForeignKey(
+        'Job',
+        related_name='launch_configs',
+        on_delete=models.CASCADE,
+        editable=False,
+    )
 
 
 class JobOptions(JobPromptsOptions):

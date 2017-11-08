@@ -324,6 +324,7 @@ workflow_job_template_node_urls = patterns('awx.api.views',
     url(r'^(?P<pk>[0-9]+)/success_nodes/$',             'workflow_job_template_node_success_nodes_list'),
     url(r'^(?P<pk>[0-9]+)/failure_nodes/$',             'workflow_job_template_node_failure_nodes_list'),
     url(r'^(?P<pk>[0-9]+)/always_nodes/$',              'workflow_job_template_node_always_nodes_list'),
+    url(r'^(?P<pk>[0-9]+)/credentials/$',               'workflow_job_template_node_credentials_list'),
 )
 
 workflow_job_node_urls = patterns('awx.api.views',
@@ -332,12 +333,14 @@ workflow_job_node_urls = patterns('awx.api.views',
     url(r'^(?P<pk>[0-9]+)/success_nodes/$',             'workflow_job_node_success_nodes_list'),
     url(r'^(?P<pk>[0-9]+)/failure_nodes/$',             'workflow_job_node_failure_nodes_list'),
     url(r'^(?P<pk>[0-9]+)/always_nodes/$',              'workflow_job_node_always_nodes_list'),
+    url(r'^(?P<pk>[0-9]+)/credentials/$',               'workflow_job_node_credentials_list'),
 )
 
 schedule_urls = patterns('awx.api.views',
     url(r'^$',                                          'schedule_list'),
     url(r'^(?P<pk>[0-9]+)/$',                           'schedule_detail'),
     url(r'^(?P<pk>[0-9]+)/jobs/$',                      'schedule_unified_jobs_list'),
+    url(r'^(?P<pk>[0-9]+)/credentials/$',               'schedule_credentials_list'),
 )
 
 activity_stream_urls = patterns('awx.api.views',

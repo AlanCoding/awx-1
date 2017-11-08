@@ -69,24 +69,6 @@ class WorkflowNodeBase(CreatedModifiedModel, LaunchTimeConfig):
         default=None,
         on_delete=models.SET_NULL,
     )
-    # Prompting-related ForeignKey fields
-    # TODO: upgrade these to the LaunchTimeConfig model after credential changes land
-    inventory = models.ForeignKey(
-        'Inventory',
-        related_name='%(class)ss',
-        blank=True,
-        null=True,
-        default=None,
-        on_delete=models.SET_NULL,
-    )
-    credential = models.ForeignKey(
-        'Credential',
-        related_name='%(class)ss',
-        blank=True,
-        null=True,
-        default=None,
-        on_delete=models.SET_NULL,
-    )
 
     def get_prompts_warnings(self):
         ujt_obj = self.unified_job_template
@@ -125,7 +107,7 @@ class WorkflowNodeBase(CreatedModifiedModel, LaunchTimeConfig):
         Return field names that should be copied from template node to job node.
         '''
         return ['workflow_job', 'unified_job_template',
-                'inventory', 'credential', 'char_prompts']
+                'inventory', 'credentials', 'char_prompts']
 
     def create_workflow_job_node(self, **kwargs):
         '''
@@ -133,11 +115,23 @@ class WorkflowNodeBase(CreatedModifiedModel, LaunchTimeConfig):
         '''
         create_kwargs = {}
         for field_name in self._get_workflow_job_field_names():
+            if field_name == 'credentials':
+                continue
             if field_name in kwargs:
                 create_kwargs[field_name] = kwargs[field_name]
             elif hasattr(self, field_name):
                 create_kwargs[field_name] = getattr(self, field_name)
-        return WorkflowJobNode.objects.create(**create_kwargs)
+        allowed_creds = create_kwargs.pop('credentials', [])
+        new_node = WorkflowJobNode.objects.create(**create_kwargs)
+        if not allowed_creds:
+            if self.pk:
+                allowed_creds = self.credentials.all()
+            else:
+                allowed_creds = []
+        for cred in allowed_creds:
+            print 'adding cred ' + str(new_node.credentials.add)
+            new_node.credentials.add(cred)
+        return new_node
 
 
 class WorkflowJobTemplateNode(WorkflowNodeBase):
@@ -159,11 +153,18 @@ class WorkflowJobTemplateNode(WorkflowNodeBase):
         is not allowed to access
         '''
         create_kwargs = {}
+        allowed_creds = []
         for field_name in self._get_workflow_job_field_names():
+            if field_name == 'credentials':
+                Credential = self._meta.get_field('credentials').related_model
+                for cred in self.credentials.all():
+                    if user.can_access(Credential, 'use', cred):
+                        allowed_creds.append(cred)
+                continue
             item = getattr(self, field_name, None)
             if item is None:
                 continue
-            if field_name in ['inventory', 'credential']:
+            if field_name == 'inventory':
                 if not user.can_access(item.__class__, 'use', item):
                     continue
             if field_name in ['unified_job_template']:
@@ -171,7 +172,10 @@ class WorkflowJobTemplateNode(WorkflowNodeBase):
                     continue
             create_kwargs[field_name] = item
         create_kwargs['workflow_job_template'] = workflow_job_template
-        return self.__class__.objects.create(**create_kwargs)
+        new_node = self.__class__.objects.create(**create_kwargs)
+        for cred in allowed_creds:
+            new_node.credentials.add(cred)
+        return new_node
 
 
 class WorkflowJobNode(WorkflowNodeBase):

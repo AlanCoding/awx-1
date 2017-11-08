@@ -1412,12 +1412,16 @@ class JobAccess(BaseAccess):
             job_fields = {}
             jt_extra_credentials = set(obj.job_template.extra_credentials.all())
             for fd in ask_mapping.keys():
+                if fd == 'credentials':
+                    continue  # TODO: remove in favor of multi-cred branch solution
                 if fd == 'extra_credentials':
                     job_fields[fd] = job_extra_credentials
                 job_fields[fd] = getattr(obj, fd)
             accepted_fields, ignored_fields, errors = obj.job_template._accept_or_ignore_job_kwargs(**job_fields)
             # Check if job fields are not allowed by current _on_launch settings
             for fd in ignored_fields:
+                if fd == 'credentials':
+                    continue  # TODO: remove in favor of multi-cred branch solution
                 if fd == 'extra_vars':
                     continue  # we cannot yet validate validity of prompted extra_vars
                 elif fd == 'extra_credentials':

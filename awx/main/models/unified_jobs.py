@@ -32,7 +32,6 @@ from djcelery.models import TaskMeta
 
 # AWX
 from awx.main.models.base import * # noqa
-from awx.main.models.schedules import Schedule
 from awx.main.models.mixins import ResourceMixin, TaskManagerUnifiedJobMixin
 from awx.main.utils import (
     decrypt_field, _inventory_updates,
@@ -250,6 +249,7 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         return self.last_job_run
 
     def update_computed_fields(self):
+        Schedule = self._meta.get_field('schedules').related_model
         related_schedules = Schedule.objects.filter(enabled=True, unified_job_template=self, next_run__isnull=False).order_by('-next_run')
         if related_schedules.exists():
             self.next_schedule = related_schedules[0]

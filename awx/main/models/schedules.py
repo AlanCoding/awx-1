@@ -15,9 +15,9 @@ from django.utils.translation import ugettext_lazy as _
 # AWX
 from awx.api.versioning import reverse
 from awx.main.models.base import * # noqa
+from awx.main.models.jobs import LaunchTimeConfig
 from awx.main.utils import ignore_inventory_computed_fields
 from awx.main.consumers import emit_channel_notification
-from awx.main.fields import JSONField
 
 logger = logging.getLogger('awx.main.models.schedule')
 
@@ -51,7 +51,7 @@ class ScheduleManager(ScheduleFilterMethods, models.Manager):
         return ScheduleQuerySet(self.model, using=self._db)
 
 
-class Schedule(CommonModel):
+class Schedule(CommonModel, LaunchTimeConfig):
 
     class Meta:
         app_label = 'main'
@@ -89,10 +89,6 @@ class Schedule(CommonModel):
         default=None,
         editable=False,
         help_text=_("The next time that the scheduled action will run.")
-    )
-    extra_data = JSONField(
-        blank=True,
-        default={}
     )
 
     def __unicode__(self):

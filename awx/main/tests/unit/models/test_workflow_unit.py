@@ -9,6 +9,17 @@ from awx.main.models.workflow import (
 import mock
 
 
+@pytest.fixture
+def credential():
+    ssh_type = CredentialType.defaults['ssh']()
+    return Credential(
+        id=43,
+        name='example-cred',
+        credential_type=ssh_type,
+        inputs={'username': 'asdf', 'password': 'asdf'}
+    )
+
+
 class TestWorkflowJobInheritNodesMixin():
     class TestCreateWorkflowJobNodes():
         @pytest.fixture
@@ -123,36 +134,26 @@ def job_node_no_prompts(workflow_job_unit, jt_ask):
 
 
 @pytest.fixture
-def job_node_with_prompts(job_node_no_prompts):
+def job_node_with_prompts(job_node_no_prompts, mocker):
     job_node_no_prompts.char_prompts = example_prompts
     job_node_no_prompts.inventory = Inventory(name='example-inv', id=45)
     job_node_no_prompts.inventory_id = 45
-    ssh_type = CredentialType.defaults['ssh']()
-    job_node_no_prompts.credential = Credential(
-        id=43,
-        name='example-inv',
-        credential_type=ssh_type,
-        inputs={'username': 'asdf', 'password': 'asdf'}
-    )
-    job_node_with_prompts.credential_id = 43
     return job_node_no_prompts
 
 
 @pytest.fixture
 def wfjt_node_no_prompts(workflow_job_template_unit, jt_ask):
-    return WorkflowJobTemplateNode(workflow_job_template=workflow_job_template_unit, unified_job_template=jt_ask)
+    node = WorkflowJobTemplateNode(
+        workflow_job_template=workflow_job_template_unit,
+        unified_job_template=jt_ask
+    )
+    return node
 
 
 @pytest.fixture
-def wfjt_node_with_prompts(wfjt_node_no_prompts):
+def wfjt_node_with_prompts(wfjt_node_no_prompts, mocker):
     wfjt_node_no_prompts.char_prompts = example_prompts
     wfjt_node_no_prompts.inventory = Inventory(name='example-inv')
-    ssh_type = CredentialType.defaults['ssh']()
-    wfjt_node_no_prompts.credential = Credential(
-        name='example-inv',
-        credential_type=ssh_type,
-        inputs={'username': 'asdf', 'password': 'asdf'}
-    )
     return wfjt_node_no_prompts
 
 
@@ -170,20 +171,22 @@ class TestWorkflowJobCreate:
             wfjt_node_no_prompts.create_workflow_job_node(workflow_job=workflow_job_unit)
             mock_create.assert_called_once_with(
                 char_prompts=wfjt_node_no_prompts.char_prompts,
-                inventory=None, credential=None,
+                inventory=None,
                 unified_job_template=wfjt_node_no_prompts.unified_job_template,
                 workflow_job=workflow_job_unit)
 
-    def test_create_with_prompts(self, wfjt_node_with_prompts, workflow_job_unit, mocker):
+    def test_create_with_prompts(self, wfjt_node_with_prompts, workflow_job_unit, credential, mocker):
         mock_create = mocker.MagicMock()
         with mocker.patch('awx.main.models.WorkflowJobNode.objects.create', mock_create):
-            wfjt_node_with_prompts.create_workflow_job_node(workflow_job=workflow_job_unit)
+            wfjt_node_with_prompts.create_workflow_job_node(
+                workflow_job=workflow_job_unit
+            )
             mock_create.assert_called_once_with(
                 char_prompts=wfjt_node_with_prompts.char_prompts,
                 inventory=wfjt_node_with_prompts.inventory,
-                credential=wfjt_node_with_prompts.credential,
                 unified_job_template=wfjt_node_with_prompts.unified_job_template,
                 workflow_job=workflow_job_unit)
+            # TODO: functional test for .credentials association
 
 
 @mock.patch('awx.main.models.workflow.WorkflowNodeBase.get_parent_nodes', lambda self: [])
@@ -203,24 +206,24 @@ class TestWorkflowJobNodeJobKWARGS:
         assert job_node_no_prompts.get_job_kwargs() == dict(
             extra_vars={'a': 84}, **self.kwargs_base)
 
-    def test_char_prompts_and_res_node_prompts(self, job_node_with_prompts):
+    def test_char_prompts_and_res_node_prompts(self, job_node_with_prompts, credential):
         expect_kwargs = dict(
             inventory=job_node_with_prompts.inventory.pk,
-            credential=job_node_with_prompts.credential.pk,
             **example_prompts)
         expect_kwargs.update(self.kwargs_base)
         assert job_node_with_prompts.get_job_kwargs() == expect_kwargs
+        # TODO: functional test for .credentials association
 
-    def test_reject_some_node_prompts(self, job_node_with_prompts):
+    def test_reject_some_node_prompts(self, job_node_with_prompts, credential):
         job_node_with_prompts.unified_job_template.ask_inventory_on_launch = False
         job_node_with_prompts.unified_job_template.ask_job_type_on_launch = False
         expect_kwargs = dict(inventory=job_node_with_prompts.inventory.pk,
-                             credential=job_node_with_prompts.credential.pk,
                              **example_prompts)
         expect_kwargs.update(self.kwargs_base)
         expect_kwargs.pop('inventory')
         expect_kwargs.pop('job_type')
         assert job_node_with_prompts.get_job_kwargs() == expect_kwargs
+        # TODO: functional test for .credentials association
 
     def test_no_accepted_project_node_prompts(self, job_node_no_prompts, project_unit):
         job_node_no_prompts.unified_job_template = project_unit
@@ -249,6 +252,5 @@ class TestWorkflowWarnings:
         job_node_with_prompts.unified_job_template.ask_job_type_on_launch = False
         assert 'ignored' in job_node_with_prompts.get_prompts_warnings()
         assert 'job_type' in job_node_with_prompts.get_prompts_warnings()['ignored']
-        assert 'credential' in job_node_with_prompts.get_prompts_warnings()['ignored']
-        assert len(job_node_with_prompts.get_prompts_warnings()['ignored']) == 2
+        assert len(job_node_with_prompts.get_prompts_warnings()['ignored']) == 1
 

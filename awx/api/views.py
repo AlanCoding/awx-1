@@ -606,6 +606,16 @@ class ScheduleDetail(RetrieveUpdateDestroyAPIView):
     new_in_148 = True
 
 
+class ScheduleCredentialsList(SubListAttachDetachAPIView):
+
+    model = Credential
+    serializer_class = CredentialSerializer
+    parent_model = Schedule
+    relationship = 'credentials'
+    new_in_330 = True
+    new_in_api_v2 = True
+
+
 class ScheduleUnifiedJobsList(SubListAPIView):
 
     model = UnifiedJob
@@ -3181,6 +3191,16 @@ class WorkflowJobNodeDetail(WorkflowsEnforcementMixin, RetrieveAPIView):
     new_in_310 = True
 
 
+class WorkflowJobNodeCredentialsList(SubListAPIView):
+
+    model = Credential
+    serializer_class = CredentialSerializer
+    parent_model = WorkflowJobNode
+    relationship = 'credentials'
+    new_in_330 = True
+    new_in_api_v2 = True
+
+
 class WorkflowJobTemplateNodeList(WorkflowsEnforcementMixin, ListCreateAPIView):
 
     model = WorkflowJobTemplateNode
@@ -3193,6 +3213,16 @@ class WorkflowJobTemplateNodeDetail(WorkflowsEnforcementMixin, RetrieveUpdateDes
     model = WorkflowJobTemplateNode
     serializer_class = WorkflowJobTemplateNodeDetailSerializer
     new_in_310 = True
+
+
+class WorkflowJobTemplateNodeCredentialsList(SubListAttachDetachAPIView):
+
+    model = Credential
+    serializer_class = CredentialSerializer
+    parent_model = WorkflowJobTemplateNode
+    relationship = 'credentials'
+    new_in_330 = True
+    new_in_api_v2 = True
 
 
 class WorkflowJobTemplateNodeChildrenBaseList(WorkflowsEnforcementMixin, EnforceParentRelationshipMixin, SubListCreateAttachDetachAPIView):

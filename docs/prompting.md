@@ -26,6 +26,8 @@ The standard pattern applies to fields
 
  - `ask_variables_on_launch` allows unrestricted use of
    - `extra_vars`
+ - `ask_tags_on_launch` allows use of
+   - `job_tags`
  - Enabled survey allows restricted use of
    - `extra_vars`, only for variables in survey (with qualifiers)
  - `ask_credential_on_launch` allows use of
