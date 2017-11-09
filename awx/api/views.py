@@ -606,12 +606,30 @@ class ScheduleDetail(RetrieveUpdateDestroyAPIView):
     new_in_148 = True
 
 
-class ScheduleCredentialsList(SubListAttachDetachAPIView):
+class LaunchConfigCredentialsBase(SubListAttachDetachAPIView):
 
     model = Credential
     serializer_class = CredentialSerializer
-    parent_model = Schedule
     relationship = 'credentials'
+
+    def is_valid_relation(self, parent, sub, created=False):
+        # TODO: change field name after multi-cred merge
+        ask_field_name = ask_mapping['credential']
+        if not parent.unified_job_template:
+            return {"msg": _("Cannot assign credential when related template is null.")}
+        elif not hasattr(parent, ask_field_name):
+            return {"msg": _("Related template cannot accept credentials on launch.")}
+        elif not getattr(parent, ask_field_name):
+            return {"msg": _("Related template is not configured to accept credentials on launch.")}
+        elif sub.kind == 'ssh' and parent.credentials.filter(credential_type__kind='ssh').exists():
+            return {"msg": _("This launch configuration already has an ssh credential.")}
+        # None means there were no validation errors
+        return None
+
+
+class ScheduleCredentialsList(LaunchConfigCredentialsBase):
+
+    parent_model = Schedule
     new_in_330 = True
     new_in_api_v2 = True
 
@@ -3215,12 +3233,9 @@ class WorkflowJobTemplateNodeDetail(WorkflowsEnforcementMixin, RetrieveUpdateDes
     new_in_310 = True
 
 
-class WorkflowJobTemplateNodeCredentialsList(SubListAttachDetachAPIView):
+class WorkflowJobTemplateNodeCredentialsList(LaunchConfigCredentialsBase):
 
-    model = Credential
-    serializer_class = CredentialSerializer
     parent_model = WorkflowJobTemplateNode
-    relationship = 'credentials'
     new_in_330 = True
     new_in_api_v2 = True
 

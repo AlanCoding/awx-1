@@ -107,6 +107,7 @@ class WorkflowNodeBase(CreatedModifiedModel, LaunchTimeConfig):
         Return field names that should be copied from template node to job node.
         '''
         return ['workflow_job', 'unified_job_template',
+                'extra_data', 'survey_passwords',
                 'inventory', 'credentials', 'char_prompts']
 
     def create_workflow_job_node(self, **kwargs):
@@ -121,15 +122,12 @@ class WorkflowNodeBase(CreatedModifiedModel, LaunchTimeConfig):
                 create_kwargs[field_name] = kwargs[field_name]
             elif hasattr(self, field_name):
                 create_kwargs[field_name] = getattr(self, field_name)
-        allowed_creds = create_kwargs.pop('credentials', [])
         new_node = WorkflowJobNode.objects.create(**create_kwargs)
-        if not allowed_creds:
-            if self.pk:
-                allowed_creds = self.credentials.all()
-            else:
-                allowed_creds = []
+        if self.pk:
+            allowed_creds = self.credentials.all()
+        else:
+            allowed_creds = []
         for cred in allowed_creds:
-            print 'adding cred ' + str(new_node.credentials.add)
             new_node.credentials.add(cred)
         return new_node
 

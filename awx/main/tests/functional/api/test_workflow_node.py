@@ -66,6 +66,31 @@ def test_node_accepts_prompted_fields(inventory, project, workflow_job_template,
 
 
 @pytest.mark.django_db
+class TestNodeCredentials:
+    '''
+    The supported way to provide credentials on launch is through a list
+    under the "credentials" key - WFJT nodes have a many-to-many relationship
+    corresponding to this, and it must follow rules consistent with other prompts
+    '''
+    def test_not_allows_non_job_models(self, post, admin_user, workflow_job_template,
+                                       project, machine_credential):
+        node = WorkflowJobTemplateNode.objects.create(
+            workflow_job_template=workflow_job_template,
+            unified_job_template=project
+        )
+        r = post(
+            reverse(
+                'api:workflow_job_template_node_credentials_list',
+                kwargs = {'pk': node.pk}
+            ),
+            data = {'id': machine_credential.pk},
+            user = admin_user,
+            expect = 400
+        )
+        assert 'cannot accept credentials on launch' in str(r.data['msg'])
+
+
+@pytest.mark.django_db
 class TestOldCredentialField:
     '''
     The field `credential` on JTs & WFJT nodes is deprecated, but still supported

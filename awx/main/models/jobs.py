@@ -50,7 +50,8 @@ logger = logging.getLogger('awx.main.models.jobs')
 analytics_logger = logging.getLogger('awx.analytics.job_events')
 system_tracking_logger = logging.getLogger('awx.analytics.system_tracking')
 
-__all__ = ['JobTemplate', 'Job', 'JobHostSummary', 'JobEvent', 'SystemJobOptions', 'SystemJobTemplate', 'SystemJob']
+__all__ = ['JobTemplate', 'JobLaunchConfig', 'Job', 'JobHostSummary', 'JobEvent',
+           'SystemJobOptions', 'SystemJobTemplate', 'SystemJob']
 
 
 
@@ -262,7 +263,7 @@ class JobLaunchConfig(LaunchTimeConfig):
         app_label = 'main'
 
     job = models.ForeignKey(
-        'Job',
+        'UnifiedJob',
         related_name='launch_configs',
         on_delete=models.CASCADE,
         editable=False,

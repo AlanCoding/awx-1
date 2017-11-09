@@ -16,7 +16,6 @@ are the following.
 The standard pattern applies to fields
 
  - `job_type`
- - `job_tags`
  - `skip_tags`
  - `limit`
  - `diff_mode`
@@ -67,6 +66,39 @@ actions in the API.
    - can only accept extra_vars
  - POST to `/api/v2/system_job_templates/N/launch/`
    - can accept certain fields, with no user configuration
+
+#### Data Rules for Prompts
+
+For the POST action to launch, data for "prompts" are provided as top-level
+keys in the request data. There is a special-case to allow a list to be
+provided for `credentials`, which is otherwise not possible in AWX API design.
+
+Example:
+
+POST to `/api/v2/job_templates/N/launch/` with data:
+
+```json
+{
+  "job_type": "check",
+  "limit": "",
+  "verbosity": null,
+  "credentials": [1, 2, 4]
+}
+```
+
+Assuming that the job template is configured to prompt for all these,
+fields, here is what happens in this action:
+
+ - `job_type` of the job assumes the value of "check"
+ - `limit` of the job assumes the value of `""`, which means that Ansible will
+   target all hosts in the inventory, even though the job template may have
+   been targeted to a smaller subset of hosts
+ - `verbosity` of the job assumes the value that the job template has
+ - The job uses all credentials of the job template, combined with
+   credentials with primary keys 1, 2, and 4
+
+If job template has configured `ask_verbosity_on_launch` to False, this
+should not cause a problem.
 
 ### Saved Launch-time Configurations
 
@@ -173,3 +205,13 @@ If the job is spawned from a schedule or workflow in a state that cannot be
 launched (typical example is a null `inventory`), then the job should be
 created in an "error" state with `job_explanation` containing a summary
 of what happened.
+
+### Scenarios to have Coverage for
+
+ - variable precedence
+   - schedule has survey answers for WFJT survey
+   - WFJT has node that has answers to JT survey
+   - on launch, the schedule answers override all others
+ - POST to associate credential to WFJT node
+   - requires admin to WFJT and execute to JT
+   - this is in addition to the restriction of `ask_credential_on_launch`

@@ -3354,7 +3354,8 @@ class JobLaunchSerializer(BaseSerializer):
                         )
                         for cred in obj.extra_credentials.all()
                     ]
-            else:
+            elif hasattr(obj, field):
+                # TODO: take other diff in multi-cred merge
                 defaults_dict[field] = getattr(obj, field)
         return defaults_dict
 

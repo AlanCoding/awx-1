@@ -30,7 +30,7 @@ class Migration(migrations.Migration):
                 ('char_prompts', awx.main.fields.JSONField(default={}, blank=True)),
                 ('credentials', models.ManyToManyField(related_name='joblaunchconfigs', to='main.Credential')),
                 ('inventory', models.ForeignKey(related_name='joblaunchconfigs', on_delete=django.db.models.deletion.SET_NULL, default=None, blank=True, to='main.Inventory', null=True)),
-                ('job', models.ForeignKey(related_name='launch_configs', editable=False, to='main.Job')),
+                ('job', models.ForeignKey(related_name='launch_configs', editable=False, to='main.UnifiedJob')),
             ],
         ),
         migrations.AddField(
@@ -84,8 +84,8 @@ class Migration(migrations.Migration):
             field=awx.main.fields.JSONField(default={}, editable=False, blank=True),
         ),
         # Run data migration before removing the old credential field
-        migrations.RunPython(migration_utils.set_current_apps_for_migrations),
-        migrations.RunPython(migrate_workflow_cred),
+        migrations.RunPython(migration_utils.set_current_apps_for_migrations, lambda x, y: None),
+        migrations.RunPython(migrate_workflow_cred, lambda x, y: None),
         migrations.RemoveField(
             model_name='workflowjobnode',
             name='credential',
