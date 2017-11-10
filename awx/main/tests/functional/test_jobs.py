@@ -1,4 +1,8 @@
-from awx.main.models import Job, Instance
+from awx.main.models import (
+    Job,
+    JobLaunchConfig,
+    Instance
+)
 from django.test.utils import override_settings
 import pytest
 
@@ -36,3 +40,31 @@ def test_job_notification_data(inventory):
     )
     notification_data = job.notification_data(block=0)
     assert json.loads(notification_data['extra_vars'])['SSN'] == encrypted_str
+
+
+@pytest.mark.django_db
+class TestLaunchConfig:
+
+    def test_null_creation_from_prompts(self):
+        job = Job.objects.create()
+        data = {
+            "credentials": [],
+            "extra_vars": {},
+            "limit": None,
+            "job_type": None
+        }
+        config = job.create_config_from_prompts(data)
+        assert config is None
+
+    def test_only_limit_defined(self):
+        job = Job.objects.create()
+        data = {
+            "extra_credentials": [],
+            "extra_vars": {},
+            "job_tags": None,
+            "limit": ""
+        }
+        config = job.create_config_from_prompts(data)
+        assert config.char_prompts == {"limit": ""}
+        assert not config.credentials.exists()
+        assert config.prompts_dict() == {"limit": ""}

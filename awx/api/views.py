@@ -2778,7 +2778,8 @@ class JobTemplateLaunch(RetrieveAPIView):
         ignored_fields.update(_accepted_or_ignored[1])
 
         # TODO: use this permission check after the merge
-        if not request.user.can_access(JobLaunchConfig, 'add', prompted_fields)
+        if not request.user.can_access(JobLaunchConfig, 'add', prompted_fields):
+            raise PermissionDenied()
 
         for fd, model in (
                 ('credential', Credential),

@@ -72,6 +72,8 @@ actions in the API.
 For the POST action to launch, data for "prompts" are provided as top-level
 keys in the request data. There is a special-case to allow a list to be
 provided for `credentials`, which is otherwise not possible in AWX API design.
+Additionally, null-ish values may or may not override the job template
+values on a case-by-case basis, explained here.
 
 Example:
 
@@ -81,24 +83,40 @@ POST to `/api/v2/job_templates/N/launch/` with data:
 {
   "job_type": "check",
   "limit": "",
+  "job_tags": null,
   "verbosity": null,
-  "credentials": [1, 2, 4]
+  "credentials": [1, 2, 4],
+  "extra_vars": {}
 }
 ```
 
 Assuming that the job template is configured to prompt for all these,
 fields, here is what happens in this action:
 
- - `job_type` of the job assumes the value of "check"
- - `limit` of the job assumes the value of `""`, which means that Ansible will
+ - `job_type` of the job takes the value of "check"
+ - `limit` of the job takes the value of `""`, which means that Ansible will
    target all hosts in the inventory, even though the job template may have
    been targeted to a smaller subset of hosts
- - `verbosity` of the job assumes the value that the job template has
- - The job uses all credentials of the job template, combined with
-   credentials with primary keys 1, 2, and 4
+ - `job_tags` (a character field) take the value the job template has
+ - `verbosity` (an int field) takes the value that the job template has
+ - The job uses only the `credentials` with primary keys 1, 2, and 4,
+   ignoring those associated with the job template
+ - `extra_vars` of the job template will be used without any overrides
 
-If job template has configured `ask_verbosity_on_launch` to False, this
-should not cause a problem.
+If `extra_vars` in the request data contains some keys, these will
+be combined with the job template extra_vars dictionary, with the
+request data taking precedence.
+
+If the request data contains `"credentials": []`, the request should result
+in a 400 error, because without a machine credential, the job can not run.
+Saved launch configurations have a special-case. If the many-to-many field
+`credentials` has no associated credentials, the job will launch with
+the associated job template credentials, but if 1 or more credential
+is associated, the job will use these credentials, and none from the
+job template.
+
+If the field `inventory` is given a null value, a 400 code will be returned
+without launching the job.
 
 ### Saved Launch-time Configurations
 

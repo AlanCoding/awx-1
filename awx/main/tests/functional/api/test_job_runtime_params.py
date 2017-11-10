@@ -172,6 +172,41 @@ def test_job_accept_prompted_vars_null(runtime_data, job_template_prompts_null, 
 
 @pytest.mark.django_db
 @pytest.mark.job_runtime_vars
+def test_user_provides_nullish_prompts(runtime_data, job_template_prompts, post, rando, mocker):
+    '''
+    User providing "key": null for a variable is interpreted as not overriding
+    the job template value, but there are exceptions.
+    See the prompting.md docs for specifics on those cases.
+    Corresponding test exists in awx.main.tests.functional.test_job
+    '''
+    job_template = job_template_prompts(True)
+
+    # Give user permission to execute the job template
+    job_template.execute_role.members.add(rando)
+
+    mock_job = mocker.MagicMock(spec=Job, id=968, **runtime_data)
+
+    with mocker.patch.object(JobTemplate, 'create_unified_job', return_value=mock_job):
+        with mocker.patch('awx.api.serializers.JobSerializer.to_representation'):
+            # TODO: change extra_credentials to credentials after merge
+            response = post(
+                reverse('api:job_template_launch', kwargs={'pk': job_template.pk}),
+                {
+                    "extra_credentials": [],
+                    "extra_vars": {},
+                    "job_tags": None,
+                    "limit": ""
+                }, rando, expect=201)
+            assert JobTemplate.create_unified_job.called
+            assert JobTemplate.create_unified_job.call_args == (dict(job_tags=None, limit="", extra_credentials=[]),)
+
+    job_id = response.data['job']
+    assert job_id == 968
+    mock_job.signal_start.assert_called_once()
+
+
+@pytest.mark.django_db
+@pytest.mark.job_runtime_vars
 def test_job_reject_invalid_prompted_vars(runtime_data, job_template_prompts, post, admin_user):
     job_template = job_template_prompts(True)
 

@@ -304,18 +304,16 @@ class LaunchTimeConfig(BaseModel):
         field_names.append('credentials')
         for prompt_name in ask_mapping.keys():
             if prompt_name in field_names:
-                if prompt_name == 'credentials' and not self.pk:
-                    # unsaved object can't have related credentials
-                    continue
                 field = self._meta.get_field(prompt_name)
                 if isinstance(field, models.ForeignKey):
                     prompt_val = getattr(self, '{}_id'.format(prompt_name))
                     if prompt_val is not None:
                         data[prompt_name] = prompt_val
                 elif isinstance(field, models.ManyToManyField):
-                    prompt_val = []
-                    for rel_obj in getattr(self, prompt_name).all():
-                        prompt_val.append(rel_obj.pk)
+                    if not self.pk:
+                        # unsaved object can't have related many-to-many
+                        continue
+                    prompt_val = getattr(self, prompt_name).values_list('pk', flat=True)
                     if len(prompt_val) > 0:
                         data[prompt_name] = prompt_val
                 else:
@@ -359,7 +357,7 @@ class NullablePromptPsuedoField(object):
         return instance.char_prompts.get(self.field_name, None)
 
     def __set__(self, instance, value):
-        if not value:
+        if value in (None, {}):
             instance.char_prompts.pop(self.field_name, None)
         else:
             instance.char_prompts[self.field_name] = value
@@ -724,6 +722,34 @@ class Job(UnifiedJob, JobOptions, SurveyJobMixin, JobNotificationMixin, TaskMana
 
     def get_passwords_needed_to_start(self):
         return self.passwords_needed_to_start
+
+    def create_config_from_prompts(self, validated_data):
+        many_related = {}
+        is_null = True
+        obj = JobLaunchConfig(job=self)
+        for field_name in ask_mapping.keys():
+            if field_name not in validated_data or validated_data[field_name] in (None, {}, []):
+                continue
+            is_null = False
+            val = validated_data[field_name]
+            try:
+                f = JobLaunchConfig._meta.get_field(field_name)
+                if isinstance(f, models.ManyToManyField):
+                    many_related[field_name] = validated_data[field_name]
+                elif isinstance(f, models.ForeignKey):
+                    if isinstance(val, int):
+                        setattr(obj, '{}_id'.format(field_name), val)
+                    else:
+                        setattr(obj, field_name, val)
+            except FieldDoesNotExist:
+                setattr(obj, field_name, val)
+        if is_null:
+            # Will not create launch config object if no prompts exist to track
+            return None
+        obj.save()
+        for field_name, pk_list in many_related.items():
+            getattr(obj, field_name).add(*pk_list)
+        return obj
 
     def _get_hosts(self, **kwargs):
         Host = JobHostSummary._meta.get_field('host').related_model
