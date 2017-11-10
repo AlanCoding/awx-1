@@ -1522,9 +1522,29 @@ class JobLaunchConfigAccess(BaseAccess):
     select_related = ('job')
     prefetch_related = ('credentials', 'inventory')
 
+    def _unusable_creds_exist(self, qs):
+        return qs.exclude(
+            pk__in=Credential._accessible_pk_qs(Credential, self.user, 'use_role')
+        ).exists()
+
+    def has_credentials_access(self, obj):
+        # user has access if no related credentials exist that the user lacks use role for
+        return not self._unusable_creds_exist(obj.credentials)
+
     @check_superuser
     def can_add(self, data):
+        # This is a special case, we don't check related many-to-many elsewhere
+        if 'credentials' in data and data['credentials']:
+            if self._unusable_creds_exist(Credential.objects.filter(pk__in=data['credentials'])):
+                return False
         return self.check_related('inventory', Inventory, data, role_field='use_role')
+
+    @check_superuser
+    def can_use(self, obj):
+        return (
+            self.check_related('inventory', Inventory, {}, obj=obj, role_field='use_role', mandatory=True) and
+            self.has_credentials_access(obj)
+        )
 
     def can_change(self, obj, data):
         return self.check_related('inventory', Inventory, data, obj=obj, role_field='use_role')

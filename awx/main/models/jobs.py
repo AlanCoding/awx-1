@@ -62,6 +62,7 @@ def mark_ask(field, ask_alias=None):
     if ask_alias is not None:
         field._ask_var = ask_alias
     else:
+        # Field name is not defined until set by Model metaclass, placeholder here
         field._ask_var = '__default__'
     return field
 
@@ -244,6 +245,8 @@ class JobOptions(BaseModel):
 
 ask_mapping = {}
 for field in JobOptions._meta.fields:
+    if not hasattr(field, '_ask_var'):
+        continue
     if field._ask_var == '__default__':
         field._ask_var = 'ask_{}_on_launch'.format(field.name)
     else:
