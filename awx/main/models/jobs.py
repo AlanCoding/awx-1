@@ -21,7 +21,7 @@ from dateutil.tz import tzutc
 from django.utils.encoding import force_text, smart_str
 from django.utils.timezone import utc
 from django.utils.translation import ugettext_lazy as _
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, FieldDoesNotExist
 
 # REST Framework
 from rest_framework.exceptions import ParseError
@@ -54,7 +54,6 @@ __all__ = ['JobTemplate', 'JobLaunchConfig', 'Job', 'JobHostSummary', 'JobEvent'
            'SystemJobOptions', 'SystemJobTemplate', 'SystemJob']
 
 
-
 def mark_ask(field, ask_alias=None):
     '''
     Sets a marker on a field to denote its corresponding `ask_xxxx_on_launch`
@@ -67,19 +66,14 @@ def mark_ask(field, ask_alias=None):
     return field
 
 
-
-class JobPromptsOptions(BaseModel):
+class JobOptions(BaseModel):
     '''
-    Common job templates, jobs, WFJT / WJ nodes, Schedules, and saved launch configs.
+    Common options for job templates and jobs.
     '''
 
     class Meta:
         abstract = True
 
-    extra_vars = mark_ask(prevent_search(models.TextField(
-        blank=True,
-        default='',
-    )), ask_alias='variables')
     diff_mode = mark_ask(models.BooleanField(
         default=False,
         help_text=_("If enabled, textual changes made to any templated files on the host are shown in the standard output"),
@@ -97,6 +91,19 @@ class JobPromptsOptions(BaseModel):
         default=None,
         on_delete=models.SET_NULL,
     ))
+    project = models.ForeignKey(
+        'Project',
+        related_name='%(class)ss',
+        null=True,
+        default=None,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    playbook = models.CharField(
+        max_length=1024,
+        default='',
+        blank=True,
+    )
     # TODO: apply `mark_ask` to many-related `credentials` when merged with other branch
     credential = mark_ask(models.ForeignKey(
         'Credential',
@@ -106,6 +113,22 @@ class JobPromptsOptions(BaseModel):
         default=None,
         on_delete=models.SET_NULL,
     ))
+    vault_credential = models.ForeignKey(
+        'Credential',
+        related_name='%(class)ss_as_vault_credential+',
+        blank=True,
+        null=True,
+        default=None,
+        on_delete=models.SET_NULL,
+    )
+    extra_credentials = models.ManyToManyField(
+        'Credential',
+        related_name='%(class)ss_as_extra_credential+',
+    )
+    forks = models.PositiveIntegerField(
+        blank=True,
+        default=0,
+    )
     limit = mark_ask(models.CharField(
         max_length=1024,
         blank=True,
@@ -116,20 +139,111 @@ class JobPromptsOptions(BaseModel):
         blank=True,
         default=0,
     ))
+    extra_vars = mark_ask(prevent_search(models.TextField(
+        blank=True,
+        default='',
+    )), ask_alias='variables')
     job_tags = mark_ask(models.CharField(
         max_length=1024,
         blank=True,
         default='',
     ), ask_alias='tags')
+    force_handlers = models.BooleanField(
+        blank=True,
+        default=False,
+    )
     skip_tags = mark_ask(models.CharField(
         max_length=1024,
         blank=True,
         default='',
     ))
+    start_at_task = models.CharField(
+        max_length=1024,
+        blank=True,
+        default='',
+    )
+    become_enabled = models.BooleanField(
+        default=False,
+    )
+    allow_simultaneous = models.BooleanField(
+        default=False,
+    )
+    timeout = models.IntegerField(
+        blank=True,
+        default=0,
+        help_text=_("The amount of time (in seconds) to run before the task is canceled."),
+    )
+    use_fact_cache = models.BooleanField(
+        default=False,
+        help_text=_(
+            "If enabled, Tower will act as an Ansible Fact Cache Plugin; persisting "
+            "facts at the end of a playbook run to the database and caching facts for use by Ansible."),
+    )
+
+    extra_vars_dict = VarsDictProperty('extra_vars', True)
+
+    def clean_credential(self):
+        cred = self.credential
+        if cred and cred.kind != 'ssh':
+            raise ValidationError(
+                _('You must provide an SSH credential.'),
+            )
+        return cred
+
+    def clean_vault_credential(self):
+        cred = self.vault_credential
+        if cred and cred.kind != 'vault':
+            raise ValidationError(
+                _('You must provide a Vault credential.'),
+            )
+        return cred
+
+    @property
+    def all_credentials(self):
+        credentials = list(self.extra_credentials.all())
+        if self.vault_credential:
+            credentials.insert(0, self.vault_credential)
+        if self.credential:
+            credentials.insert(0, self.credential)
+        return credentials
+
+    @property
+    def network_credentials(self):
+        return [cred for cred in self.extra_credentials.all() if cred.credential_type.kind == 'net']
+
+    @property
+    def cloud_credentials(self):
+        return [cred for cred in self.extra_credentials.all() if cred.credential_type.kind == 'cloud']
+
+    # TODO: remove when API v1 is removed
+    @property
+    def cloud_credential(self):
+        try:
+            return self.cloud_credentials[-1].pk
+        except IndexError:
+            return None
+
+    # TODO: remove when API v1 is removed
+    @property
+    def network_credential(self):
+        try:
+            return self.network_credentials[-1].pk
+        except IndexError:
+            return None
+
+    @property
+    def passwords_needed_to_start(self):
+        '''Return list of password field names needed to start the job.'''
+        needed = []
+        if self.credential:
+            needed.extend(self.credential.passwords_needed)
+        if self.vault_credential:
+            needed.extend(self.vault_credential.passwords_needed)
+        return needed
 
 
 ask_mapping = {}
-for field in JobPromptsOptions._meta.fields:
+for field in JobOptions._meta.fields:
     if field._ask_var == '__default__':
         field._ask_var = 'ask_{}_on_launch'.format(field.name)
     else:
@@ -137,7 +251,7 @@ for field in JobPromptsOptions._meta.fields:
     ask_mapping[field.name] = field._ask_var
 
 
-# Special cases TODO: re-disposition these after credential changes land
+# Special cases TODO: remove after multi-cred merge
 ask_mapping['vault_credential'] = 'ask_credential_on_launch'
 ask_mapping['extra_credentials'] = 'ask_credential_on_launch'
 ask_mapping['credentials'] = 'ask_credential_on_launch'
@@ -248,9 +362,12 @@ class NullablePromptPsuedoField(object):
             instance.char_prompts[self.field_name] = value
 
 
-for field in JobPromptsOptions._meta.fields:
-    if hasattr(field, '_ask_var') and (not isinstance(field, (models.ForeignKey, models.ManyToManyField))):
-        setattr(LaunchTimeConfig, field.name, NullablePromptPsuedoField(field.name))
+for field in JobOptions._meta.fields:
+    if hasattr(field, '_ask_var'):
+        try:
+            LaunchTimeConfig._meta.get_field(field.name)
+        except FieldDoesNotExist:
+            setattr(LaunchTimeConfig, field.name, NullablePromptPsuedoField(field.name))
 
 
 class JobLaunchConfig(LaunchTimeConfig):
@@ -268,132 +385,6 @@ class JobLaunchConfig(LaunchTimeConfig):
         on_delete=models.CASCADE,
         editable=False,
     )
-
-
-class JobOptions(JobPromptsOptions):
-    '''
-    Common options for job templates and jobs.
-    '''
-
-    class Meta:
-        abstract = True
-
-    project = models.ForeignKey(
-        'Project',
-        related_name='%(class)ss',
-        null=True,
-        default=None,
-        blank=True,
-        on_delete=models.SET_NULL,
-    )
-    playbook = models.CharField(
-        max_length=1024,
-        default='',
-        blank=True,
-    )
-    vault_credential = models.ForeignKey(
-        'Credential',
-        related_name='%(class)ss_as_vault_credential+',
-        blank=True,
-        null=True,
-        default=None,
-        on_delete=models.SET_NULL,
-    )
-    extra_credentials = models.ManyToManyField(
-        'Credential',
-        related_name='%(class)ss_as_extra_credential+',
-    )
-    forks = models.PositiveIntegerField(
-        blank=True,
-        default=0,
-    )
-    force_handlers = models.BooleanField(
-        blank=True,
-        default=False,
-    )
-    start_at_task = models.CharField(
-        max_length=1024,
-        blank=True,
-        default='',
-    )
-    become_enabled = models.BooleanField(
-        default=False,
-    )
-    allow_simultaneous = models.BooleanField(
-        default=False,
-    )
-    timeout = models.IntegerField(
-        blank=True,
-        default=0,
-        help_text=_("The amount of time (in seconds) to run before the task is canceled."),
-    )
-    use_fact_cache = models.BooleanField(
-        default=False,
-        help_text=_(
-            "If enabled, Tower will act as an Ansible Fact Cache Plugin; persisting "
-            "facts at the end of a playbook run to the database and caching facts for use by Ansible."),
-    )
-
-    extra_vars_dict = VarsDictProperty('extra_vars', True)
-
-    def clean_credential(self):
-        cred = self.credential
-        if cred and cred.kind != 'ssh':
-            raise ValidationError(
-                _('You must provide an SSH credential.'),
-            )
-        return cred
-
-    def clean_vault_credential(self):
-        cred = self.vault_credential
-        if cred and cred.kind != 'vault':
-            raise ValidationError(
-                _('You must provide a Vault credential.'),
-            )
-        return cred
-
-    @property
-    def all_credentials(self):
-        credentials = list(self.extra_credentials.all())
-        if self.vault_credential:
-            credentials.insert(0, self.vault_credential)
-        if self.credential:
-            credentials.insert(0, self.credential)
-        return credentials
-
-    @property
-    def network_credentials(self):
-        return [cred for cred in self.extra_credentials.all() if cred.credential_type.kind == 'net']
-
-    @property
-    def cloud_credentials(self):
-        return [cred for cred in self.extra_credentials.all() if cred.credential_type.kind == 'cloud']
-
-    # TODO: remove when API v1 is removed
-    @property
-    def cloud_credential(self):
-        try:
-            return self.cloud_credentials[-1].pk
-        except IndexError:
-            return None
-
-    # TODO: remove when API v1 is removed
-    @property
-    def network_credential(self):
-        try:
-            return self.network_credentials[-1].pk
-        except IndexError:
-            return None
-
-    @property
-    def passwords_needed_to_start(self):
-        '''Return list of password field names needed to start the job.'''
-        needed = []
-        if self.credential:
-            needed.extend(self.credential.passwords_needed)
-        if self.vault_credential:
-            needed.extend(self.vault_credential.passwords_needed)
-        return needed
 
 
 class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, ResourceMixin):
