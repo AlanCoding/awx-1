@@ -12,7 +12,7 @@ from awx.main.migrations._workflow_credential import migrate_workflow_cred
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('main', '0008_v320_drop_v1_credential_fields'),
+        ('main', '0009_v330_multi_credential'),
     ]
 
     operations = [
@@ -84,8 +84,8 @@ class Migration(migrations.Migration):
             field=awx.main.fields.JSONField(default={}, editable=False, blank=True),
         ),
         # Run data migration before removing the old credential field
-        migrations.RunPython(migration_utils.set_current_apps_for_migrations, lambda x, y: None),
-        migrations.RunPython(migrate_workflow_cred, lambda x, y: None),
+        migrations.RunPython(migration_utils.set_current_apps_for_migrations),
+        migrations.RunPython(migrate_workflow_cred),
         migrations.RemoveField(
             model_name='workflowjobnode',
             name='credential',

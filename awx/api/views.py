@@ -615,7 +615,7 @@ class LaunchConfigCredentialsBase(SubListAttachDetachAPIView):
 
     def is_valid_relation(self, parent, sub, created=False):
         # TODO: change field name after multi-cred merge
-        ask_field_name = ask_mapping['credential']
+        ask_field_name = ask_mapping[self.relationship]
         if not parent.unified_job_template:
             return {"msg": _("Cannot assign credential when related template is null.")}
         elif not hasattr(parent, ask_field_name):
@@ -624,9 +624,8 @@ class LaunchConfigCredentialsBase(SubListAttachDetachAPIView):
             return {"msg": _("Related template is not configured to accept credentials on launch.")}
         elif parent.credentials.filter(credential_type__kind=sub.kind).exists():
             return {"msg": _("This launch configuration already provides a {} credential.".format(sub.kind))}
-        # elif sub.pk in parent.unified_job_template.credentials.values_list('pk', flat=True):
-        #     return {"msg": _("Related template already uses {} credential.")}
-        # TODO: uncomment that final condition after multi-cred merge
+        elif sub.pk in parent.unified_job_template.credentials.values_list('pk', flat=True):
+            return {"msg": _("Related template already uses {} credential.".format(sub.name))}
 
         # None means there were no validation errors
         return None
@@ -2823,32 +2822,11 @@ class JobTemplateLaunch(RetrieveAPIView):
         prompted_fields = _accepted_or_ignored[0]
         ignored_fields.update(_accepted_or_ignored[1])
 
-<<<<<<< HEAD
-        fd = 'inventory'
-        if fd in prompted_fields and prompted_fields[fd] != getattrd(obj, '{}.pk'.format(fd), None):
-            new_res = get_object_or_400(Inventory, pk=get_pk_from_dict(prompted_fields, fd))
-            use_role = getattr(new_res, 'use_role')
-            if request.user not in use_role:
-                raise PermissionDenied()
-
-        for cred in prompted_fields.get('credentials', []):
-=======
         # TODO: use this permission check after the merge
         if not request.user.can_access(JobLaunchConfig, 'add', prompted_fields):
             raise PermissionDenied()
 
-        for fd, model in (
-                ('credential', Credential),
-                ('vault_credential', Credential),
-                ('inventory', Inventory)):
-            if fd in prompted_fields and prompted_fields[fd] != getattrd(obj, '{}.pk'.format(fd), None):
-                new_res = get_object_or_400(model, pk=get_pk_from_dict(prompted_fields, fd))
-                use_role = getattr(new_res, 'use_role')
-                if request.user not in use_role:
-                    raise PermissionDenied()
-
-        for cred in prompted_fields.get('extra_credentials', []):
->>>>>>> Feature: saved launchtime configurations
+        for cred in prompted_fields.get('credentials', []):
             new_credential = get_object_or_400(Credential, pk=cred)
             if request.user not in new_credential.use_role:
                 raise PermissionDenied()

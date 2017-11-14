@@ -227,12 +227,6 @@ for field in JobOptions._meta.fields:
     ask_mapping[field.name] = field._ask_var
 
 
-# Special cases TODO: remove after multi-cred merge
-ask_mapping['vault_credential'] = 'ask_credential_on_launch'
-ask_mapping['extra_credentials'] = 'ask_credential_on_launch'
-ask_mapping['credentials'] = 'ask_credential_on_launch'
-
-
 class LaunchTimeConfig(BaseModel):
     '''
     Common model for all objects that save details of a saved launch config
