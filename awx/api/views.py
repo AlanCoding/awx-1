@@ -81,7 +81,6 @@ from awx.api.serializers import * # noqa
 from awx.api.metadata import RoleMetadata, JobTypeMetadata
 from awx.main.consumers import emit_channel_notification
 from awx.main.models.unified_jobs import ACTIVE_STATES
-from awx.main.models.jobs import ask_mapping
 from awx.main.scheduler.tasks import run_job_complete
 
 logger = logging.getLogger('awx.api.views')
@@ -614,13 +613,14 @@ class LaunchConfigCredentialsBase(SubListAttachDetachAPIView):
     relationship = 'credentials'
 
     def is_valid_relation(self, parent, sub, created=False):
-        # TODO: change field name after multi-cred merge
-        ask_field_name = ask_mapping[self.relationship]
         if not parent.unified_job_template:
             return {"msg": _("Cannot assign credential when related template is null.")}
-        elif not hasattr(parent, ask_field_name):
+        elif self.relationship not in parent.unified_job_template.ask_mapping:
             return {"msg": _("Related template cannot accept credentials on launch.")}
-        elif not getattr(parent, ask_field_name):
+
+        ask_field_name = parent.unified_job_template.ask_mapping[self.relationship]
+
+        if not getattr(parent, ask_field_name):
             return {"msg": _("Related template is not configured to accept credentials on launch.")}
         elif parent.credentials.filter(credential_type__kind=sub.kind).exists():
             return {"msg": _("This launch configuration already provides a {} credential.".format(sub.kind))}
@@ -2741,7 +2741,7 @@ class JobTemplateLaunch(RetrieveAPIView):
                 extra_vars.setdefault(v, u'')
             if extra_vars:
                 data['extra_vars'] = extra_vars
-            modified_ask_mapping = ask_mapping.copy()
+            modified_ask_mapping = JobTemplate.ask_mapping.copy()
             modified_ask_mapping.pop('extra_vars')
             for field, ask_field_name in modified_ask_mapping.items():
                 if not getattr(obj, ask_field_name):

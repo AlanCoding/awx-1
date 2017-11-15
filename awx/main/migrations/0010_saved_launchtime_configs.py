@@ -17,23 +17,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name='workflowjobtemplate',
-            name='ask_variables_on_launch',
-            field=models.BooleanField(default=False),
-        ),
-        migrations.CreateModel(
-            name='JobLaunchConfig',
-            fields=[
-                ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
-                ('extra_data', awx.main.fields.JSONField(default={}, blank=True)),
-                ('survey_passwords', awx.main.fields.JSONField(default={}, editable=False, blank=True)),
-                ('char_prompts', awx.main.fields.JSONField(default={}, blank=True)),
-                ('credentials', models.ManyToManyField(related_name='joblaunchconfigs', to='main.Credential')),
-                ('inventory', models.ForeignKey(related_name='joblaunchconfigs', on_delete=django.db.models.deletion.SET_NULL, default=None, blank=True, to='main.Inventory', null=True)),
-                ('job', models.ForeignKey(related_name='launch_configs', editable=False, to='main.UnifiedJob')),
-            ],
-        ),
-        migrations.AddField(
             model_name='schedule',
             name='char_prompts',
             field=awx.main.fields.JSONField(default={}, blank=True),
@@ -84,8 +67,8 @@ class Migration(migrations.Migration):
             field=awx.main.fields.JSONField(default={}, editable=False, blank=True),
         ),
         # Run data migration before removing the old credential field
-        migrations.RunPython(migration_utils.set_current_apps_for_migrations),
-        migrations.RunPython(migrate_workflow_cred),
+        migrations.RunPython(migration_utils.set_current_apps_for_migrations, lambda x, y: None),
+        migrations.RunPython(migrate_workflow_cred, lambda x, y: None),
         migrations.RemoveField(
             model_name='workflowjobnode',
             name='credential',
@@ -93,5 +76,67 @@ class Migration(migrations.Migration):
         migrations.RemoveField(
             model_name='workflowjobtemplatenode',
             name='credential',
+        ),
+        migrations.CreateModel(
+            name='JobLaunchConfig',
+            fields=[
+                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('extra_data', awx.main.fields.JSONField(blank=True, default={})),
+                ('survey_passwords', awx.main.fields.JSONField(blank=True, default={}, editable=False)),
+                ('char_prompts', awx.main.fields.JSONField(blank=True, default={})),
+                ('credentials', models.ManyToManyField(related_name='joblaunchconfigs', to='main.Credential')),
+                ('inventory', models.ForeignKey(blank=True, default=None, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='joblaunchconfigs', to='main.Inventory')),
+                ('job', models.OneToOneField(editable=False, on_delete=django.db.models.deletion.CASCADE, related_name='launch_configs', to='main.UnifiedJob')),
+            ],
+        ),
+        migrations.AddField(
+            model_name='workflowjobtemplate',
+            name='ask_variables_on_launch',
+            field=awx.main.fields.AskForField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='jobtemplate',
+            name='ask_credential_on_launch',
+            field=awx.main.fields.AskForField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='jobtemplate',
+            name='ask_diff_mode_on_launch',
+            field=awx.main.fields.AskForField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='jobtemplate',
+            name='ask_inventory_on_launch',
+            field=awx.main.fields.AskForField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='jobtemplate',
+            name='ask_job_type_on_launch',
+            field=awx.main.fields.AskForField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='jobtemplate',
+            name='ask_limit_on_launch',
+            field=awx.main.fields.AskForField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='jobtemplate',
+            name='ask_skip_tags_on_launch',
+            field=awx.main.fields.AskForField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='jobtemplate',
+            name='ask_tags_on_launch',
+            field=awx.main.fields.AskForField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='jobtemplate',
+            name='ask_variables_on_launch',
+            field=awx.main.fields.AskForField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='jobtemplate',
+            name='ask_verbosity_on_launch',
+            field=awx.main.fields.AskForField(default=False),
         ),
     ]

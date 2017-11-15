@@ -25,7 +25,6 @@ from awx.main.utils import (
 )
 from awx.main.models import * # noqa
 from awx.main.models.unified_jobs import ACTIVE_STATES
-from awx.main.models.jobs import ask_mapping
 from awx.main.models.mixins import ResourceMixin
 
 from awx.conf.license import LicenseForbids, feature_enabled
@@ -1406,7 +1405,7 @@ class JobAccess(BaseAccess):
             prompts_access = True
             job_fields = {}
             jt_credentials = set(obj.job_template.credentials.all())
-            for fd in ask_mapping.keys():
+            for fd in JobTemplate.ask_mapping.keys():
                 if fd == 'credentials':
                     job_fields[fd] = job_credentials
                 job_fields[fd] = getattr(obj, fd)

@@ -14,7 +14,7 @@ from awx.main.models.rbac import (
     Role, RoleAncestorEntry, get_roles_on_resource
 )
 from awx.main.utils import parse_yaml_or_json
-from awx.main.fields import JSONField
+from awx.main.fields import JSONField, AskForField
 
 
 __all__ = ['ResourceMixin', 'SurveyJobTemplateMixin', 'SurveyJobMixin',
@@ -93,9 +93,10 @@ class SurveyJobTemplateMixin(models.Model):
         blank=True,
         default={},
     ))
-    ask_variables_on_launch = models.BooleanField(
+    ask_variables_on_launch = AskForField(
         blank=True,
         default=False,
+        allows_field='extra_vars'
     )
 
     def survey_password_variables(self):

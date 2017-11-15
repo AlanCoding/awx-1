@@ -41,7 +41,7 @@ from awx.main.utils import (
 from awx.main.fields import ImplicitRoleField
 from awx.main.models.mixins import ResourceMixin, SurveyJobTemplateMixin, SurveyJobMixin, TaskManagerJobMixin
 from awx.main.models.base import PERM_INVENTORY_SCAN
-from awx.main.fields import JSONField
+from awx.main.fields import JSONField, AskForField
 
 from awx.main.consumers import emit_channel_notification
 
@@ -62,23 +62,23 @@ class JobOptions(BaseModel):
     class Meta:
         abstract = True
 
-    diff_mode = mark_ask(models.BooleanField(
+    diff_mode = models.BooleanField(
         default=False,
         help_text=_("If enabled, textual changes made to any templated files on the host are shown in the standard output"),
-    ))
-    job_type = mark_ask(models.CharField(
+    )
+    job_type = models.CharField(
         max_length=64,
         choices=JOB_TYPE_CHOICES,
         default='run',
-    ))
-    inventory = mark_ask(models.ForeignKey(
+    )
+    inventory = models.ForeignKey(
         'Inventory',
         related_name='%(class)ss',
         blank=True,
         null=True,
         default=None,
         on_delete=models.SET_NULL,
-    ))
+    )
     project = models.ForeignKey(
         'Project',
         related_name='%(class)ss',
@@ -96,34 +96,34 @@ class JobOptions(BaseModel):
         blank=True,
         default=0,
     )
-    limit = mark_ask(models.CharField(
+    limit = models.CharField(
         max_length=1024,
         blank=True,
         default='',
-    ))
-    verbosity = mark_ask(models.PositiveIntegerField(
+    )
+    verbosity = models.PositiveIntegerField(
         choices=VERBOSITY_CHOICES,
         blank=True,
         default=0,
-    ))
-    extra_vars = mark_ask(prevent_search(models.TextField(
+    )
+    extra_vars = prevent_search(models.TextField(
         blank=True,
         default='',
-    )), ask_alias='variables')
-    job_tags = mark_ask(models.CharField(
+    ))
+    job_tags = models.CharField(
         max_length=1024,
         blank=True,
         default='',
-    ), ask_alias='tags')
+    )
     force_handlers = models.BooleanField(
         blank=True,
         default=False,
     )
-    skip_tags = mark_ask(models.CharField(
+    skip_tags = models.CharField(
         max_length=1024,
         blank=True,
         default='',
-    ))
+    )
     start_at_task = models.CharField(
         max_length=1024,
         blank=True,
@@ -216,145 +216,6 @@ class JobOptions(BaseModel):
         return needed
 
 
-ask_mapping = {}
-for field in JobOptions._meta.fields:
-    if not hasattr(field, '_ask_var'):
-        continue
-    if field._ask_var == '__default__':
-        field._ask_var = 'ask_{}_on_launch'.format(field.name)
-    else:
-        field._ask_var = 'ask_{}_on_launch'.format(field._ask_var)
-    ask_mapping[field.name] = field._ask_var
-
-
-class LaunchTimeConfig(BaseModel):
-    '''
-    Common model for all objects that save details of a saved launch config
-    WFJT / WJ nodes, schedules, and job launch configs (not all implemented yet)
-    '''
-    class Meta:
-        abstract = True
-
-    # Prompting-related fields that have to be handled as special cases
-    credentials = models.ManyToManyField(
-        'Credential',
-        related_name='%(class)ss'
-    )
-    inventory = models.ForeignKey(
-        'Inventory',
-        related_name='%(class)ss',
-        blank=True,
-        null=True,
-        default=None,
-        on_delete=models.SET_NULL,
-    )
-    extra_data = JSONField(
-        blank=True,
-        default={}
-    )
-    survey_passwords = prevent_search(JSONField(
-        blank=True,
-        default={},
-        editable=False,
-    ))
-    # All standard fields are stored in this dictionary field
-    # This is a solution to the nullable CharField problem, specific to prompting
-    char_prompts = JSONField(
-        blank=True,
-        default={}
-    )
-
-    def prompts_dict(self):
-        data = {}
-        field_names = [field.name for field in self._meta.fields]
-        # ManyToManyField not picked up in normal field list
-        field_names.append('credentials')
-        for prompt_name in ask_mapping.keys():
-            if prompt_name in field_names:
-                field = self._meta.get_field(prompt_name)
-                if isinstance(field, models.ForeignKey):
-                    prompt_val = getattr(self, '{}_id'.format(prompt_name))
-                    if prompt_val is not None:
-                        data[prompt_name] = prompt_val
-                elif isinstance(field, models.ManyToManyField):
-                    if not self.pk:
-                        # unsaved object can't have related many-to-many
-                        continue
-                    prompt_val = getattr(self, prompt_name).values_list('pk', flat=True)
-                    if len(prompt_val) > 0:
-                        data[prompt_name] = prompt_val
-                else:
-                    # TODO process extra vars
-                    pass
-            elif prompt_name in self.char_prompts:
-                data[prompt_name] = self.char_prompts[prompt_name]
-        return data
-
-    @property
-    def _credential(self):
-        '''
-        Only used for workflow nodes to support backward compatibility.
-        '''
-        try:
-            return [cred for cred in self.credentials.all() if cred.credential_type.kind == 'ssh'][0]
-        except IndexError:
-            return None
-
-    @property
-    def credential(self):
-        '''
-        Returns an integer so it can be used as IntegerField in serializer
-        '''
-        cred = self._credential
-        if cred is not None:
-            return cred.pk
-        else:
-            return None
-
-
-# Add on aliases for the non-related-model fields
-class NullablePromptPsuedoField(object):
-    """
-    Interface for psuedo-property stored in `char_prompts` dict
-    """
-    def __init__(self, field_name):
-        self.field_name = field_name
-
-    def __get__(self, instance, type=None):
-        return instance.char_prompts.get(self.field_name, None)
-
-    def __set__(self, instance, value):
-        if value in (None, {}):
-            instance.char_prompts.pop(self.field_name, None)
-        else:
-            instance.char_prompts[self.field_name] = value
-
-
-for field in JobOptions._meta.fields:
-    if hasattr(field, '_ask_var'):
-        try:
-            LaunchTimeConfig._meta.get_field(field.name)
-        except FieldDoesNotExist:
-            setattr(LaunchTimeConfig, field.name, NullablePromptPsuedoField(field.name))
-
-
-class JobLaunchConfig(LaunchTimeConfig):
-    '''
-    Historical record of user launch-time overrides for a job
-    Not exposed in the API
-    Used for relaunch, scheduling, etc.
-    '''
-    class Meta:
-        app_label = 'main'
-
-    job = models.ForeignKey(
-        'UnifiedJob',
-        related_name='launch_configs',
-        on_delete=models.CASCADE,
-        editable=False,
-    )
-
-
 class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, ResourceMixin):
     '''
     A job template is a reusable job definition for applying a project (with
@@ -372,37 +233,39 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         blank=True,
         default='',
     )
-    ask_diff_mode_on_launch = models.BooleanField(
+    ask_diff_mode_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_limit_on_launch = models.BooleanField(
+    ask_limit_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_tags_on_launch = models.BooleanField(
+    ask_tags_on_launch = AskForField(
+        blank=True,
+        default=False,
+        allows_field='job_tags'
+    )
+    ask_skip_tags_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_skip_tags_on_launch = models.BooleanField(
+    ask_job_type_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_job_type_on_launch = models.BooleanField(
+    ask_verbosity_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_verbosity_on_launch = models.BooleanField(
+    ask_inventory_on_launch = AskForField(
         blank=True,
         default=False,
     )
-    ask_inventory_on_launch = models.BooleanField(
+    ask_credential_on_launch = AskForField(
         blank=True,
         default=False,
-    )
-    ask_credential_on_launch = models.BooleanField(
-        blank=True,
-        default=False,
+        allows_field='credentials'
     )
     admin_role = ImplicitRoleField(
         parent_role=['project.organization.admin_role', 'inventory.organization.admin_role']
@@ -482,7 +345,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         # that of job template launch, so prompting_needed should
         # not block a provisioning callback from creating/launching jobs.
         if callback_extra_vars is None:
-            for ask_field_name in set(ask_mapping.values()):
+            for ask_field_name in set(self.ask_mapping.values()):
                 if getattr(self, ask_field_name):
                     prompting_needed = True
                     break
@@ -494,7 +357,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         prompted_fields, ignored_fields, errors_dict = self._accept_or_ignore_extra_vars(**kwargs)
 
         # Handle all the other fields that follow the simple prompting rule
-        for field, ask_field_name in ask_mapping.items():
+        for field, ask_field_name in self.ask_mapping.items():
             # TODO: move logic about null fields on JT to here
             if field not in kwargs or field == 'extra_vars':
                 continue
@@ -687,7 +550,7 @@ class Job(UnifiedJob, JobOptions, SurveyJobMixin, JobNotificationMixin, TaskMana
         many_related = {}
         is_null = True
         obj = JobLaunchConfig(job=self)
-        for field_name in ask_mapping.keys():
+        for field_name in JobTemplate.ask_mapping.keys():
             if field_name not in validated_data or validated_data[field_name] in (None, {}, []):
                 continue
             is_null = False
@@ -926,6 +789,135 @@ class Job(UnifiedJob, JobOptions, SurveyJobMixin, JobNotificationMixin, TaskMana
                     extra=dict(inventory_id=host.inventory.id, host_name=host.name,
                                ansible_facts=host.ansible_facts,
                                ansible_facts_modified=host.ansible_facts_modified.isoformat()))
+
+
+# Add on aliases for the non-related-model fields
+class NullablePromptPsuedoField(object):
+    """
+    Interface for psuedo-property stored in `char_prompts` dict
+    Used in LaunchTimeConfig and submodels
+    """
+    def __init__(self, field_name):
+        self.field_name = field_name
+
+    def __get__(self, instance, type=None):
+        return instance.char_prompts.get(self.field_name, None)
+
+    def __set__(self, instance, value):
+        if value in (None, {}):
+            instance.char_prompts.pop(self.field_name, None)
+        else:
+            instance.char_prompts[self.field_name] = value
+
+
+class LaunchTimeConfig(BaseModel):
+    '''
+    Common model for all objects that save details of a saved launch config
+    WFJT / WJ nodes, schedules, and job launch configs (not all implemented yet)
+    '''
+    class Meta:
+        abstract = True
+
+    # Prompting-related fields that have to be handled as special cases
+    credentials = models.ManyToManyField(
+        'Credential',
+        related_name='%(class)ss'
+    )
+    inventory = models.ForeignKey(
+        'Inventory',
+        related_name='%(class)ss',
+        blank=True,
+        null=True,
+        default=None,
+        on_delete=models.SET_NULL,
+    )
+    extra_data = JSONField(
+        blank=True,
+        default={}
+    )
+    survey_passwords = prevent_search(JSONField(
+        blank=True,
+        default={},
+        editable=False,
+    ))
+    # All standard fields are stored in this dictionary field
+    # This is a solution to the nullable CharField problem, specific to prompting
+    char_prompts = JSONField(
+        blank=True,
+        default={}
+    )
+
+    def prompts_dict(self):
+        data = {}
+        field_names = [field.name for field in self._meta.fields]
+        # ManyToManyField not picked up in normal field list
+        field_names.append('credentials')
+        for prompt_name in JobTemplate.ask_mapping.keys():
+            if prompt_name in field_names:
+                field = self._meta.get_field(prompt_name)
+                if isinstance(field, models.ForeignKey):
+                    prompt_val = getattr(self, '{}_id'.format(prompt_name))
+                    if prompt_val is not None:
+                        data[prompt_name] = prompt_val
+                elif isinstance(field, models.ManyToManyField):
+                    if not self.pk:
+                        # unsaved object can't have related many-to-many
+                        continue
+                    prompt_val = getattr(self, prompt_name).values_list('pk', flat=True)
+                    if len(prompt_val) > 0:
+                        data[prompt_name] = prompt_val
+                else:
+                    # TODO process extra vars
+                    pass
+            elif prompt_name in self.char_prompts:
+                data[prompt_name] = self.char_prompts[prompt_name]
+        return data
+
+    @property
+    def _credential(self):
+        '''
+        Only used for workflow nodes to support backward compatibility.
+        '''
+        try:
+            return [cred for cred in self.credentials.all() if cred.credential_type.kind == 'ssh'][0]
+        except IndexError:
+            return None
+
+    @property
+    def credential(self):
+        '''
+        Returns an integer so it can be used as IntegerField in serializer
+        '''
+        cred = self._credential
+        if cred is not None:
+            return cred.pk
+        else:
+            return None
+
+
+for field in JobOptions._meta.fields:
+    if hasattr(field, '_ask_var'):
+        try:
+            LaunchTimeConfig._meta.get_field(field.name)
+        except FieldDoesNotExist:
+            setattr(LaunchTimeConfig, field.name, NullablePromptPsuedoField(field.name))
+
+
+class JobLaunchConfig(LaunchTimeConfig):
+    '''
+    Historical record of user launch-time overrides for a job
+    Not exposed in the API
+    Used for relaunch, scheduling, etc.
+    '''
+    class Meta:
+        app_label = 'main'
+
+    job = models.OneToOneField(
+        'UnifiedJob',
+        related_name='launch_configs',
+        on_delete=models.CASCADE,
+        editable=False,
+    )
 
 
 class JobHostSummary(CreatedModifiedModel):

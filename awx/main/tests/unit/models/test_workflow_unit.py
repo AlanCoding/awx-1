@@ -260,3 +260,6 @@ class TestWorkflowWarnings:
         assert 'job_type' in job_node_with_prompts.get_prompts_warnings()['ignored']
         assert len(job_node_with_prompts.get_prompts_warnings()['ignored']) == 1
 
+
+def test_ask_mapping_integrity():
+    assert WorkflowJobTemplate.ask_mapping.keys() == ['extra_vars']

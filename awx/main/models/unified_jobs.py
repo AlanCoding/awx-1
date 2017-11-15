@@ -36,11 +36,12 @@ from awx.main.models.mixins import ResourceMixin, TaskManagerUnifiedJobMixin
 from awx.main.utils import (
     decrypt_field, _inventory_updates,
     copy_model_by_class, copy_m2m_relationships,
-    get_type_for_model, parse_yaml_or_json
+    get_type_for_model, parse_yaml_or_json,
+    cached_subclassproperty
 )
 from awx.main.redact import UriCleaner, REPLACE_STR
 from awx.main.consumers import emit_channel_notification
-from awx.main.fields import JSONField
+from awx.main.fields import JSONField, AskForField
 
 __all__ = ['UnifiedJobTemplate', 'UnifiedJob']
 
@@ -151,10 +152,10 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         default='ok',
         editable=False,
     )
-    credentials = mark_ask(models.ManyToManyField(
+    credentials = models.ManyToManyField(
         'Credential',
         related_name='%(class)ss',
-    ), ask_alias='credential')
+    )
     labels = models.ManyToManyField(
         "Label",
         blank=True,
@@ -371,6 +372,19 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         with disable_activity_stream():
             copy_m2m_relationships(self, unified_job, fields, kwargs=kwargs)
         return unified_job
+
+    @cached_subclassproperty
+    def ask_mapping(cls):
+        mapping = {}
+        for field in cls._meta.fields:
+            if not isinstance(field, AskForField):
+                continue
+            if field.allows_field == '__default__':
+                allows_field = field.name.rstrip('_on_launch').lstrip('_ask')
+            else:
+                allows_field = field.allows_field
+            mapping[allows_field] = field.name
+        return mapping
 
     @classmethod
     def _get_unified_jt_copy_names(cls):
