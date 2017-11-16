@@ -188,17 +188,15 @@ def test_user_provides_nullish_prompts(runtime_data, job_template_prompts, post,
 
     with mocker.patch.object(JobTemplate, 'create_unified_job', return_value=mock_job):
         with mocker.patch('awx.api.serializers.JobSerializer.to_representation'):
-            # TODO: change extra_credentials to credentials after merge
             response = post(
                 reverse('api:job_template_launch', kwargs={'pk': job_template.pk}),
                 {
-                    "extra_credentials": [],
                     "extra_vars": {},
                     "job_tags": None,
                     "limit": ""
                 }, rando, expect=201)
             assert JobTemplate.create_unified_job.called
-            assert JobTemplate.create_unified_job.call_args == (dict(job_tags=None, limit="", extra_credentials=[]),)
+            assert JobTemplate.create_unified_job.call_args == (dict(limit=""),)
 
     job_id = response.data['job']
     assert job_id == 968

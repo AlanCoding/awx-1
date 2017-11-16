@@ -413,12 +413,12 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         according to the acceptance rules of the template.
         '''
         if errors is None:
-            errors = []
+            errors = {}
         if not isinstance(data, dict):
             try:
                 data = parse_yaml_or_json(data, silent_failure=False)
             except ParseError as exc:
-                errors.append(str(exc))
+                errors['extra_vars'] = [str(exc)]
                 return ({}, data, errors)
         if hasattr(self, '_accept_or_ignore_variables'):
             # SurveyJobTemplateMixin cannot override any methods because of
@@ -426,9 +426,9 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
             # thus the need for hasattr check
             return self._accept_or_ignore_variables(data, errors)
         elif data:
-            errors.append(
+            errors['extra_vars'] = [
                 _('Variables {list_of_keys} provided, but this template cannot accept variables.'.format(
-                    list_of_keys=', '.join(data.keys()))))
+                    list_of_keys=', '.join(data.keys())))]
         return ({}, data, errors)
 
 

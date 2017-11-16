@@ -354,20 +354,34 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
                 not variables_needed)
 
     def _accept_or_ignore_job_kwargs(self, **kwargs):
-        prompted_fields, ignored_fields, errors_dict = self._accept_or_ignore_extra_vars(**kwargs)
+        prompted_fields = {}
+        rejected_fields = {}
+        accepted_vars, rejected_vars, errors_dict = self.accept_or_ignore_variables(kwargs.get('extra_vars', {}))
+        if accepted_vars:
+            prompted_fields['extra_vars'] = accepted_vars
+        if rejected_vars:
+            rejected_fields['extra_vars'] = rejected_vars
 
         # Handle all the other fields that follow the simple prompting rule
-        for field, ask_field_name in self.ask_mapping.items():
+        for field_name, ask_field_name in self.ask_mapping.items():
             # TODO: move logic about null fields on JT to here
-            if field not in kwargs or field == 'extra_vars':
+            if field_name not in kwargs or field_name == 'extra_vars':
                 continue
+            # Fields that are not going to have any effect
+            if kwargs[field_name] is None:
+                continue
+            # Recognize a no-op by comparing to the underlying template
+            field = self._meta.get_field(field_name)
+            if isinstance(field, models.ManyToManyField):
+                if set(kwargs[field_name]) == set(getattr(self, field_name).values_list('id', flat=True)):
+                    continue
             if getattr(self, ask_field_name):
-                prompted_fields[field] = kwargs[field]
+                prompted_fields[field_name] = kwargs[field_name]
             else:
-                ignored_fields[field] = kwargs[field]
-                errors_dict[field] = _('Field is not configured to prompt on launch.').format(field_name=field)
+                rejected_fields[field_name] = kwargs[field_name]
+                errors_dict[field_name] = _('Field is not configured to prompt on launch.').format(field_name=field_name)
 
-        return prompted_fields, ignored_fields, errors_dict
+        return prompted_fields, rejected_fields, errors_dict
 
     def _extra_job_type_errors(self, data):
         """

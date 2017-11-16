@@ -233,24 +233,29 @@ class SurveyJobTemplateMixin(models.Model):
                                                                                    choice_list))
         return errors
 
-    def _accept_or_ignore_variables(self, data, errors):
+    def _accept_or_ignore_variables(self, data, errors=None):
         survey_is_enabled = (self.survey_enabled and self.survey_spec)
         extra_vars = data.copy()
+        if errors is None:
+            errors = {}
         rejected = {}
         accepted = {}
 
         if survey_is_enabled:
             # Check for data violation of survey rules
+            survey_errors = []
             for survey_element in self.survey_spec.get("spec", []):
                 element_errors = self._survey_element_validation(survey_element, data)
                 key = survey_element.get('variable', None)
 
                 if element_errors:
-                    errors += element_errors
+                    survey_errors += element_errors
                     if key is not None and key in extra_vars:
                         rejected[key] = extra_vars.pop(key)
                 else:
                     accepted[key] = extra_vars.pop(key)
+            if survey_errors:
+                errors['variables_needed_to_start'] = survey_errors
 
         if self.ask_variables_on_launch:
             # We can accept all variables
@@ -259,29 +264,11 @@ class SurveyJobTemplateMixin(models.Model):
 
         if extra_vars:
             # Leftover extra_vars, keys provided that are not allowed
-            errors.append(_('Variables {list_of_keys} are not allowed on launch.').format(
-                list_of_keys=', '.join(extra_vars.keys())))
+            errors['extra_vars'] = [_('Variables {list_of_keys} are not allowed on launch.').format(
+                list_of_keys=', '.join(extra_vars.keys()))]
             rejected.update(extra_vars)
 
         return (accepted, rejected, errors)
-
-    def _accept_or_ignore_extra_vars(self, **kwargs):
-        # Sort the runtime fields allowed and disallowed by template
-        ignored_fields = {}
-        prompted_fields = {}
-        errors = {}
-
-        # Handle extra_vars in its own special way
-        accepted_extra_vars, rejected_extra_vars, var_errors = self.accept_or_ignore_variables(
-            parse_yaml_or_json(kwargs.get('extra_vars', {})), [])
-        if accepted_extra_vars:
-            prompted_fields['extra_vars'] = accepted_extra_vars
-        if rejected_extra_vars:
-            ignored_fields['extra_vars'] = rejected_extra_vars
-        if var_errors:
-            errors['variables_needed_to_start'] = var_errors
-
-        return prompted_fields, ignored_fields, errors
 
 
 class SurveyJobMixin(models.Model):
