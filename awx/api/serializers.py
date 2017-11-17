@@ -3658,11 +3658,6 @@ class ScheduleSerializer(LaunchConfigurationBaseSerializer):
                 'Schedule its source project `{}` instead.'.format(value.source_project.name)))
         return value
 
-    def validate_extra_data(self, value):
-        if isinstance(value, dict):
-            return value
-        return vars_validate_or_raise(value)
-
     def validate(self, attrs):
         extra_data = parse_yaml_or_json(attrs.get('extra_data', {}))
         if extra_data:
@@ -3673,7 +3668,7 @@ class ScheduleSerializer(LaunchConfigurationBaseSerializer):
                 ujt = self.instance.unified_job_template
             accepted, rejected, errors = ujt.accept_or_ignore_variables(extra_data)
             if errors:
-                raise serializers.ValidationError({'extra_data': errors})
+                raise serializers.ValidationError({'extra_data': errors['extra_vars']})
         return super(ScheduleSerializer, self).validate(attrs)
 
     # We reject rrules if:

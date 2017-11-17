@@ -618,15 +618,20 @@ class LaunchConfigCredentialsBase(SubListAttachDetachAPIView):
             return {"msg": _("Cannot assign credential when related template is null.")}
         elif self.relationship not in parent.unified_job_template.ask_mapping:
             return {"msg": _("Related template cannot accept credentials on launch.")}
+        elif sub.passwords_needed:
+            return {"msg": _("Credential that requires user input on launch "
+                             "cannot be used in saved launch configuration.")}
 
         ask_field_name = parent.unified_job_template.ask_mapping[self.relationship]
 
         if not getattr(parent, ask_field_name):
             return {"msg": _("Related template is not configured to accept credentials on launch.")}
-        elif parent.credentials.filter(credential_type__kind=sub.kind).exists():
-            return {"msg": _("This launch configuration already provides a {} credential.".format(sub.kind))}
+        elif sub.kind != 'vault' and parent.credentials.filter(credential_type__kind=sub.kind).exists():
+            return {"msg": _("This launch configuration already provides a {credential_type} credential.".format(
+                credential_type=sub.kind))}
         elif sub.pk in parent.unified_job_template.credentials.values_list('pk', flat=True):
-            return {"msg": _("Related template already uses {} credential.".format(sub.name))}
+            return {"msg": _("Related template already uses {credential_type} credential.".format(
+                credential_type=sub.name))}
 
         # None means there were no validation errors
         return None

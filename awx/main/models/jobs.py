@@ -364,22 +364,28 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
 
         # Handle all the other fields that follow the simple prompting rule
         for field_name, ask_field_name in self.ask_mapping.items():
-            # TODO: move logic about null fields on JT to here
-            if field_name not in kwargs or field_name == 'extra_vars':
+            if field_name not in kwargs or field_name == 'extra_vars' or kwargs[field_name] in (None, []):
+                if field_name == 'inventory' and not self.inventory:
+                    errors_dict['resources_needed_to_start'] = [_("Job Template inventory is missing or undefined.")]
                 continue
-            # Fields that are not going to have any effect
-            if kwargs[field_name] is None:
-                continue
-            # Recognize a no-op by comparing to the underlying template
+
+            new_value = kwargs[field_name]
+
+            # Special processing of no-ops for many-to-many field
             field = self._meta.get_field(field_name)
             if isinstance(field, models.ManyToManyField):
-                if set(kwargs[field_name]) == set(getattr(self, field_name).values_list('id', flat=True)):
+                new_value = set(kwargs[field_name]) - set(getattr(self, field_name).values_list('id', flat=True))
+                if not new_value:
                     continue
+
             if getattr(self, ask_field_name):
-                prompted_fields[field_name] = kwargs[field_name]
+                prompted_fields[field_name] = new_value
             else:
-                rejected_fields[field_name] = kwargs[field_name]
+                rejected_fields[field_name] = new_value
                 errors_dict[field_name] = _('Field is not configured to prompt on launch.').format(field_name=field_name)
+
+        if not self.project_id:
+            errors_dict.setdefault('resources_needed_to_start', []).append(_("Job Template project is missing or undefined."))
 
         return prompted_fields, rejected_fields, errors_dict
 
@@ -909,12 +915,11 @@ class LaunchTimeConfig(BaseModel):
             return None
 
 
-for field in JobOptions._meta.fields:
-    if hasattr(field, '_ask_var'):
-        try:
-            LaunchTimeConfig._meta.get_field(field.name)
-        except FieldDoesNotExist:
-            setattr(LaunchTimeConfig, field.name, NullablePromptPsuedoField(field.name))
+for field_name in JobTemplate.ask_mapping.keys():
+    try:
+        LaunchTimeConfig._meta.get_field(field_name)
+    except FieldDoesNotExist:
+        setattr(LaunchTimeConfig, field_name, NullablePromptPsuedoField(field_name))
 
 
 class JobLaunchConfig(LaunchTimeConfig):
@@ -1544,8 +1549,9 @@ class SystemJobTemplate(UnifiedJobTemplate, SystemJobOptions):
         allowed_vars = set(['days', 'older_than', 'granularity'])
         given_vars = set(data.keys())
         unallowed_vars = given_vars - (allowed_vars & given_vars)
+        errors_list = []
         if unallowed_vars:
-            errors.append(_('Variables {list_of_keys} are not allowed for system jobs.').format(
+            errors_list.append(_('Variables {list_of_keys} are not allowed for system jobs.').format(
                 list_of_keys=', '.join(unallowed_vars)))
             for key in unallowed_vars:
                 rejected[key] = data.pop(key)
@@ -1560,9 +1566,11 @@ class SystemJobTemplate(UnifiedJobTemplate, SystemJobOptions):
                 if days < 0:
                     raise ValueError
             except ValueError:
-                errors.append(_("days must be a positive integer."))
+                errors_list.append(_("days must be a positive integer."))
                 rejected['days'] = data.pop('days')
 
+        if errors_list:
+            errors['extra_vars'] = errors_list
         return (data, rejected, errors)
 
 

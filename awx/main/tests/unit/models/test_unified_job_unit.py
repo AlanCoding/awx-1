@@ -15,7 +15,7 @@ def test_incorrectly_formatted_variables():
     accepted, ignored, errors = UnifiedJobTemplate().accept_or_ignore_variables(bad_data)
     assert not accepted
     assert ignored == bad_data
-    assert 'Cannot parse as JSON' in str(errors[0])
+    assert 'Cannot parse as JSON' in str(errors['extra_vars'][0])
 
 
 def test_unified_job_workflow_attributes():

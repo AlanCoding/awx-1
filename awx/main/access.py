@@ -1408,6 +1408,7 @@ class JobAccess(BaseAccess):
             for fd in JobTemplate.ask_mapping.keys():
                 if fd == 'credentials':
                     job_fields[fd] = job_credentials
+                    continue
                 job_fields[fd] = getattr(obj, fd)
             accepted_fields, ignored_fields, errors = obj.job_template._accept_or_ignore_job_kwargs(**job_fields)
             # Check if job fields are not allowed by current _on_launch settings

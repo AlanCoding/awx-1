@@ -33,15 +33,15 @@ def test_valid__clean_extra_data_system_jobs(extra_data):
 ])
 def test_invalid__extra_data_system_jobs(extra_data):
     accepted, rejected, errors = SystemJobTemplate().accept_or_ignore_variables(extra_data)
-    assert str(errors[0]) == u'days must be a positive integer.'
+    assert str(errors['extra_vars'][0]) == u'days must be a positive integer.'
 
 
 def test_unallowed_system_job_data():
     sjt = SystemJobTemplate()
-    accepted, ignored, errors = sjt._accept_or_ignore_variables({
+    accepted, ignored, errors = sjt.accept_or_ignore_variables({
         'days': 34,
         'foobar': 'baz'
-    }, [])
+    })
     assert 'foobar' in ignored
     assert 'days' in accepted
 

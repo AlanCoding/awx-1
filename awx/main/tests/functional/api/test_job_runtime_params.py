@@ -266,8 +266,6 @@ def test_job_launch_fails_without_credential_access(job_template_prompts, runtim
     response = post(reverse('api:job_template_launch', kwargs={'pk':job_template.pk}),
                     dict(credentials=runtime_data['credentials']), rando, expect=403)
 
-    assert response.data['detail'] == u'You do not have access to credential runtime-cred'
-
 
 @pytest.mark.django_db
 @pytest.mark.job_runtime_vars
@@ -475,7 +473,7 @@ def test_job_launch_unprompted_vars_with_survey(mocker, survey_spec_factory, job
             with mocker.patch('awx.api.serializers.JobSerializer.to_representation', return_value={}):
                 response = post(
                     reverse('api:job_template_launch', kwargs={'pk':job_template.pk}),
-                    dict(extra_vars={"job_launch_var": 3, "survey_var": 4}),
+                    dict(extra_vars={"job_launch_var": 3}),
                     admin_user, expect=400)
                 assert not JobTemplate.create_unified_job.called
                 assert not JobTemplate.create_unified_job.call_args == ({'extra_vars':{'survey_var': 4}},)

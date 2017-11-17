@@ -380,7 +380,8 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
             if not isinstance(field, AskForField):
                 continue
             if field.allows_field == '__default__':
-                allows_field = field.name.rstrip('_on_launch').lstrip('_ask')
+                allows_field = field.name[len('ask_'):-len('_on_launch')]
+                # allows_field = field.name.rstrip('_on_launch').lstrip('_ask')
             else:
                 allows_field = field.allows_field
             mapping[allows_field] = field.name
