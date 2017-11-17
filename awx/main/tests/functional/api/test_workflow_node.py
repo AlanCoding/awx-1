@@ -8,6 +8,16 @@ from awx.main.models.credential import Credential
 
 
 @pytest.fixture
+def job_template(inventory, project):
+    # need related resources set for these tests
+    return JobTemplate.objects.create(
+        name='test-job_template',
+        inventory=inventory,
+        project=project
+    )
+
+
+@pytest.fixture
 def node(workflow_job_template, post, admin_user, job_template):
     return WorkflowJobTemplateNode.objects.create(
         workflow_job_template=workflow_job_template,

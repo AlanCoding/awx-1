@@ -371,12 +371,13 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
 
             new_value = kwargs[field_name]
 
-            # Special processing of no-ops for many-to-many field
-            field = self._meta.get_field(field_name)
-            if isinstance(field, models.ManyToManyField):
-                new_value = set(kwargs[field_name]) - set(getattr(self, field_name).values_list('id', flat=True))
-                if not new_value:
-                    continue
+            # TODO: get answer on this, re-enable code
+            # # Special processing of no-ops for many-to-many field
+            # field = self._meta.get_field(field_name)
+            # if isinstance(field, models.ManyToManyField):
+            #     new_value = set(kwargs[field_name]) - set(getattr(self, field_name).values_list('id', flat=True))
+            #     if not new_value:
+            #         continue
 
             if getattr(self, ask_field_name):
                 prompted_fields[field_name] = new_value
