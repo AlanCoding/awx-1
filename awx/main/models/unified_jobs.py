@@ -344,6 +344,7 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         '''
         Create a new unified job based on this unified job template.
         '''
+        original_passwords = kwargs.pop('survey_passwords', {})
         unified_job_class = self._get_unified_job_class()
         fields = self._get_unified_job_field_names()
         unified_job = copy_model_by_class(self, unified_job_class, fields, kwargs)
@@ -361,13 +362,25 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         if hasattr(self, 'survey_spec') and getattr(self, 'survey_enabled', False):
             password_list = self.survey_password_variables()
             hide_password_dict = getattr(unified_job, 'survey_passwords', {})
+            hide_password_dict.update(original_passwords)
             for password in password_list:
                 hide_password_dict[password] = REPLACE_STR
             unified_job.survey_passwords = hide_password_dict
 
         unified_job.save()
 
-        # Labels and extra credentials copied here
+        # Labels and credentials copied here
+        if kwargs.get('credentials'):
+            # combine prompted credentials with JT
+            Credential = UnifiedJob._meta.get_field('credentials').related_model
+            cred_dict = Credential.unique_dict(self.credentials.all())
+            cred_dict.update(
+                Credential.unique_dict(
+                    Credential.objects.filter(pk__in=kwargs.get('credentials'))
+                )
+            )
+            if getattr(self, '_no_cred_merge', False):
+                kwargs['credentials'] = [cred.pk for cred in cred_dict.values()]
         from awx.main.signals import disable_activity_stream
         with disable_activity_stream():
             copy_m2m_relationships(self, unified_job, fields, kwargs=kwargs)

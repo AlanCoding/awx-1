@@ -1527,9 +1527,6 @@ class JobLaunchConfigAccess(BaseAccess):
         # launch RBAC checks use this
         if 'credentials' in data and data['credentials']:
             # If given model objects, only use the primary key from them
-            for i, cred in enumerate(list(data['credentials'])):
-                if not isinstance(cred, int):
-                    data['credentials'][i] = cred.id
             if self._unusable_creds_exist(Credential.objects.filter(pk__in=data['credentials'])):
                 return False
         return self.check_related('inventory', Inventory, data, role_field='use_role')

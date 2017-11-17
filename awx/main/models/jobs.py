@@ -364,20 +364,21 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
 
         # Handle all the other fields that follow the simple prompting rule
         for field_name, ask_field_name in self.ask_mapping.items():
-            if field_name not in kwargs or field_name == 'extra_vars' or kwargs[field_name] in (None, []):
-                if field_name == 'inventory' and not self.inventory:
-                    errors_dict['resources_needed_to_start'] = [_("Job Template inventory is missing or undefined.")]
+            if field_name not in kwargs or field_name == 'extra_vars' or kwargs[field_name] is None:
                 continue
 
             new_value = kwargs[field_name]
 
             # TODO: get answer on this, re-enable code
-            # # Special processing of no-ops for many-to-many field
-            # field = self._meta.get_field(field_name)
-            # if isinstance(field, models.ManyToManyField):
-            #     new_value = set(kwargs[field_name]) - set(getattr(self, field_name).values_list('id', flat=True))
-            #     if not new_value:
-            #         continue
+            # Special processing of no-ops for many-to-many field
+            if not getattr(self, '_no_cred_merge', False):
+                field = self._meta.get_field(field_name)
+                if isinstance(field, models.ManyToManyField):
+                    if new_value == []:
+                        continue
+                    new_value = set(kwargs[field_name]) - set(getattr(self, field_name).values_list('id', flat=True))
+                    if not new_value:
+                        continue
 
             if getattr(self, ask_field_name):
                 prompted_fields[field_name] = new_value
@@ -385,8 +386,15 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
                 rejected_fields[field_name] = new_value
                 errors_dict[field_name] = _('Field is not configured to prompt on launch.').format(field_name=field_name)
 
-        if not self.project_id:
-            errors_dict.setdefault('resources_needed_to_start', []).append(_("Job Template project is missing or undefined."))
+        needed = self.resources_needed_to_start
+        if needed:
+            needed_errors = []
+            for resource in needed:
+                if resource in prompted_fields:
+                    continue
+                needed_errors.append(_("Job Template {} is missing or undefined.").format(resource))
+            if needed_errors:
+                errors_dict['resources_needed_to_start'] = needed_errors
 
         return prompted_fields, rejected_fields, errors_dict
 

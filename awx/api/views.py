@@ -2824,22 +2824,18 @@ class JobTemplateLaunch(RetrieveAPIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        _accepted_or_ignored = obj._accept_or_ignore_job_kwargs(**request.data)
+        obj._no_cred_merge = True  # TODO: triage case of removing credentials, hopefully remove this
+        _accepted_or_ignored = obj._accept_or_ignore_job_kwargs(_no_cred_merge=True, **request.data)
         prompted_fields = _accepted_or_ignored[0]
         ignored_fields.update(_accepted_or_ignored[1])
 
-        # TODO: use this permission check after the merge
-        if not request.user.can_access(JobLaunchConfig, 'add', prompted_fields):
+        # TODO: get rid of extra step to remove the old credentials, depending on triage
+        actual_prompts = prompted_fields.copy()
+        actual_prompts['credentials'] = (
+            set(prompted_fields.get('credentials', [])) -
+            set(obj.credentials.values_list('id', flat=True)))
+        if not request.user.can_access(JobLaunchConfig, 'add', actual_prompts):
             raise PermissionDenied()
-
-        # For credentials that are _added_ via launch parameters, ensure the
-        # launching user has access
-        current_credentials = set(obj.credentials.values_list('id', flat=True))
-        for new_cred in Credential.objects.filter(id__in=prompted_fields.get('credentials', [])):
-            if new_cred.pk not in current_credentials and request.user not in new_cred.use_role:
-                raise PermissionDenied(_(
-                    "You do not have access to credential {}".format(new_cred.name)
-                ))
 
         new_job = obj.create_unified_job(**prompted_fields)
         result = new_job.signal_start(**passwords)
