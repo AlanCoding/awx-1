@@ -306,8 +306,12 @@ def awx_periodic_scheduler(self):
         if template.cache_timeout_blocked:
             logger.warn("Cache timeout is in the future, bypassing schedule for template %s" % str(template.id))
             continue
-        new_unified_job = template.create_unified_job(launch_type='scheduled', schedule=schedule)
-        can_start = new_unified_job.signal_start(extra_vars=parse_yaml_or_json(schedule.extra_data))
+        new_unified_job = template.create_unified_job(
+            launch_type='scheduled',
+            schedule=schedule,
+            extra_vars=parse_yaml_or_json(schedule.extra_data)
+        )
+        can_start = new_unified_job.signal_start()
         if not can_start:
             new_unified_job.status = 'failed'
             new_unified_job.job_explanation = "Scheduled job could not start because it was not in the right state or required manual credentials"

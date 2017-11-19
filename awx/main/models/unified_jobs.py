@@ -384,6 +384,9 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         from awx.main.signals import disable_activity_stream
         with disable_activity_stream():
             copy_m2m_relationships(self, unified_job, fields, kwargs=kwargs)
+
+        if 'extra_vars' in kwargs:
+            self.handle_extra_data(kwargs['extra_vars'])
         return unified_job
 
     @cached_subclassproperty
@@ -394,7 +397,6 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
                 continue
             if field.allows_field == '__default__':
                 allows_field = field.name[len('ask_'):-len('_on_launch')]
-                # allows_field = field.name.rstrip('_on_launch').lstrip('_ask')
             else:
                 allows_field = field.allows_field
             mapping[allows_field] = field.name
@@ -1075,8 +1077,6 @@ class UnifiedJob(PolymorphicModel, PasswordFieldsModel, CommonModelNameNotUnique
         opts = dict([(field, kwargs.get(field, '')) for field in needed])
         if not all(opts.values()):
             return False
-        if 'extra_vars' in kwargs:
-            self.handle_extra_data(kwargs['extra_vars'])
 
         # Sanity check: If we are running unit tests, then run synchronously.
         if getattr(settings, 'CELERY_UNIT_TEST', False):

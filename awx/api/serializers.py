@@ -3410,20 +3410,10 @@ class JobLaunchSerializer(BaseSerializer):
 
         accepted, rejected, errors = obj._accept_or_ignore_job_kwargs(**data)
 
-        for field in obj.resources_needed_to_start:
-            if not (attrs.get(field, False) and getattr(obj, JobTemplate.ask_mapping[field], False)):
-                errors[field] = _("Job Template '%s' is missing or undefined.") % field
-
         if obj.inventory and obj.inventory.pending_deletion is True:
             errors['inventory'] = _("The inventory associated with this Job Template is being deleted.")
 
-        extra_vars = attrs.get('extra_vars', {})
-        try:
-            extra_vars = parse_yaml_or_json(extra_vars, silent_failure=False)
-        except ParseError as e:
-            # Catch known user variable formatting errors
-            errors['extra_vars'] = str(e)
-            extra_vars = {}
+        extra_vars = parse_yaml_or_json(attrs.get('extra_vars', {}))
 
         # Prohibit credential assign of the same CredentialType.kind
         # Note: when multi-vault is supported, we'll have to carve out an
@@ -3431,9 +3421,9 @@ class JobLaunchSerializer(BaseSerializer):
         distinct_cred_kinds = []
         for cred in data.get('credentials', []):
             cred = Credential.objects.get(id=cred)
-            if cred.credential_type.pk in distinct_cred_kinds:
+            if cred.unique_hash() in distinct_cred_kinds:
                 errors['credentials'] = _('Cannot assign multiple %s credentials.' % cred.credential_type.name)
-            distinct_cred_kinds.append(cred.credential_type.pk)
+            distinct_cred_kinds.append(cred.unique_hash())
 
         # Special prohibited cases for scan jobs
         errors.update(obj._extra_job_type_errors(data))

@@ -2819,22 +2819,23 @@ class JobTemplateLaunch(RetrieveAPIView):
             if new_credentials:
                 request.data['credentials'] = new_credentials
 
+        # TODO: get rid of extra step to remove the old credentials, depending on triage
+        if 'credentials' in request.data:
+            obj._no_cred_merge = True  # TODO: hopefully remove this
+            request.data['credentials'] = (
+                set(request.data.get('credentials', [])) -
+                set(obj.credentials.values_list('id', flat=True)))
+
         passwords = {}
         serializer = self.serializer_class(instance=obj, data=request.data, context={'obj': obj, 'data': request.data, 'passwords': passwords})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        obj._no_cred_merge = True  # TODO: triage case of removing credentials, hopefully remove this
-        _accepted_or_ignored = obj._accept_or_ignore_job_kwargs(_no_cred_merge=True, **request.data)
+        _accepted_or_ignored = obj._accept_or_ignore_job_kwargs(**request.data)
         prompted_fields = _accepted_or_ignored[0]
         ignored_fields.update(_accepted_or_ignored[1])
 
-        # TODO: get rid of extra step to remove the old credentials, depending on triage
-        actual_prompts = prompted_fields.copy()
-        actual_prompts['credentials'] = (
-            set(prompted_fields.get('credentials', [])) -
-            set(obj.credentials.values_list('id', flat=True)))
-        if not request.user.can_access(JobLaunchConfig, 'add', actual_prompts):
+        if not request.user.can_access(JobLaunchConfig, 'add', prompted_fields):
             raise PermissionDenied()
 
         new_job = obj.create_unified_job(**prompted_fields)

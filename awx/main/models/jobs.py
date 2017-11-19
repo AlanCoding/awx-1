@@ -292,30 +292,21 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
                 'allow_simultaneous', 'timeout', 'use_fact_cache',
                 'diff_mode',]
 
-    def resource_validation_data(self):
+    @property
+    def validation_errors(self):
         '''
-        Process consistency errors and need-for-launch related fields.
+        Fields needed to start, which cannot be given on launch, invalid state.
         '''
-        resources_needed_to_start = []
         validation_errors = {}
-
-        # Inventory and Credential related checks
-        if self.inventory is None:
-            resources_needed_to_start.append('inventory')
-            if not self.ask_inventory_on_launch:
-                validation_errors['inventory'] = [_("Job Template must provide 'inventory' or allow prompting for it."),]
-
-        # Job type dependent checks
+        if self.inventory is None and not self.ask_inventory_on_launch:
+            validation_errors['inventory'] = [_("Job Template must provide 'inventory' or allow prompting for it."),]
         if self.project is None:
-            resources_needed_to_start.append('project')
             validation_errors['project'] = [_("Job types 'run' and 'check' must have assigned a project."),]
-
-        return (validation_errors, resources_needed_to_start)
+        return validation_errors
 
     @property
     def resources_needed_to_start(self):
-        validation_errors, resources_needed_to_start = self.resource_validation_data()
-        return resources_needed_to_start
+        return [fd for fd in ['project', 'inventory'] if not getattr(self, '{}_id'.format(fd))]
 
     def create_job(self, **kwargs):
         '''
@@ -369,12 +360,12 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
 
             new_value = kwargs[field_name]
 
-            # TODO: get answer on this, re-enable code
+            # TODO: get answer on this, remove _no_cred_merge functionality, depending on traige
             # Special processing of no-ops for many-to-many field
             if not getattr(self, '_no_cred_merge', False):
                 field = self._meta.get_field(field_name)
                 if isinstance(field, models.ManyToManyField):
-                    if new_value == []:
+                    if not new_value:
                         continue
                     new_value = set(kwargs[field_name]) - set(getattr(self, field_name).values_list('id', flat=True))
                     if not new_value:
@@ -383,6 +374,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
             if getattr(self, ask_field_name):
                 prompted_fields[field_name] = new_value
             else:
+                print ' kwargs ' + str(kwargs)
                 rejected_fields[field_name] = new_value
                 errors_dict[field_name] = _('Field is not configured to prompt on launch.').format(field_name=field_name)
 

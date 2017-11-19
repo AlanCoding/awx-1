@@ -14,8 +14,7 @@ def test_missing_project_error(job_template_factory):
         persisted=False)
     obj = objects.job_template
     assert 'project' in obj.resources_needed_to_start
-    validation_errors, resources_needed_to_start = obj.resource_validation_data()
-    assert 'project' in validation_errors
+    assert 'project' in obj.validation_errors
 
 
 def test_inventory_need_to_start(job_template_factory):
@@ -34,8 +33,7 @@ def test_inventory_contradictions(job_template_factory):
         persisted=False)
     obj = objects.job_template
     obj.ask_inventory_on_launch = False
-    validation_errors, resources_needed_to_start = obj.resource_validation_data()
-    assert 'inventory' in validation_errors
+    assert 'inventory' in obj.validation_errors
 
 
 @pytest.mark.survey
