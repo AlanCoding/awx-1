@@ -1188,8 +1188,7 @@ class JobTemplateAccess(BaseAccess):
 
         # If credentials is provided, the user should have use access to them.
         for pk in data.get('credentials', []):
-            if self.user not in get_object_or_400(Credential, pk=pk).use_role:
-                return False
+            raise Exception('Credentials must be attached through association method.')
 
         # If an inventory is provided, the user should have use access.
         inventory = get_value(Inventory, 'inventory')
@@ -1521,12 +1520,17 @@ class JobLaunchConfigAccess(BaseAccess):
         return not self._unusable_creds_exist(obj.credentials)
 
     @check_superuser
-    def can_add(self, data):
+    def can_add(self, data, template=None):
         # This is a special case, we don't check related many-to-many elsewhere
         # launch RBAC checks use this
         if 'credentials' in data and data['credentials']:
             # If given model objects, only use the primary key from them
-            if self._unusable_creds_exist(Credential.objects.filter(pk__in=data['credentials'])):
+            cred_pks = [cred.pk for cred in data['credentials']]
+            if template:
+                for cred in template.credentials.all():
+                    if cred.pk in cred_pks:
+                        cred_pks.remove(cred.pk)
+            if self._unusable_creds_exist(Credential.objects.filter(pk__in=cred_pks)):
                 return False
         return self.check_related('inventory', Inventory, data, role_field='use_role')
 

@@ -2741,8 +2741,13 @@ class JobTemplateLaunch(RetrieveAPIView):
             return data
         extra_vars = data.pop('extra_vars', None) or {}
         if obj:
-            for p in obj.passwords_needed_to_start:
-                data[p] = u''
+            needed_passwords = obj.passwords_needed_to_start
+            if needed_passwords:
+                data['credential_passwords'] = {}
+                for p in needed_passwords:
+                    data['credential_passwords'][p] = u''
+            else:
+                data.pop('credential_passwords')
             for v in obj.variables_needed_to_start:
                 extra_vars.setdefault(v, u'')
             if extra_vars:
@@ -2762,27 +2767,29 @@ class JobTemplateLaunch(RetrieveAPIView):
 
     def post(self, request, *args, **kwargs):
         obj = self.get_object()
+
+        # Steps to do simple translations of request data to support
+        # old field structure to launch endpoint
         ignored_fields = {}
+        modern_data = request.data.copy()
 
         for fd in ('credential', 'vault_credential', 'inventory'):
             id_fd = '{}_id'.format(fd)
-            if fd not in request.data and id_fd in request.data:
-                request.data[fd] = request.data[id_fd]
+            if fd not in modern_data and id_fd in modern_data:
+                modern_data[fd] = modern_data[id_fd]
 
         # This block causes `extra_credentials` to _always_ be ignored for
         # the launch endpoint if we're accessing `/api/v1/`
-        if get_request_version(self.request) == 1 and 'extra_credentials' in request.data:
-            if hasattr(request.data, '_mutable') and not request.data._mutable:
-                request.data._mutable = True
-            extra_creds = request.data.pop('extra_credentials', None)
+        if get_request_version(self.request) == 1 and 'extra_credentials' in modern_data:
+            extra_creds = modern_data.pop('extra_credentials', None)
             if extra_creds is not None:
                 ignored_fields['extra_credentials'] = extra_creds
 
         # Automatically convert legacy launch credential arguments into a list of `.credentials`
-        if 'credentials' in request.data and (
-            'credential' in request.data or
-            'vault_credential' in request.data or
-            'extra_credentials' in request.data
+        if 'credentials' in modern_data and (
+            'credential' in modern_data or
+            'vault_credential' in modern_data or
+            'extra_credentials' in modern_data
         ):
             return Response(dict(
                 error=_("'credentials' cannot be used in combination with 'credential', 'vault_credential', or 'extra_credentials'.")),  # noqa
@@ -2790,9 +2797,9 @@ class JobTemplateLaunch(RetrieveAPIView):
             )
 
         if (
-            'credential' in request.data or
-            'vault_credential' in request.data or
-            'extra_credentials' in request.data
+            'credential' in modern_data or
+            'vault_credential' in modern_data or
+            'extra_credentials' in modern_data
         ):
             # make a list of the current credentials
             existing_credentials = obj.credentials.all()
@@ -2802,12 +2809,12 @@ class JobTemplateLaunch(RetrieveAPIView):
                 ('vault_credential', lambda cred: cred.credential_type.kind != 'vault'),
                 ('extra_credentials', lambda cred: cred.credential_type.kind not in ('cloud', 'net'))
             ):
-                if key in request.data:
+                if key in modern_data:
                     # if a specific deprecated key is specified, remove all
                     # credentials of _that_ type from the list of current
                     # credentials
                     existing_credentials = filter(conditional, existing_credentials)
-                    prompted_value = request.data.pop(key)
+                    prompted_value = modern_data.pop(key)
 
                     # add the deprecated credential specified in the request
                     if not isinstance(prompted_value, Iterable):
@@ -2817,29 +2824,23 @@ class JobTemplateLaunch(RetrieveAPIView):
             # combine the list of "new" and the filtered list of "old"
             new_credentials.extend([cred.pk for cred in existing_credentials])
             if new_credentials:
-                request.data['credentials'] = new_credentials
+                modern_data['credentials'] = new_credentials
 
-        # TODO: get rid of extra step to remove the old credentials, depending on triage
-        if 'credentials' in request.data:
-            obj._no_cred_merge = True  # TODO: hopefully remove this
-            request.data['credentials'] = (
-                set(request.data.get('credentials', [])) -
-                set(obj.credentials.values_list('id', flat=True)))
+        # credential passwords were historically provided as top-level attributes
+        if 'credential_passwords' not in modern_data:
+            modern_data['credential_passwords'] = request.data.copy()
 
-        passwords = {}
-        serializer = self.serializer_class(instance=obj, data=request.data, context={'obj': obj, 'data': request.data, 'passwords': passwords})
+        serializer = self.serializer_class(data=modern_data, context={'template': obj})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        _accepted_or_ignored = obj._accept_or_ignore_job_kwargs(**request.data)
-        prompted_fields = _accepted_or_ignored[0]
-        ignored_fields.update(_accepted_or_ignored[1])
+        ignored_fields.update(serializer._ignored_fields)
 
-        if not request.user.can_access(JobLaunchConfig, 'add', prompted_fields):
+        if not request.user.can_access(JobLaunchConfig, 'add', serializer.validated_data, template=obj):
             raise PermissionDenied()
 
-        new_job = obj.create_unified_job(**prompted_fields)
-        result = new_job.signal_start(**passwords)
+        new_job = obj.create_unified_job(**serializer.validated_data)
+        result = new_job.signal_start(**serializer.validated_data.get('credential_passwords', {}))
 
         if not result:
             data = dict(passwords_needed_to_start=new_job.passwords_needed_to_start)

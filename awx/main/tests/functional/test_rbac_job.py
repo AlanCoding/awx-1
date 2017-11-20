@@ -291,12 +291,11 @@ class TestLaunchConfigAccess:
         access = JobLaunchConfigAccess(rando)
         cred1, cred2 = self._make_two_credentials(credentialtype_ssh)
 
-        # Also test variously passing objects vs. ids.
         assert not access.can_add({'credentials': [cred1, cred2]})  # can't add either
         cred1.use_role.members.add(rando)
-        assert not access.can_add({'credentials': [cred1.pk, cred2]})  # can't add 1
+        assert not access.can_add({'credentials': [cred1, cred2]})  # can't add 1
         cred2.use_role.members.add(rando)
-        assert access.can_add({'credentials': [cred1.pk, cred2.pk]})  # can add both
+        assert access.can_add({'credentials': [cred1, cred2]})  # can add both
 
     def test_obj_credentials_access(self, credentialtype_ssh, rando):
         job = Job.objects.create()

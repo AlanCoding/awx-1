@@ -345,11 +345,15 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         Create a new unified job based on this unified job template.
         '''
         original_passwords = kwargs.pop('survey_passwords', {})
+        eager_fields = kwargs.pop('_eager_fields', None)
         unified_job_class = self._get_unified_job_class()
         fields = self._get_unified_job_field_names()
+        unallowed_fields = set(kwargs.keys()) - set(fields)
+        if unallowed_fields:
+            raise Exception('Fields {} are not allowed as overrides.'.format(unallowed_fields))
+
         unified_job = copy_model_by_class(self, unified_job_class, fields, kwargs)
 
-        eager_fields = kwargs.get('_eager_fields', None)
         if eager_fields:
             for fd, val in eager_fields.items():
                 setattr(unified_job, fd, val)
@@ -371,16 +375,19 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
 
         # Labels and credentials copied here
         if kwargs.get('credentials'):
-            # combine prompted credentials with JT
             Credential = UnifiedJob._meta.get_field('credentials').related_model
             cred_dict = Credential.unique_dict(self.credentials.all())
-            cred_dict.update(
-                Credential.unique_dict(
-                    Credential.objects.filter(pk__in=kwargs.get('credentials'))
-                )
-            )
+            prompted_dict = Credential.unique_dict(kwargs['credentials'])
+            # store unique prompted values to save to launch configuration
+            cred_diff = {}
+            for type_hash, cred in prompted_dict.items():
+                if cred != cred_dict.get(type_hash, None):
+                    cred_diff[type_hash] = cred
+            # combine prompted credentials with JT
+            cred_dict.update(prompted_dict)
             if getattr(self, '_no_cred_merge', False):
-                kwargs['credentials'] = [cred.pk for cred in cred_dict.values()]
+                kwargs['credentials'] = [cred for cred in cred_dict.values()]
+
         from awx.main.signals import disable_activity_stream
         with disable_activity_stream():
             copy_m2m_relationships(self, unified_job, fields, kwargs=kwargs)

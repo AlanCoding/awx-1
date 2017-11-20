@@ -212,6 +212,9 @@ class JobOptions(BaseModel):
     def passwords_needed_to_start(self):
         '''Return list of password field names needed to start the job.'''
         needed = []
+        # Unsaved credential objects can not require passwords
+        if not self.pk:
+            return needed
         for cred in self.credentials.all():
             needed.extend(cred.passwords_needed)
         return needed
@@ -371,12 +374,21 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
                     if not new_value:
                         continue
 
-            if getattr(self, ask_field_name):
+            if new_value == getattr(self, field_name):
+                # no-op case: Fields the same as template's value
+                # counted as neither accepted or ignored
+                continue
+            elif getattr(self, ask_field_name):
+                # accepted prompt
                 prompted_fields[field_name] = new_value
             else:
-                print ' kwargs ' + str(kwargs)
+                # unprompted - template is not configured to accept field on launch
                 rejected_fields[field_name] = new_value
                 errors_dict[field_name] = _('Field is not configured to prompt on launch.').format(field_name=field_name)
+
+        if not getattr(self, '_no_cred_merge', False) and self.passwords_needed_to_start:
+            errors_dict['passwords_needed_to_start'] = _(
+                'Saved launch configurations cannot provide passwords needed to start.')
 
         needed = self.resources_needed_to_start
         if needed:

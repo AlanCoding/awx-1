@@ -482,7 +482,7 @@ class BaseSerializer(serializers.ModelSerializer):
         # from model validation.
         cls = self.Meta.model
         opts = cls._meta.concrete_model._meta
-        exclusions = [field.name for field in opts.fields + opts.many_to_many]
+        exclusions = [field.name for field in opts.fields]
         for field_name, field in self.fields.items():
             field_name = field.source or field_name
             if field_name not in exclusions:
@@ -492,6 +492,8 @@ class BaseSerializer(serializers.ModelSerializer):
             if isinstance(field, serializers.Serializer):
                 continue
             exclusions.remove(field_name)
+        # The clean_ methods cannot be ran on many-to-many models
+        exclusions.extend([field.name for field in opts.many_to_many])
         return exclusions
 
     def validate(self, attrs):
@@ -3335,21 +3337,39 @@ class AdHocCommandEventWebSocketSerializer(AdHocCommandEventSerializer):
 
 class JobLaunchSerializer(BaseSerializer):
 
+    # Representational fields
     passwords_needed_to_start = serializers.ReadOnlyField()
     can_start_without_user_input = serializers.BooleanField(read_only=True)
     variables_needed_to_start = serializers.ReadOnlyField()
     credential_needed_to_start = serializers.SerializerMethodField()
     inventory_needed_to_start = serializers.SerializerMethodField()
     survey_enabled = serializers.SerializerMethodField()
-    extra_vars = VerbatimField(required=False, write_only=True)
     job_template_data = serializers.SerializerMethodField()
     defaults = serializers.SerializerMethodField()
+
+    # Accepted on launch fields
+    extra_vars = VerbatimField(required=False, write_only=True)
+    inventory = serializers.PrimaryKeyRelatedField(
+        queryset=Inventory.objects.all(),
+        required=False, write_only=True
+    )
+    credentials = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Credential.objects.all(),
+        required=False, write_only=True
+    )
+    credential_passwords = VerbatimField(required=False, write_only=True)
+    diff_mode = serializers.BooleanField(required=False, write_only=True)
+    job_tags = serializers.CharField(required=False, write_only=True, allow_blank=True)
+    job_type = serializers.ChoiceField(required=False, choices=JOB_TYPE_CHOICES, write_only=True)
+    skip_tags = serializers.CharField(required=False, write_only=True, allow_blank=True)
+    limit = serializers.CharField(required=False, write_only=True, allow_blank=True)
+    verbosity = serializers.ChoiceField(required=False, choices=VERBOSITY_CHOICES, write_only=True)
 
     class Meta:
         model = JobTemplate
         fields = ('can_start_without_user_input', 'passwords_needed_to_start',
-                  'extra_vars', 'limit', 'job_tags', 'skip_tags', 'job_type', 'inventory',
-                  'credentials', 'ask_variables_on_launch', 'ask_tags_on_launch',
+                  'extra_vars', 'inventory', 'limit', 'job_tags', 'skip_tags', 'job_type', 'verbosity', 'diff_mode',
+                  'credentials', 'credential_passwords', 'ask_variables_on_launch', 'ask_tags_on_launch',
                   'ask_diff_mode_on_launch', 'ask_skip_tags_on_launch', 'ask_job_type_on_launch', 'ask_limit_on_launch',
                   'ask_verbosity_on_launch', 'ask_inventory_on_launch', 'ask_credential_on_launch',
                   'survey_enabled', 'variables_needed_to_start', 'credential_needed_to_start',
@@ -3358,15 +3378,6 @@ class JobLaunchSerializer(BaseSerializer):
             'ask_diff_mode_on_launch', 'ask_variables_on_launch', 'ask_limit_on_launch', 'ask_tags_on_launch',
             'ask_skip_tags_on_launch', 'ask_job_type_on_launch', 'ask_verbosity_on_launch',
             'ask_inventory_on_launch', 'ask_credential_on_launch',)
-        extra_kwargs = {
-            'credentials': {'write_only': True, 'default': [], 'allow_empty': True},
-            'limit': {'write_only': True,},
-            'job_tags': {'write_only': True,},
-            'skip_tags': {'write_only': True,},
-            'job_type': {'write_only': True,},
-            'inventory': {'write_only': True,},
-            'verbosity': {'write_only': True,}
-        }
 
     def get_credential_needed_to_start(self, obj):
         return False
@@ -3381,14 +3392,14 @@ class JobLaunchSerializer(BaseSerializer):
 
     def get_defaults(self, obj):
         defaults_dict = {}
-        for field in JobTemplate.ask_mapping.keys():
-            if field == 'inventory':
-                defaults_dict[field] = dict(
-                    name=getattrd(obj, '%s.name' % field, None),
-                    id=getattrd(obj, '%s.pk' % field, None))
-            elif field == 'credentials':
+        for field_name in JobTemplate.ask_mapping.keys():
+            if field_name == 'inventory':
+                defaults_dict[field_name] = dict(
+                    name=getattrd(obj, '%s.name' % field_name, None),
+                    id=getattrd(obj, '%s.pk' % field_name, None))
+            elif field_name == 'credentials':
                 if self.version > 1:
-                    defaults_dict[field] = [
+                    defaults_dict[field_name] = [
                         dict(
                             id=cred.id,
                             name=cred.name,
@@ -3396,80 +3407,68 @@ class JobLaunchSerializer(BaseSerializer):
                         )
                         for cred in obj.credentials.all()
                     ]
-            elif hasattr(obj, field):
-                # TODO: take other diff in multi-cred merge
-                defaults_dict[field] = getattr(obj, field)
+            else:
+                defaults_dict[field_name] = getattr(obj, field_name)
         return defaults_dict
 
     def get_job_template_data(self, obj):
         return dict(name=obj.name, id=obj.id, description=obj.description)
 
+    def validate_extra_vars(self, value):
+        return vars_validate_or_raise(value)
+
     def validate(self, attrs):
-        obj = self.context.get('obj')
-        data = self.context.get('data')
+        template = self.context.get('template')
 
-        accepted, rejected, errors = obj._accept_or_ignore_job_kwargs(**data)
+        template._no_cred_merge = True  # TODO: hopefully remove this
+        accepted, rejected, errors = template._accept_or_ignore_job_kwargs(**attrs)
+        self._ignored_fields = rejected
 
-        if obj.inventory and obj.inventory.pending_deletion is True:
+        # These errors block a saved launch-time configuration, but are
+        # carved out as exceptions to preserve the behavior of listing them
+        # in ignored_fields in API response
+        for field_name in JobTemplate.ask_mapping.keys():
+            errors.pop(field_name, None)
+
+        if template.inventory and template.inventory.pending_deletion is True:
             errors['inventory'] = _("The inventory associated with this Job Template is being deleted.")
+        elif 'inventory' in accepted and accepted['inventory'].pending_deletion:
+            errors['inventory'] = _("The provided inventory is being deleted.")
 
-        extra_vars = parse_yaml_or_json(attrs.get('extra_vars', {}))
+        # Special prohibited cases for scan jobs
+        errors.update(template._extra_job_type_errors(accepted))
 
-        # Prohibit credential assign of the same CredentialType.kind
-        # Note: when multi-vault is supported, we'll have to carve out an
-        # exception to this logic
+        # Prohibit providing multiple credentials of the same CredentialType.kind
+        # or multiples of same vault id
         distinct_cred_kinds = []
-        for cred in data.get('credentials', []):
-            cred = Credential.objects.get(id=cred)
+        for cred in accepted.get('credentials', []):
             if cred.unique_hash() in distinct_cred_kinds:
                 errors['credentials'] = _('Cannot assign multiple %s credentials.' % cred.credential_type.name)
             distinct_cred_kinds.append(cred.unique_hash())
 
-        # Special prohibited cases for scan jobs
-        errors.update(obj._extra_job_type_errors(data))
+        # verify that credentials (either provided or existing) don't
+        # require launch-time passwords that have not been provided
+        if accepted.get('credentials', []):
+            launch_credentials = accepted.get('credentials', [])
+        else:
+            launch_credentials = template.credentials.all()
+        passwords = accepted.get('credential_passwords', {})
+        passwords_lacking = []
+        for cred in launch_credentials:
+            if cred.passwords_needed:
+                for p in cred.passwords_needed:
+                    if p not in passwords:
+                        passwords_lacking.append(p)
+        if len(passwords_lacking):
+            errors['passwords_needed_to_start'] = passwords_lacking
 
         if errors:
             raise serializers.ValidationError(errors)
 
-        JT_extra_vars = obj.extra_vars
-        JT_limit = obj.limit
-        JT_job_type = obj.job_type
-        JT_job_tags = obj.job_tags
-        JT_skip_tags = obj.skip_tags
-        JT_inventory = obj.inventory
-        JT_verbosity = obj.verbosity
-        credentials = attrs.pop('credentials', None)
-        attrs = super(JobLaunchSerializer, self).validate(attrs)
-        obj.extra_vars = JT_extra_vars
-        obj.limit = JT_limit
-        obj.job_type = JT_job_type
-        obj.skip_tags = JT_skip_tags
-        obj.job_tags = JT_job_tags
-        obj.inventory = JT_inventory
-        obj.verbosity = JT_verbosity
-        if credentials is not None:
-            attrs['credentials'] = credentials
+        # Validate job against JobTemplate clean_ methods
+        accepted = super(JobLaunchSerializer, self).validate(accepted)
 
-        # if the POST includes a list of credentials, verify that they don't
-        # require launch-time passwords
-        # if the POST *does not* include a list of credentials, fall back to
-        # checking the credentials on the JobTemplate
-        credentials = attrs['credentials'] if 'credentials' in data else obj.credentials.all()
-        passwords_needed = []
-        for cred in credentials:
-            if cred.passwords_needed:
-                passwords = self.context.get('passwords')
-                try:
-                    for p in cred.passwords_needed:
-                        passwords[p] = data[p]
-                except KeyError:
-                    passwords_needed.extend(cred.passwords_needed)
-        if len(passwords_needed):
-            raise serializers.ValidationError({
-                'passwords_needed_to_start': passwords_needed
-            })
-
-        return attrs
+        return accepted
 
 
 class WorkflowJobLaunchSerializer(BaseSerializer):
