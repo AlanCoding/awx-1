@@ -2765,13 +2765,14 @@ class JobTemplateLaunch(RetrieveAPIView):
                     data[field] = getattr(obj, field)
         return data
 
-    def post(self, request, *args, **kwargs):
-        obj = self.get_object()
-
-        # Steps to do simple translations of request data to support
-        # old field structure to launch endpoint
+    def modernize_launch_payload(self, data, obj):
+        '''
+        Steps to do simple translations of request data to support
+        old field structure to launch endpoint
+        TODO: delete this method with future API version changes
+        '''
         ignored_fields = {}
-        modern_data = request.data.copy()
+        modern_data = data.copy()
 
         for fd in ('credential', 'vault_credential', 'inventory'):
             id_fd = '{}_id'.format(fd)
@@ -2828,8 +2829,17 @@ class JobTemplateLaunch(RetrieveAPIView):
 
         # credential passwords were historically provided as top-level attributes
         if 'credential_passwords' not in modern_data:
-            modern_data['credential_passwords'] = request.data.copy()
-        # End translation steps, TODO: delete these steps with future API version changes
+            modern_data['credential_passwords'] = data.copy()
+
+        return (modern_data, ignored_fields)
+
+
+    def post(self, request, *args, **kwargs):
+        obj = self.get_object()
+
+        modern_data, ignored_fields = self.modernize_launch_payload(
+            data=request.data, obj=obj
+        )
 
         serializer = self.serializer_class(data=modern_data, context={'template': obj})
         if not serializer.is_valid():
@@ -2851,25 +2861,33 @@ class JobTemplateLaunch(RetrieveAPIView):
         else:
             data = OrderedDict()
             data['job'] = new_job.id
-
-            # Model objects can not be serialized by DRF, replace with their id
-            sanitized_ignored_fields = {}
-            def display_value(val):
-                if hasattr(val, 'id'):
-                    return val.id
-                else:
-                    return val
-            for field_name, value in ignored_fields.items():
-                if isinstance(value, (set, list)):
-                    sanitized_ignored_fields[field_name] = []
-                    for sub_value in value:
-                        sanitized_ignored_fields[field_name].append(display_value(sub_value))
-                else:
-                    sanitized_ignored_fields[field_name] = display_value(value)
-
-            data['ignored_fields'] = sanitized_ignored_fields
+            data['ignored_fields'] = self.sanitize_for_response(ignored_fields)
             data.update(JobSerializer(new_job, context=self.get_serializer_context()).to_representation(new_job))
             return Response(data, status=status.HTTP_201_CREATED)
+
+
+    def sanitize_for_response(self, data):
+        '''
+        Model objects cannot be serialized by DRF,
+        this replaces objects with their ids for inclusion in response
+        '''
+
+        def display_value(val):
+            if hasattr(val, 'id'):
+                return val.id
+            else:
+                return val
+
+        sanitized_data = {}
+        for field_name, value in data.items():
+            if isinstance(value, (set, list)):
+                sanitized_data[field_name] = []
+                for sub_value in value:
+                    sanitized_data[field_name].append(display_value(sub_value))
+            else:
+                sanitized_data[field_name] = display_value(value)
+
+        return sanitized_data
 
 
 class JobTemplateSchedulesList(SubListCreateAPIView):

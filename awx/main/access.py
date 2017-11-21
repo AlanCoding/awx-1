@@ -1411,8 +1411,6 @@ class JobAccess(BaseAccess):
             accepted_fields, ignored_fields, errors = obj.job_template._accept_or_ignore_job_kwargs(**job_fields)
             # Check if job fields are not allowed by current _on_launch settings
             for fd in ignored_fields:
-                if fd == 'credentials':
-                    continue  # TODO: remove in favor of multi-cred branch solution
                 if fd == 'extra_vars':
                     continue  # we cannot yet validate validity of prompted extra_vars
                 elif fd == 'credentials':

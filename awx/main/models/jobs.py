@@ -888,26 +888,26 @@ class LaunchTimeConfig(BaseModel):
 
     def prompts_dict(self):
         data = {}
-        field_names = [field.name for field in self._meta.fields]
-        # ManyToManyField not picked up in normal field list
-        field_names.append('credentials')
+        field_names = set(field.name for field in self._meta.get_fields())
         for prompt_name in JobTemplate.ask_mapping.keys():
             if prompt_name in field_names:
                 field = self._meta.get_field(prompt_name)
                 if isinstance(field, models.ForeignKey):
-                    prompt_val = getattr(self, '{}_id'.format(prompt_name))
+                    prompt_val = getattr(self, prompt_name)
                     if prompt_val is not None:
                         data[prompt_name] = prompt_val
                 elif isinstance(field, models.ManyToManyField):
                     if not self.pk:
                         # unsaved object can't have related many-to-many
                         continue
-                    prompt_val = getattr(self, prompt_name).values_list('pk', flat=True)
+                    prompt_val = set(getattr(self, prompt_name).all())
                     if len(prompt_val) > 0:
                         data[prompt_name] = prompt_val
+                elif prompt_name == 'extra_vars':
+                    data[prompt_name] = self.extra_data
+                    data['survey_passwords'] = self.survey_passwords
                 else:
-                    # TODO process extra vars
-                    pass
+                    raise Exception('Processing of field {} not implemented.'.format(prompt_name))
             elif prompt_name in self.char_prompts:
                 data[prompt_name] = self.char_prompts[prompt_name]
         return data

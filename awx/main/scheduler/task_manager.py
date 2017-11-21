@@ -196,7 +196,7 @@ class TaskManager():
                 spawn_node.job = job
                 spawn_node.save()
                 if job._resources_sufficient_for_launch():
-                    can_start = job.signal_start(**kv)
+                    can_start = job.signal_start()
                     if not can_start:
                         job.job_explanation = _("Job spawned from workflow could not start because it "
                                                 "was not in the right state or required manual credentials")

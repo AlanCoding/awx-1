@@ -380,17 +380,23 @@ class WorkflowJobTemplate(UnifiedJobTemplate, WorkflowJobOptions, SurveyJobTempl
         return workflow_job
 
     def _accept_or_ignore_job_kwargs(self, **kwargs):
-        prompted_fields, ignored_fields, errors_dict = self._accept_or_ignore_extra_vars(**kwargs)
+        prompted_fields = {}
+        rejected_fields = {}
+        accepted_vars, rejected_vars, errors_dict = self.accept_or_ignore_variables(kwargs.get('extra_vars', {}))
+        if accepted_vars:
+            prompted_fields['extra_vars'] = accepted_vars
+        if rejected_vars:
+            rejected_fields['extra_vars'] = rejected_vars
 
         # WFJTs do not behave like JTs, it can not accept inventory, credential, etc.
         bad_kwargs = kwargs.copy()
         bad_kwargs.pop('extra_vars')
         if bad_kwargs:
-            ignored_fields.update(bad_kwargs)
+            rejected_fields.update(bad_kwargs)
             for field in bad_kwargs:
                 errors_dict[field] = _('Field is not allowed for use in workflows.')
 
-        return prompted_fields, ignored_fields, errors_dict
+        return prompted_fields, rejected_fields, errors_dict
 
     def can_start_without_user_input(self):
         '''Return whether WFJT can be launched without survey passwords.'''
