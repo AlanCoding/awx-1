@@ -346,7 +346,7 @@ def test_job_launch_with_empty_creds(machine_credential, vault_credential, deplo
     assert validated
 
     prompted_fields, ignored_fields, errors = deploy_jobtemplate._accept_or_ignore_job_kwargs(**kv)
-    deploy_jobtemplate._no_cred_merge = True
+    deploy_jobtemplate._is_manual_launch = True
     job_obj = deploy_jobtemplate.create_unified_job(**prompted_fields)
     assert job_obj.credential is None
     assert job_obj.vault_credential is None
@@ -438,7 +438,7 @@ def test_job_launch_JT_with_credentials(machine_credential, credential, net_cred
 
     kv['credentials'] = [credential, net_credential, machine_credential]  # convert to internal value
     prompted_fields, ignored_fields, errors = deploy_jobtemplate._accept_or_ignore_job_kwargs(**kv)
-    deploy_jobtemplate._no_cred_merge = True
+    deploy_jobtemplate._is_manual_launch = True
     job_obj = deploy_jobtemplate.create_unified_job(**prompted_fields)
 
     creds = job_obj.credentials.all()

@@ -86,7 +86,7 @@ class Migration(migrations.Migration):
                 ('char_prompts', awx.main.fields.JSONField(blank=True, default={})),
                 ('credentials', models.ManyToManyField(related_name='joblaunchconfigs', to='main.Credential')),
                 ('inventory', models.ForeignKey(blank=True, default=None, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='joblaunchconfigs', to='main.Inventory')),
-                ('job', models.OneToOneField(editable=False, on_delete=django.db.models.deletion.CASCADE, related_name='launch_configs', to='main.UnifiedJob')),
+                ('job', models.OneToOneField(editable=False, on_delete=django.db.models.deletion.CASCADE, related_name='launch_config', to='main.UnifiedJob')),
             ],
         ),
         migrations.AddField(

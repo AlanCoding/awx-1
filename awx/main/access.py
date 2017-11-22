@@ -1394,61 +1394,38 @@ class JobAccess(BaseAccess):
         if self.user.is_superuser:
             return True
 
-        credential_access = all([self.user in cred.use_role for cred in obj.credentials.all()])
-        inventory_access = obj.inventory and self.user in obj.inventory.use_role
-        job_credentials = set(obj.credentials.all())
+        # Obtain prompts used to start original job
+        JobLaunchConfig = obj._meta.get_field('launch_config').related_model
+        try:
+            config = obj.launch_config
+        except JobLaunchConfig.DoesNotExist:
+            config = None
 
-        # Check if JT execute access (and related prompts) is sufficient
+        # Check if JT execute access (and related prompts) are sufficient
         if obj.job_template is not None:
-            prompts_access = True
-            job_fields = {}
-            jt_credentials = set(obj.job_template.credentials.all())
-            for fd in JobTemplate.ask_mapping.keys():
-                if fd == 'credentials':
-                    job_fields[fd] = job_credentials
-                    continue
-                job_fields[fd] = getattr(obj, fd)
-            accepted_fields, ignored_fields, errors = obj.job_template._accept_or_ignore_job_kwargs(**job_fields)
-            # Check if job fields are not allowed by current _on_launch settings
-            for fd in ignored_fields:
-                if fd == 'extra_vars':
-                    continue  # we cannot yet validate validity of prompted extra_vars
-                elif fd == 'credentials':
-                    if job_credentials != jt_credentials:
-                        # Job has credentials that are not promptable
-                        prompts_access = False
-                        break
-                elif job_fields[fd] != getattr(obj.job_template, fd):
-                    # Job has field that is not promptable
-                    prompts_access = False
-                    break
-            # For those fields that are allowed by prompting, but differ
-            # from JT, assure that user has explicit access to them
-            if prompts_access:
-                if obj.inventory != obj.job_template.inventory and not inventory_access:
-                    prompts_access = False
-                if prompts_access and job_credentials != jt_credentials:
-                    for cred in job_credentials:
-                        if self.user not in cred.use_role:
-                            prompts_access = False
-                            break
-            if prompts_access and self.user in obj.job_template.execute_role:
+            if config is None:
+                prompts_access = True
+            else:
+                prompts_access = JobLaunchConfigAccess(self.user).can_add(
+                    {'reference_obj': config})
+            jt_access = self.user in obj.job_template.execute_role
+            if prompts_access and jt_access:
                 return True
+            elif not jt_access:
+                return False
 
         org_access = obj.inventory and self.user in obj.inventory.organization.admin_role
         project_access = obj.project is None or self.user in obj.project.admin_role
+        credential_access = all([self.user in cred.use_role for cred in obj.credentials.all()])
 
         # job can be relaunched if user could make an equivalent JT
-        ret = inventory_access and credential_access and (org_access or project_access)
+        ret = org_access and credential_access and project_access
         if not ret and self.save_messages:
             if not obj.job_template:
                 pretext = _('Job has been orphaned from its job template.')
-            elif prompts_access:
-                self.messages['detail'] = _('You do not have execute permission to related job template.')
-                return False
             else:
                 pretext = _('Job was launched with prompted fields.')
-            if inventory_access and credential_access:
+            if credential_access:
                 self.messages['detail'] = '{} {}'.format(pretext, _(' Organization level permissions required.'))
             else:
                 self.messages['detail'] = '{} {}'.format(pretext, _(' You do not have permission to related resources.'))

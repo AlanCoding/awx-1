@@ -346,6 +346,7 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         '''
         original_passwords = kwargs.pop('survey_passwords', {})
         eager_fields = kwargs.pop('_eager_fields', None)
+        config_data = kwargs.copy()
         unified_job_class = self._get_unified_job_class()
         fields = self._get_unified_job_field_names()
         unallowed_fields = set(kwargs.keys()) - set(fields)
@@ -378,13 +379,8 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
             Credential = UnifiedJob._meta.get_field('credentials').related_model
             cred_dict = Credential.unique_dict(self.credentials.all())
             prompted_dict = Credential.unique_dict(kwargs['credentials'])
-            # store unique prompted values to save to launch configuration
-            cred_diff = {}
-            for type_hash, cred in prompted_dict.items():
-                if cred != cred_dict.get(type_hash, None):
-                    cred_diff[type_hash] = cred
             # combine prompted credentials with JT
-            if getattr(self, '_no_cred_merge', False):
+            if not getattr(self, '_is_manual_launch', False):
                 cred_dict.update(prompted_dict)
                 kwargs['credentials'] = [cred for cred in cred_dict.values()]
 
@@ -394,6 +390,10 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
 
         if 'extra_vars' in kwargs:
             unified_job.handle_extra_data(kwargs['extra_vars'])
+
+        # Create record of provided prompts for relaunch and rescheduling
+        unified_job.create_config_from_prompts(kwargs)
+
         return unified_job
 
     @cached_subclassproperty
@@ -816,8 +816,18 @@ class UnifiedJob(PolymorphicModel, PasswordFieldsModel, CommonModelNameNotUnique
         unified_jt_class = self._get_unified_job_template_class()
         parent_field_name = unified_job_class._get_parent_field_name()
 
-        fields = unified_jt_class._get_unified_job_field_names() + [parent_field_name]
-        unified_job = copy_model_by_class(self, unified_job_class, fields, {})
+        if self.unified_job_template:
+            JobLaunchConfig = self._meta.get_field('launch_config').related_model
+            try:
+                config = self.launch_config
+                prompts = config.prompts_dict()
+            except JobLaunchConfig.DoesNotExist:
+                prompts = {}
+            unified_job = self.unified_job_template.create_unified_job(**prompts)
+        else:
+            fields = unified_jt_class._get_unified_job_field_names() + [parent_field_name]
+            unified_job = copy_model_by_class(self, unified_job_class, fields, {})
+
         unified_job.launch_type = 'relaunch'
         if limit:
             unified_job.limit = limit
@@ -826,6 +836,33 @@ class UnifiedJob(PolymorphicModel, PasswordFieldsModel, CommonModelNameNotUnique
         # Labels coppied here
         copy_m2m_relationships(self, unified_job, fields)
         return unified_job
+
+    def create_config_from_prompts(self, kwargs):
+        '''
+        Create a launch configuration entry for this job, given prompts
+        '''
+        JobLaunchConfig = self._meta.get_field('launch_config').related_model
+        if kwargs:
+            config = JobLaunchConfig(job=self)
+            for field_name, value in kwargs.items():
+                if (field_name not in self.unified_job_template.ask_mapping and
+                        field_name != 'survey_passwords'):
+                    raise Exception('Unrecognized launch config field {}.'.format(field_name))
+                if field_name == 'credentials':
+                    continue
+                key = field_name
+                if key == 'extra_vars':
+                    key = 'extra_data'
+                setattr(config, key, value)
+            config.save()
+
+            job_creds = (set(kwargs.get('credentials', [])) -
+                         set(self.unified_job_template.credentials.all()))
+            if job_creds:
+                config.credentials.add(*job_creds)
+        else:
+            config = None
+        return config
 
     def result_stdout_raw_handle(self, attempt=0):
         """Return a file-like object containing the standard out of the
