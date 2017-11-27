@@ -45,3 +45,10 @@ def test_unallowed_system_job_data():
     assert 'foobar' in ignored
     assert 'days' in accepted
 
+
+def test_reject_other_prommpts():
+    sjt = SystemJobTemplate()
+    accepted, ignored, errors = sjt._accept_or_ignore_job_kwargs(limit="")
+    assert accepted == {}
+    assert 'not allowed on launch' in errors['all'][0]
+

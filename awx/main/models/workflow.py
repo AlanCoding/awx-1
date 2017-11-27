@@ -70,30 +70,6 @@ class WorkflowNodeBase(CreatedModifiedModel, LaunchTimeConfig):
         on_delete=models.SET_NULL,
     )
 
-    def get_prompts_warnings(self):
-        ujt_obj = self.unified_job_template
-        if ujt_obj is None:
-            return {}
-        prompts_dict = self.prompts_dict()
-        if not isinstance(ujt_obj, JobTemplate):
-            if prompts_dict:
-                return {'ignored': {'all': 'Cannot use prompts on unified_job_template that is not type of job template'}}
-            else:
-                return {}
-
-        accepted_fields, ignored_fields, prompts_errors = ujt_obj._accept_or_ignore_job_kwargs(**prompts_dict)
-
-        ignored_dict = {}
-        for fd in ignored_fields:
-            ignored_dict[fd] = 'Workflow node provided field, but job template is not set to ask on launch'
-        scan_errors = ujt_obj._extra_job_type_errors(accepted_fields)
-        ignored_dict.update(scan_errors)
-
-        data = {}
-        if ignored_dict:
-            data['ignored'] = ignored_dict
-        return data
-
     def get_parent_nodes(self):
         '''Returns queryset containing all parents of this node'''
         success_parents = getattr(self, '%ss_success' % self.__class__.__name__.lower()).all()
@@ -212,17 +188,14 @@ class WorkflowJobNode(WorkflowNodeBase):
         # reject/accept prompted fields
         data = {}
         ujt_obj = self.unified_job_template
-        if ujt_obj and isinstance(ujt_obj, JobTemplate):
-            accepted_fields, ignored_fields, errors = ujt_obj._accept_or_ignore_job_kwargs(**self.prompts_dict())
-            if errors:
-                logger.info(_('Bad launch configuration starting template {template_pk} as part of '
-                              'workflow {workflow_pk}. Errors:\n{error_text}').format(
-                                  template_pk=ujt_obj.pk,
-                                  workflow_pk=self.pk,
-                                  error_text=errors))
-            for fd in ujt_obj._extra_job_type_errors(accepted_fields):
-                accepted_fields.pop(fd)
-            data.update(accepted_fields)  # missing fields are handled in the scheduler
+        accepted_fields, ignored_fields, errors = ujt_obj._accept_or_ignore_job_kwargs(**self.prompts_dict())
+        if errors:
+            logger.info(_('Bad launch configuration starting template {template_pk} as part of '
+                          'workflow {workflow_pk}. Errors:\n{error_text}').format(
+                              template_pk=ujt_obj.pk,
+                              workflow_pk=self.pk,
+                              error_text=errors))
+        data.update(accepted_fields)  # missing fields are handled in the scheduler
         # build ancestor artifacts, save them to node model for later
         aa_dict = {}
         for parent_node in self.get_parent_nodes():
@@ -232,14 +205,16 @@ class WorkflowJobNode(WorkflowNodeBase):
         if aa_dict:
             self.ancestor_artifacts = aa_dict
             self.save(update_fields=['ancestor_artifacts'])
+        # process password list
         password_dict = {}
         if '_ansible_no_log' in aa_dict:
             for key in aa_dict:
                 if key != '_ansible_no_log':
                     password_dict[key] = REPLACE_STR
-        workflow_job_survey_passwords = self.workflow_job.survey_passwords
-        if workflow_job_survey_passwords:
-            password_dict.update(workflow_job_survey_passwords)
+        if self.workflow_job.survey_passwords:
+            password_dict.update(self.workflow_job.survey_passwords)
+        if self.survey_passwords:
+            password_dict.update(self.survey_passwords)
         if password_dict:
             data['survey_passwords'] = password_dict
         # process extra_vars
@@ -399,7 +374,6 @@ class WorkflowJobTemplate(UnifiedJobTemplate, WorkflowJobOptions, SurveyJobTempl
         return prompted_fields, rejected_fields, errors_dict
 
     def can_start_without_user_input(self):
-        '''Return whether WFJT can be launched without survey passwords.'''
         return not bool(
             self.variables_needed_to_start or
             self.node_templates_missing() or
@@ -412,8 +386,12 @@ class WorkflowJobTemplate(UnifiedJobTemplate, WorkflowJobOptions, SurveyJobTempl
     def node_prompts_rejected(self):
         node_list = []
         for node in self.workflow_job_template_nodes.prefetch_related('unified_job_template').all():
-            node_prompts_warnings = node.get_prompts_warnings()
-            if node_prompts_warnings:
+            ujt_obj = node.unified_job_template
+            if ujt_obj is None:
+                continue
+            prompts_dict = node.prompts_dict()
+            accepted_fields, ignored_fields, prompts_errors = ujt_obj._accept_or_ignore_job_kwargs(**prompts_dict)
+            if prompts_errors:
                 node_list.append(node.pk)
         return node_list
 

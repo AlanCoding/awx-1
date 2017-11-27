@@ -2820,6 +2820,11 @@ class JobTemplateLaunch(RetrieveAPIView):
                     # add the deprecated credential specified in the request
                     if not isinstance(prompted_value, Iterable):
                         prompted_value = [prompted_value]
+
+                    # If user gave extra_credentials, special case to use exactly
+                    # the given list without merging with JT credentials
+                    if key == 'extra_credentials' and prompted_value:
+                        obj._deprecated_credential_launch = True
                     new_credentials.extend(prompted_value)
 
             # combine the list of "new" and the filtered list of "old"

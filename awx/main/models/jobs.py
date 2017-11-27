@@ -40,7 +40,6 @@ from awx.main.utils import (
 )
 from awx.main.fields import ImplicitRoleField
 from awx.main.models.mixins import ResourceMixin, SurveyJobTemplateMixin, SurveyJobMixin, TaskManagerJobMixin
-from awx.main.models.base import PERM_INVENTORY_SCAN
 from awx.main.fields import JSONField, AskForField
 
 from awx.main.consumers import emit_channel_notification
@@ -348,13 +347,13 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
                 not variables_needed)
 
     def _accept_or_ignore_job_kwargs(self, **kwargs):
-        prompted_fields = {}
-        rejected_fields = {}
+        prompted_data = {}
+        rejected_data = {}
         accepted_vars, rejected_vars, errors_dict = self.accept_or_ignore_variables(kwargs.get('extra_vars', {}))
         if accepted_vars:
-            prompted_fields['extra_vars'] = accepted_vars
+            prompted_data['extra_vars'] = accepted_vars
         if rejected_vars:
-            rejected_fields['extra_vars'] = rejected_vars
+            rejected_data['extra_vars'] = rejected_vars
 
         # Handle all the other fields that follow the simple prompting rule
         for field_name, ask_field_name in self.ask_mapping.items():
@@ -369,7 +368,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
                 old_value = set(old_value.all())
                 # TODO: get answer on this, remove _is_manual_launch functionality, depending on triage
                 # Special processing of no-ops for many-to-many field
-                if getattr(self, '_is_manual_launch', False):
+                if getattr(self, '_is_manual_launch', False) or getattr(self, '_deprecated_credential_launch', False):
                     # pass
                     new_value = set(kwargs[field_name])
                 else:
@@ -383,10 +382,10 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
                 continue
             elif getattr(self, ask_field_name):
                 # accepted prompt
-                prompted_fields[field_name] = new_value
+                prompted_data[field_name] = new_value
             else:
                 # unprompted - template is not configured to accept field on launch
-                rejected_fields[field_name] = new_value
+                rejected_data[field_name] = new_value
                 # Not considered an error for manual launch, to support old
                 # behavior of putting them in ignored_fields and launching anyway
                 if not getattr(self, '_is_manual_launch', False):
@@ -400,25 +399,13 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         if needed:
             needed_errors = []
             for resource in needed:
-                if resource in prompted_fields:
+                if resource in prompted_data:
                     continue
                 needed_errors.append(_("Job Template {} is missing or undefined.").format(resource))
             if needed_errors:
                 errors_dict['resources_needed_to_start'] = needed_errors
 
-        return prompted_fields, rejected_fields, errors_dict
-
-    def _extra_job_type_errors(self, data):
-        """
-        Used to enforce 2 special cases around scan jobs and prompting
-         - the inventory cannot be changed on a scan job template
-         - scan jobs cannot be switched to run/check type and vice versa
-        """
-        errors = {}
-        if 'job_type' in data and self.ask_job_type_on_launch:
-            if data['job_type'] == PERM_INVENTORY_SCAN and not self.job_type == PERM_INVENTORY_SCAN:
-                errors['job_type'] = _('Cannot override job_type to or from a scan job.')
-        return errors
+        return prompted_data, rejected_data, errors_dict
 
     @property
     def cache_timeout_blocked(self):
@@ -1529,6 +1516,16 @@ class SystemJobTemplate(UnifiedJobTemplate, SystemJobOptions):
         return dict(error=list(error_notification_templates),
                     success=list(success_notification_templates),
                     any=list(any_notification_templates))
+
+    def _accept_or_ignore_job_kwargs(self, **kwargs):
+        extra_data = kwargs.pop('extra_vars', {})
+        prompted_data, rejected_data, errors = super(SystemJobTemplate, self)._accept_or_ignore_job_kwargs(**kwargs)
+        prompted_vars, rejected_vars, errors = self.accept_or_ignore_variables(extra_data, errors)
+        if prompted_vars:
+            prompted_data['extra_vars'] = prompted_vars
+        if rejected_vars:
+            rejected_data['extra_vars'] = rejected_data
+        return (prompted_data, rejected_data, errors)
 
     def _accept_or_ignore_variables(self, data, errors):
         '''

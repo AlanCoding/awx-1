@@ -1149,6 +1149,7 @@ class JobTemplateAccess(BaseAccess):
     model = JobTemplate
     select_related = ('created_by', 'modified_by', 'inventory', 'project',
                       'next_schedule',)
+    prefetch_related = ('credentials__credential_type',)
 
     def filtered_queryset(self):
         return self.model.accessible_objects(self.user, 'read_role')
@@ -1315,6 +1316,7 @@ class JobAccess(BaseAccess):
     prefetch_related = (
         'unified_job_template',
         'instance_group',
+        'credentials__credential_type',
         Prefetch('labels', queryset=Label.objects.all().order_by('name')),
     )
 
@@ -2003,8 +2005,6 @@ class UnifiedJobTemplateAccess(BaseAccess):
     #qs = qs.prefetch_related(
     #    'project',
     #    'inventory',
-    #    'credential',
-    #    'credential__credential_type',
     #)
 
     def filtered_queryset(self):
@@ -2047,8 +2047,6 @@ class UnifiedJobAccess(BaseAccess):
     #qs = qs.prefetch_related(
     #    'project',
     #    'inventory',
-    #    'credential',
-    #    'credential__credential_type',
     #    'job_template',
     #    'inventory_source',
     #    'project___credential',
@@ -2056,7 +2054,6 @@ class UnifiedJobAccess(BaseAccess):
     #    'inventory_source___inventory',
     #    'job_template__inventory',
     #    'job_template__project',
-    #    'job_template__credential',
     #)
 
     def filtered_queryset(self):

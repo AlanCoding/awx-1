@@ -17,6 +17,17 @@ def full_jt(inventory, project, machine_credential):
     return jt
 
 
+@pytest.fixture
+def config_factory(full_jt):
+    def return_config(data):
+        job = full_jt.create_unified_job(**data)
+        try:
+            return job.launch_config
+        except JobLaunchConfig.DoesNotExist:
+            return None
+    return return_config
+
+
 @pytest.mark.django_db
 class TestConfigCreation:
     '''
@@ -38,3 +49,23 @@ class TestConfigCreation:
         job = full_jt.create_unified_job(credentials=[credential])
         config = job.launch_config
         assert set(config.credentials.all()) == set([credential])
+
+
+@pytest.mark.django_db
+class TestConfigReversibility:
+    '''
+    Checks that a blob of saved prompts will be re-created in the
+    prompts_dict for launching new jobs
+    '''
+    def test_char_field_only(self, config_factory):
+        config = config_factory({'limit': 'foobar'})
+        assert config.prompts_dict() == {'limit': 'foobar'}
+
+    def test_related_objects(self, config_factory, inventory, credential):
+        prompts = {
+            'limit': 'foobar',
+            'inventory': inventory,
+            'credentials': set([credential])
+        }
+        config = config_factory(prompts)
+        assert config.prompts_dict() == prompts

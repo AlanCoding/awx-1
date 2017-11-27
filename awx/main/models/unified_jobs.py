@@ -429,6 +429,12 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         copy_m2m_relationships(self, unified_jt, fields)
         return unified_jt
 
+    def _accept_or_ignore_job_kwargs(self, **kwargs):
+        '''
+        Override in subclass if template accepts _any_ prompted params
+        '''
+        return ({}, kwargs, {"all": ["Fields {} are not allowed on launch.".format(kwargs.keys())]})
+
     def accept_or_ignore_variables(self, data, errors=None):
         '''
         If subclasses accept any `variables` or `extra_vars`, they should

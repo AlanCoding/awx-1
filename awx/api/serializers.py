@@ -38,6 +38,7 @@ from polymorphic.models import PolymorphicModel
 from awx.main.constants import SCHEDULEABLE_PROVIDERS, ANSI_SGR_PATTERN
 from awx.main.models import * # noqa
 from awx.main.models.unified_jobs import ACTIVE_STATES
+from awx.main.models.base import NEW_JOB_TYPE_CHOICES
 from awx.main.access import get_user_capabilities
 from awx.main.fields import ImplicitRoleField
 from awx.main.utils import (
@@ -2975,7 +2976,7 @@ class WorkflowJobCancelSerializer(WorkflowJobSerializer):
 
 class LaunchConfigurationBaseSerializer(BaseSerializer):
     job_type = serializers.ChoiceField(allow_blank=True, allow_null=True, required=False, default=None,
-                                       choices=JOB_TYPE_CHOICES)
+                                       choices=NEW_JOB_TYPE_CHOICES)
     job_tags = serializers.CharField(allow_blank=True, allow_null=True, required=False, default=None)
     limit = serializers.CharField(allow_blank=True, allow_null=True, required=False, default=None)
     skip_tags = serializers.CharField(allow_blank=True, allow_null=True, required=False, default=None)
@@ -3360,7 +3361,7 @@ class JobLaunchSerializer(BaseSerializer):
     credential_passwords = VerbatimField(required=False, write_only=True)
     diff_mode = serializers.BooleanField(required=False, write_only=True)
     job_tags = serializers.CharField(required=False, write_only=True, allow_blank=True)
-    job_type = serializers.ChoiceField(required=False, choices=JOB_TYPE_CHOICES, write_only=True)
+    job_type = serializers.ChoiceField(required=False, choices=NEW_JOB_TYPE_CHOICES, write_only=True)
     skip_tags = serializers.CharField(required=False, write_only=True, allow_blank=True)
     limit = serializers.CharField(required=False, write_only=True, allow_blank=True)
     verbosity = serializers.ChoiceField(required=False, choices=VERBOSITY_CHOICES, write_only=True)
@@ -3428,9 +3429,6 @@ class JobLaunchSerializer(BaseSerializer):
             errors['inventory'] = _("The inventory associated with this Job Template is being deleted.")
         elif 'inventory' in accepted and accepted['inventory'].pending_deletion:
             errors['inventory'] = _("The provided inventory is being deleted.")
-
-        # Special prohibited cases for scan jobs
-        errors.update(template._extra_job_type_errors(accepted))
 
         # Prohibit providing multiple credentials of the same CredentialType.kind
         # or multiples of same vault id

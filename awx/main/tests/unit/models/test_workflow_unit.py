@@ -213,52 +213,25 @@ class TestWorkflowJobNodeJobKWARGS:
     def test_char_prompts_and_res_node_prompts(self, job_node_with_prompts):
         # TBD: properly handle multicred credential assignment
         expect_kwargs = dict(
-            inventory=job_node_with_prompts.inventory.pk,
+            inventory=job_node_with_prompts.inventory,
             **example_prompts)
         expect_kwargs.update(self.kwargs_base)
         assert job_node_with_prompts.get_job_kwargs() == expect_kwargs
-        # TODO: functional test for .credentials association
 
     def test_reject_some_node_prompts(self, job_node_with_prompts):
         # TBD: properly handle multicred credential assignment
         job_node_with_prompts.unified_job_template.ask_inventory_on_launch = False
         job_node_with_prompts.unified_job_template.ask_job_type_on_launch = False
-        expect_kwargs = dict(inventory=job_node_with_prompts.inventory.pk,
+        expect_kwargs = dict(inventory=job_node_with_prompts.inventory,
                              **example_prompts)
         expect_kwargs.update(self.kwargs_base)
         expect_kwargs.pop('inventory')
         expect_kwargs.pop('job_type')
         assert job_node_with_prompts.get_job_kwargs() == expect_kwargs
-        # TODO: functional test for .credentials association
 
     def test_no_accepted_project_node_prompts(self, job_node_no_prompts, project_unit):
         job_node_no_prompts.unified_job_template = project_unit
         assert job_node_no_prompts.get_job_kwargs() == self.kwargs_base
-
-
-class TestWorkflowWarnings:
-    """
-    Tests of warnings that show user errors in the construction of a workflow
-    """
-
-    def test_no_warn_project_node_no_prompts(self, job_node_no_prompts, project_unit):
-        job_node_no_prompts.unified_job_template = project_unit
-        assert job_node_no_prompts.get_prompts_warnings() == {}
-
-    def test_warn_project_node_reject_all_prompts(self, job_node_with_prompts, project_unit):
-        job_node_with_prompts.unified_job_template = project_unit
-        assert 'ignored' in job_node_with_prompts.get_prompts_warnings()
-        assert 'all' in job_node_with_prompts.get_prompts_warnings()['ignored']
-
-    def test_no_warn_accept_all_prompts(self, job_node_with_prompts):
-        assert job_node_with_prompts.get_prompts_warnings() == {}
-
-    def test_warn_reject_some_prompts(self, job_node_with_prompts):
-        job_node_with_prompts.unified_job_template.ask_credential_on_launch = False
-        job_node_with_prompts.unified_job_template.ask_job_type_on_launch = False
-        assert 'ignored' in job_node_with_prompts.get_prompts_warnings()
-        assert 'job_type' in job_node_with_prompts.get_prompts_warnings()['ignored']
-        assert len(job_node_with_prompts.get_prompts_warnings()['ignored']) == 1
 
 
 def test_ask_mapping_integrity():
