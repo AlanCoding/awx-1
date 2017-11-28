@@ -140,25 +140,32 @@ def test_project_org_admin_delete_allowed(normal_job, org_admin):
 @pytest.mark.django_db
 class TestJobRelaunchAccess:
 
-    def test_job_relaunch_normal_resource_access(self, user, inventory, machine_credential):
-        job_with_links = Job.objects.create(name='existing-job', inventory=inventory)
+    @pytest.mark.parametrize("inv_access,cred_access,can_start", [
+        (True, True, True),  # Confirm that a user with inventory & credential access can launch
+        (False, True, False),  # Confirm that a user with credential access alone cannot launch
+        (True, False, False),  # Confirm that a user with inventory access alone cannot launch
+    ])
+    def test_job_relaunch_resource_access(self, user, inventory, machine_credential,
+                                          inv_access, cred_access, can_start):
+        job_template = JobTemplate.objects.create(
+            ask_inventory_on_launch=True,
+            ask_credential_on_launch=True
+        )
+        job_with_links = Job.objects.create(name='existing-job', inventory=inventory, job_template=job_template)
         job_with_links.credentials.add(machine_credential)
-        inventory_user = user('user1', False)
-        credential_user = user('user2', False)
-        both_user = user('user3', False)
+        JobLaunchConfig.objects.create(job=job_with_links, inventory=inventory)
+        job_with_links.launch_config.credentials.add(machine_credential)  # credential was prompted
+        u = user('user1', False)
+        job_template.execute_role.members.add(u)
+        if inv_access:
+            job_with_links.inventory.use_role.members.add(u)
+        if cred_access:
+            machine_credential.use_role.members.add(u)
 
-        # Confirm that a user with inventory & credential access can launch
-        machine_credential.use_role.members.add(both_user)
-        job_with_links.inventory.use_role.members.add(both_user)
-        assert both_user.can_access(Job, 'start', job_with_links, validate_license=False)
-
-        # Confirm that a user with credential access alone cannot launch
-        machine_credential.use_role.members.add(credential_user)
-        assert not credential_user.can_access(Job, 'start', job_with_links, validate_license=False)
-
-        # Confirm that a user with inventory access alone cannot launch
-        job_with_links.inventory.use_role.members.add(inventory_user)
-        assert not inventory_user.can_access(Job, 'start', job_with_links, validate_license=False)
+        access = JobAccess(u)
+        assert access.can_start(job_with_links, validate_license=False) == can_start, (
+            "Inventory access: {}\nCredential access: {}\n Expected access: {}".format(inv_access, cred_access, can_start)
+        )
 
     def test_job_relaunch_credential_access(
             self, inventory, project, credential, net_credential):
@@ -169,11 +176,10 @@ class TestJobRelaunchAccess:
         # Job is unchanged from JT, user has ability to launch
         jt_user = User.objects.create(username='jobtemplateuser')
         jt.execute_role.members.add(jt_user)
-        assert jt_user in job.job_template.execute_role
         assert jt_user.can_access(Job, 'start', job, validate_license=False)
 
         # Job has prompted net credential, launch denied w/ message
-        job.credentials.add(net_credential)
+        job = jt.create_unified_job(credentials=[net_credential])
         assert not jt_user.can_access(Job, 'start', job, validate_license=False)
 
     def test_prompted_credential_relaunch_denied(
@@ -183,9 +189,10 @@ class TestJobRelaunchAccess:
             ask_credential_on_launch=True)
         job = jt.create_unified_job()
         jt.execute_role.members.add(rando)
+        assert rando.can_access(Job, 'start', job, validate_license=False)
 
         # Job has prompted net credential, rando lacks permission to use it
-        job.credentials.add(net_credential)
+        job = jt.create_unified_job(credentials=[net_credential])
         assert not rando.can_access(Job, 'start', job, validate_license=False)
 
     def test_prompted_credential_relaunch_allowed(

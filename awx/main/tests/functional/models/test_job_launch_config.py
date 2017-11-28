@@ -36,8 +36,7 @@ class TestConfigCreation:
     '''
     def test_null_configuration(self, full_jt):
         job = full_jt.create_unified_job()
-        with pytest.raises(JobLaunchConfig.DoesNotExist):
-            job.launch_config
+        assert job.launch_config.prompts_dict() == {}
 
     def test_char_field_change(self, full_jt):
         job = full_jt.create_unified_job(limit='foobar')

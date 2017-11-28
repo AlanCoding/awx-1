@@ -337,7 +337,8 @@ def test_extra_creds_prompted_at_launch(get, post, job_template, admin, net_cred
 @pytest.mark.django_db
 def test_invalid_mixed_credentials_specification(get, post, job_template, admin, net_credential):
     url = reverse('api:job_template_launch', kwargs={'pk': job_template.pk})
-    post(url, {'credentials': [net_credential.pk], 'extra_credentials': [net_credential.pk]}, admin, expect=400)
+    post(url=url, data={'credentials': [net_credential.pk], 'extra_credentials': [net_credential.pk]},
+         user=admin, expect=400)
 
 
 @pytest.mark.django_db

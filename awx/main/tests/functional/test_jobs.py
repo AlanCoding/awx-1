@@ -56,10 +56,10 @@ class TestLaunchConfig:
         config = job.create_config_from_prompts(data)
         assert config is None
 
-    def test_only_limit_defined(self):
-        job = Job.objects.create()
+    def test_only_limit_defined(self, job_template):
+        job = Job.objects.create(job_template=job_template)
         data = {
-            "extra_credentials": [],
+            "credentials": [],
             "extra_vars": {},
             "job_tags": None,
             "limit": ""

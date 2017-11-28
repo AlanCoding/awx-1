@@ -1406,10 +1406,12 @@ class JobAccess(BaseAccess):
         # Check if JT execute access (and related prompts) are sufficient
         if obj.job_template is not None:
             if config is None:
-                prompts_access = True
+                prompts_access = False
             else:
-                prompts_access = JobLaunchConfigAccess(self.user).can_add(
-                    {'reference_obj': config})
+                prompts_access = (
+                    JobLaunchConfigAccess(self.user).can_add({'reference_obj': config}) and
+                    not config.has_unprompted(obj.job_template)
+                )
             jt_access = self.user in obj.job_template.execute_role
             if prompts_access and jt_access:
                 return True
@@ -1425,6 +1427,8 @@ class JobAccess(BaseAccess):
         if not ret and self.save_messages:
             if not obj.job_template:
                 pretext = _('Job has been orphaned from its job template.')
+            elif config is None:
+                pretext = _('Job was launched with unknown prompted fields.')
             else:
                 pretext = _('Job was launched with prompted fields.')
             if credential_access:
@@ -1500,14 +1504,18 @@ class JobLaunchConfigAccess(BaseAccess):
     def can_add(self, data, template=None):
         # This is a special case, we don't check related many-to-many elsewhere
         # launch RBAC checks use this
-        if 'credentials' in data and data['credentials']:
-            # If given model objects, only use the primary key from them
-            cred_pks = [cred.pk for cred in data['credentials']]
-            if template:
-                for cred in template.credentials.all():
-                    if cred.pk in cred_pks:
-                        cred_pks.remove(cred.pk)
-            if self._unusable_creds_exist(Credential.objects.filter(pk__in=cred_pks)):
+        if 'credentials' in data and data['credentials'] or 'reference_obj' in data:
+            if 'reference_obj' in data:
+                prompted_cred_qs = data['reference_obj'].credentials.all()
+            else:
+                # If given model objects, only use the primary key from them
+                cred_pks = [cred.pk for cred in data['credentials']]
+                if template:
+                    for cred in template.credentials.all():
+                        if cred.pk in cred_pks:
+                            cred_pks.remove(cred.pk)
+                prompted_cred_qs = Credential.objects.filter(pk__in=cred_pks)
+            if self._unusable_creds_exist(prompted_cred_qs):
                 return False
         return self.check_related('inventory', Inventory, data, role_field='use_role')
 

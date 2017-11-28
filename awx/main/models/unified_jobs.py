@@ -821,53 +821,62 @@ class UnifiedJob(PolymorphicModel, PasswordFieldsModel, CommonModelNameNotUnique
         unified_job_class = self.__class__
         unified_jt_class = self._get_unified_job_template_class()
         parent_field_name = unified_job_class._get_parent_field_name()
+        fields = unified_jt_class._get_unified_job_field_names() + [parent_field_name]
 
-        if self.unified_job_template:
-            JobLaunchConfig = self._meta.get_field('launch_config').related_model
-            try:
-                config = self.launch_config
-                prompts = config.prompts_dict()
-            except JobLaunchConfig.DoesNotExist:
-                prompts = {}
+        create_data = {"launch_type": "relaunch"}
+        if limit:
+            create_data["limit"] = limit
+
+        prompts = self.launch_prompts()
+        if self.unified_job_template and prompts:
+            prompts['_eager_fields'] = create_data
             unified_job = self.unified_job_template.create_unified_job(**prompts)
         else:
-            fields = unified_jt_class._get_unified_job_field_names() + [parent_field_name]
             unified_job = copy_model_by_class(self, unified_job_class, fields, {})
-
-        unified_job.launch_type = 'relaunch'
-        if limit:
-            unified_job.limit = limit
-        unified_job.save()
+            for fd, val in create_data.items():
+                setattr(unified_job, fd, val)
+            unified_job.save()
 
         # Labels coppied here
         copy_m2m_relationships(self, unified_job, fields)
         return unified_job
 
+    def launch_prompts(self):
+        '''
+        Return dictionary of prompts job was launched with
+        returns None if unknown
+        '''
+        JobLaunchConfig = self._meta.get_field('launch_config').related_model
+        try:
+            config = self.launch_config
+            return config.prompts_dict()
+        except JobLaunchConfig.DoesNotExist:
+            return None
+
     def create_config_from_prompts(self, kwargs):
         '''
         Create a launch configuration entry for this job, given prompts
+        returns None if it can not be created
         '''
+        if self.unified_job_template is None:
+            return None
         JobLaunchConfig = self._meta.get_field('launch_config').related_model
-        if kwargs:
-            config = JobLaunchConfig(job=self)
-            for field_name, value in kwargs.items():
-                if (field_name not in self.unified_job_template.ask_mapping and
-                        field_name != 'survey_passwords'):
-                    raise Exception('Unrecognized launch config field {}.'.format(field_name))
-                if field_name == 'credentials':
-                    continue
-                key = field_name
-                if key == 'extra_vars':
-                    key = 'extra_data'
-                setattr(config, key, value)
-            config.save()
+        config = JobLaunchConfig(job=self)
+        for field_name, value in kwargs.items():
+            if (field_name not in self.unified_job_template.ask_mapping and field_name != 'survey_passwords'):
+                raise Exception('Unrecognized launch config field {}.'.format(field_name))
+            if field_name == 'credentials':
+                continue
+            key = field_name
+            if key == 'extra_vars':
+                key = 'extra_data'
+            setattr(config, key, value)
+        config.save()
 
-            job_creds = (set(kwargs.get('credentials', [])) -
-                         set(self.unified_job_template.credentials.all()))
-            if job_creds:
-                config.credentials.add(*job_creds)
-        else:
-            config = None
+        job_creds = (set(kwargs.get('credentials', [])) -
+                     set(self.unified_job_template.credentials.all()))
+        if job_creds:
+            config.credentials.add(*job_creds)
         return config
 
     def result_stdout_raw_handle(self, attempt=0):

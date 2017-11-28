@@ -288,7 +288,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
     def _get_unified_job_field_names(cls):
         return ['name', 'description', 'job_type', 'inventory', 'project',
                 'playbook', 'credentials', 'forks', 'schedule', 'limit',
-                'verbosity', 'job_tags', 'extra_vars', 'launch_type',
+                'verbosity', 'job_tags', 'extra_vars',
                 'force_handlers', 'skip_tags', 'start_at_task',
                 'become_enabled', 'labels', 'survey_passwords',
                 'allow_simultaneous', 'timeout', 'use_fact_cache',
@@ -847,28 +847,26 @@ class LaunchTimeConfig(BaseModel):
 
     def prompts_dict(self):
         data = {}
-        field_names = set(field.name for field in self._meta.get_fields())
         for prompt_name in JobTemplate.ask_mapping.keys():
-            if prompt_name in field_names:
+            try:
                 field = self._meta.get_field(prompt_name)
-                if isinstance(field, models.ForeignKey):
-                    prompt_val = getattr(self, prompt_name)
-                    if prompt_val is not None:
-                        data[prompt_name] = prompt_val
-                elif isinstance(field, models.ManyToManyField):
-                    if not self.pk:
-                        # unsaved object can't have related many-to-many
-                        continue
-                    prompt_val = set(getattr(self, prompt_name).all())
-                    if len(prompt_val) > 0:
-                        data[prompt_name] = prompt_val
-                elif prompt_name == 'extra_vars':
+            except FieldDoesNotExist:
+                field = None
+            if isinstance(field, models.ManyToManyField):
+                if not self.pk:
+                    continue  # unsaved object can't have related many-to-many
+                prompt_val = set(getattr(self, prompt_name).all())
+                if len(prompt_val) > 0:
+                    data[prompt_name] = prompt_val
+            elif prompt_name == 'extra_vars':
+                if self.extra_data:
                     data[prompt_name] = self.extra_data
+                if self.survey_passwords:
                     data['survey_passwords'] = self.survey_passwords
-                else:
-                    raise Exception('Processing of field {} not implemented.'.format(prompt_name))
-            elif prompt_name in self.char_prompts:
-                data[prompt_name] = self.char_prompts[prompt_name]
+            else:
+                prompt_val = getattr(self, prompt_name)
+                if prompt_val is not None:
+                    data[prompt_name] = prompt_val
         return data
 
     @property
@@ -915,6 +913,18 @@ class JobLaunchConfig(LaunchTimeConfig):
         on_delete=models.CASCADE,
         editable=False,
     )
+
+    def has_unprompted(self, template):
+        '''
+        returns False if the template has set ask_ fields to False after
+        launching with those prompts
+        '''
+        prompts = self.prompts_dict()
+        for field_name, ask_field_name in template.ask_mapping.items():
+            if field_name in prompts and not getattr(template, ask_field_name):
+                return True
+        else:
+            return False
 
 
 class JobHostSummary(CreatedModifiedModel):
@@ -1524,7 +1534,7 @@ class SystemJobTemplate(UnifiedJobTemplate, SystemJobOptions):
         if prompted_vars:
             prompted_data['extra_vars'] = prompted_vars
         if rejected_vars:
-            rejected_data['extra_vars'] = rejected_data
+            rejected_data['extra_vars'] = rejected_vars
         return (prompted_data, rejected_data, errors)
 
     def _accept_or_ignore_variables(self, data, errors):

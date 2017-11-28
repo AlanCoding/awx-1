@@ -188,14 +188,15 @@ class WorkflowJobNode(WorkflowNodeBase):
         # reject/accept prompted fields
         data = {}
         ujt_obj = self.unified_job_template
-        accepted_fields, ignored_fields, errors = ujt_obj._accept_or_ignore_job_kwargs(**self.prompts_dict())
-        if errors:
-            logger.info(_('Bad launch configuration starting template {template_pk} as part of '
-                          'workflow {workflow_pk}. Errors:\n{error_text}').format(
-                              template_pk=ujt_obj.pk,
-                              workflow_pk=self.pk,
-                              error_text=errors))
-        data.update(accepted_fields)  # missing fields are handled in the scheduler
+        if ujt_obj is not None:
+            accepted_fields, ignored_fields, errors = ujt_obj._accept_or_ignore_job_kwargs(**self.prompts_dict())
+            if errors:
+                logger.info(_('Bad launch configuration starting template {template_pk} as part of '
+                              'workflow {workflow_pk}. Errors:\n{error_text}').format(
+                                  template_pk=ujt_obj.pk,
+                                  workflow_pk=self.pk,
+                                  error_text=errors))
+            data.update(accepted_fields)  # missing fields are handled in the scheduler
         # build ancestor artifacts, save them to node model for later
         aa_dict = {}
         for parent_node in self.get_parent_nodes():

@@ -2792,10 +2792,9 @@ class JobTemplateLaunch(RetrieveAPIView):
             'vault_credential' in modern_data or
             'extra_credentials' in modern_data
         ):
-            return Response(dict(
-                error=_("'credentials' cannot be used in combination with 'credential', 'vault_credential', or 'extra_credentials'.")),  # noqa
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise ParseError({"error": _(
+                "'credentials' cannot be used in combination with 'credential', 'vault_credential', or 'extra_credentials'."
+            )})
 
         if (
             'credential' in modern_data or
@@ -2841,10 +2840,15 @@ class JobTemplateLaunch(RetrieveAPIView):
 
     def post(self, request, *args, **kwargs):
         obj = self.get_object()
+        print request.data
 
-        modern_data, ignored_fields = self.modernize_launch_payload(
-            data=request.data, obj=obj
-        )
+        try:
+            modern_data, ignored_fields = self.modernize_launch_payload(
+                data=request.data, obj=obj
+            )
+        except ParseError as exc:
+            print ' args ' + str(exc.args)
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = self.serializer_class(data=modern_data, context={'template': obj})
         if not serializer.is_valid():
