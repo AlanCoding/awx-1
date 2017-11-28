@@ -366,9 +366,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
             field = self._meta.get_field(field_name)
             if isinstance(field, models.ManyToManyField):
                 old_value = set(old_value.all())
-                # TODO: get answer on this, remove _is_manual_launch functionality, depending on triage
-                # Special processing of no-ops for many-to-many field
-                if getattr(self, '_is_manual_launch', False) or getattr(self, '_deprecated_credential_launch', False):
+                if getattr(self, '_deprecated_credential_launch', False):
                     # pass
                     new_value = set(kwargs[field_name])
                 else:

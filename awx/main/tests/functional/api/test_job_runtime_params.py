@@ -277,7 +277,7 @@ def test_job_block_scan_job_type_change(job_template_prompts, post, admin_user):
 
 
 @pytest.mark.django_db
-def test_job_launch_JT_with_validation(machine_credential, deploy_jobtemplate):
+def test_job_launch_JT_with_validation(machine_credential, credential, deploy_jobtemplate):
     deploy_jobtemplate.extra_vars = '{"job_template_var": 3}'
     deploy_jobtemplate.ask_credential_on_launch = True
     deploy_jobtemplate.ask_variables_on_launch = True
@@ -292,7 +292,9 @@ def test_job_launch_JT_with_validation(machine_credential, deploy_jobtemplate):
     job_obj = deploy_jobtemplate.create_unified_job(**kv)
 
     final_job_extra_vars = yaml.load(job_obj.extra_vars)
-    assert [cred.pk for cred in job_obj.credentials.all()] == [machine_credential.id]
+    assert 'job_launch_var' in final_job_extra_vars
+    assert 'job_template_var' in final_job_extra_vars
+    assert set([cred.pk for cred in job_obj.credentials.all()]) == set([machine_credential.id, credential.id])
 
 
 @pytest.mark.django_db
@@ -346,10 +348,9 @@ def test_job_launch_with_empty_creds(machine_credential, vault_credential, deplo
     assert validated
 
     prompted_fields, ignored_fields, errors = deploy_jobtemplate._accept_or_ignore_job_kwargs(**kv)
-    deploy_jobtemplate._is_manual_launch = True
     job_obj = deploy_jobtemplate.create_unified_job(**prompted_fields)
-    assert job_obj.credential is None
-    assert job_obj.vault_credential is None
+    assert job_obj.credential is deploy_jobtemplate.credential
+    assert job_obj.vault_credential is deploy_jobtemplate.vault_credential
 
 
 @pytest.mark.django_db

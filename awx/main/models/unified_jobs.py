@@ -380,9 +380,8 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
             cred_dict = Credential.unique_dict(self.credentials.all())
             prompted_dict = Credential.unique_dict(kwargs['credentials'])
             # combine prompted credentials with JT
-            if not getattr(self, '_is_manual_launch', False):
-                cred_dict.update(prompted_dict)
-                kwargs['credentials'] = [cred for cred in cred_dict.values()]
+            cred_dict.update(prompted_dict)
+            kwargs['credentials'] = [cred for cred in cred_dict.values()]
 
         from awx.main.signals import disable_activity_stream
         with disable_activity_stream():
