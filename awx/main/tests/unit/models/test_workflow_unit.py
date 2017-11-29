@@ -190,7 +190,6 @@ class TestWorkflowJobCreate:
                 inventory=wfjt_node_with_prompts.inventory,
                 unified_job_template=wfjt_node_with_prompts.unified_job_template,
                 workflow_job=workflow_job_unit)
-            # TODO: functional test for .credentials association
 
 
 @mock.patch('awx.main.models.workflow.WorkflowNodeBase.get_parent_nodes', lambda self: [])

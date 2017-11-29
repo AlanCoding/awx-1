@@ -72,8 +72,13 @@ actions in the API.
 For the POST action to launch, data for "prompts" are provided as top-level
 keys in the request data. There is a special-case to allow a list to be
 provided for `credentials`, which is otherwise not possible in AWX API design.
-Additionally, null-ish values may or may not override the job template
-values on a case-by-case basis, explained here.
+The list of credentials will either add extra credentials, or replace
+existing credentials in the job template if a provided credential is of
+the same type.
+
+Values of `null` are not allowed, if the field is not being over-ridden,
+the key should not be given in the payload. A 400 should be returned if
+this is done.
 
 Example:
 
@@ -83,12 +88,19 @@ POST to `/api/v2/job_templates/N/launch/` with data:
 {
   "job_type": "check",
   "limit": "",
-  "job_tags": null,
-  "verbosity": null,
   "credentials": [1, 2, 4],
   "extra_vars": {}
 }
 ```
+
+where the job template has credentials `[2, 3, 5]`, and the credential type
+are the following:
+
+ - 1 - gce
+ - 2 - ssh
+ - 3 - gce
+ - 4 - aws
+ - 5 - openstack
 
 Assuming that the job template is configured to prompt for all these,
 fields, here is what happens in this action:
@@ -97,26 +109,18 @@ fields, here is what happens in this action:
  - `limit` of the job takes the value of `""`, which means that Ansible will
    target all hosts in the inventory, even though the job template may have
    been targeted to a smaller subset of hosts
- - `job_tags` (a character field) take the value the job template has
- - `verbosity` (an int field) takes the value that the job template has
- - The job uses only the `credentials` with primary keys 1, 2, and 4,
-   ignoring those associated with the job template
+ - The job uses the `credentials` with primary keys 1, 2, 4, and 5
  - `extra_vars` of the job template will be used without any overrides
 
 If `extra_vars` in the request data contains some keys, these will
 be combined with the job template extra_vars dictionary, with the
 request data taking precedence.
 
-If the request data contains `"credentials": []`, the request should result
-in a 400 error, because without a machine credential, the job can not run.
-Saved launch configurations have a special-case. If the many-to-many field
-`credentials` has no associated credentials, the job will launch with
-the associated job template credentials, but if 1 or more credential
-is associated, the job will use these credentials, and none from the
-job template.
-
-If the field `inventory` is given a null value, a 400 code will be returned
-without launching the job.
+Provided credentials will replace any job template credentials of the same
+exclusive type, but combine with any others. In the example, the job template
+credential 3 was replaced with the provided credential 1, because a job
+may only use 1 gce credential because these two credentials define the
+same environment variables and configuration file.
 
 ### Saved Launch-time Configurations
 
@@ -132,22 +136,26 @@ directly on the model. Those models include Workflow Job Template Nodes,
 Workflow Job Nodes (a copy of the first), and Schedules.
 
 Jobs, themselves, have a configuration object stored in a related model,
-but this is hidden from the API, and only used to prepare the correct
-launch-time configuration for subsequent re-launch and re-scheduling of the job.
+and only used to prepare the correct launch-time configuration for subsequent
+re-launch and re-scheduling of the job. To see these prompts for a particular
+job, do a GET to `/api/v2/jobs/N/create_schedule/`.
 
 #### Workflow Node Launch Configuration (Changing in Tower 3.3)
 
-Workflow job nodes have a special rule that `extra_vars` from their parent
-workflow job will be combined with the variables that they provide in
+Workflow job nodes will combine `extra_vars` from their parent
+workflow job with the variables that they provide in
 `extra_data`, as well as artifacts from prior job runs. Both of these
 sources of variables have higher precedence than the variables defined in
 the node.
 
-However, all the sources of variables that a workflow passes to a job it
-spawns still abides by the rules of the template that the node uses. That
-means that if the template has `ask_variables_on_launch` set to false with
-no survey, neither the workflow JT or the artifacts will take effect
+All prompts that a workflow node passes to a spawned job abides by the
+rules of the related template.
+That means that if the node's job template has `ask_variables_on_launch` set
+to false with no survey, neither the workflow JT or the artifacts will take effect
 in the job that is spawned.
+If the node's job template has `ask_inventory_on_launch` set to false and
+the node provides an inventory, this resource will not be used in the spawned
+job. If a user creates a node that would do this, a 400 response will be returned.
 
 Behavior before the 3.3 release cycle was less-restrictive with passing
 workflow variables to the jobs it spawned, allowing variables to take effect
@@ -155,8 +163,8 @@ even when the job template was not configured to allow it.
 
 #### Job Relaunch and Re-scheduling
 
-Job relaunch does not allow user to provide any new fields at the time of relaunch.
-Relaunching will launch the job, re-applying all the prompts used at the
+Job relaunch does not allow user to provide any prompted fields at the time of relaunch.
+Relaunching will re-apply all the prompts used at the
 time of the original launch. This means that:
 
  - all prompts restrictions apply as-if the job was being launched with the
@@ -166,23 +174,14 @@ time of the original launch. This means that:
 Those same rules apply when created a schedule from the
 `/api/v2/schedule_job/` endpoint.
 
-#### Credential Merge and Replacement Logic
-
-Both WFJT nodes and schedules have a `credentials` many-to-many relationship
-by which credentials can be attached. On launch, these will overwrite a JT
-credential of the same type if it exists. If a JT credential of the same
-type does not exist, then it will be added to the spawned job's `credentials`
-list, in addition to the JT credentials.
-
-If the JT is not set to prompt for credential on launch, no saved credentials
-in the launch-time configuration will take effect and a warning will be
-issued in the logs.
+Jobs orphaned by a deleted job template can be relaunched,
+but only with organization or system administrator privileges.
 
 #### Credential Password Prompting Restriction
 
 If a job template uses a credential that is configured to prompt for a
 password at launch, these passwords cannot be saved for later as part
-of a save launch-time configuration. This is for security reasons.
+of a saved launch-time configuration. This is for security reasons.
 
 Credential passwords _can_ be provided at time of relaunch.
 
@@ -197,14 +196,13 @@ In other words, if no prompts (including surveys) are configured, a job
 must be identical to the template it was created from, for all fields
 that become `ansible-playbook` options.
 
-#### Disallowed Fields (Changing in Tower 3.3)
+#### Disallowed Fields
 
 If a manual launch provides fields not allowed by the rules of the template,
 the behavior is:
 
  - Launches without those fields, ignores fields
-   - lists fields in `ignored_fields` in POST response
- - With Tower 3.3, a 400 error is returned
+ - lists fields in `ignored_fields` in POST response
 
 #### Data Type Validation
 
@@ -213,19 +211,16 @@ for later, should be subject to the same validation that they would be
 if saving to the job template model. For example, only certain values of
 `job_type` are valid.
 
-Surveys impose additional restrictions that violations of the survey
+Surveys impose additional restrictions, and violations of the survey
 validation rules will prevent launch from proceeding.
 
 #### Fields Required on Launch
 
-Failing to provide required variables also results in a validation error.
+Failing to provide required variables also results in a validation error
+when manually launching. It will also result in a 400 error if the user
+fails to provide those fields when saving a WFJT node or schedule.
 
 #### Broken Saved Configurations
-
-There are 2 types of invalid states:
-
- - cannot be launched
- - rejected prompts
 
 If a job is spawned from schedule or a workflow in a state that has rejected
 prompts, this should be logged, but the job should still be launched, without
@@ -249,8 +244,10 @@ of what happened.
  - POST to associate credential to WFJT node
    - requires admin to WFJT and execute to JT
    - this is in addition to the restriction of `ask_credential_on_launch`
- - credentials merge non-overwrite
-   - JT has machine & cloud credentials, set to prompt on launch
+ - credentials merge behavior
+   - JT has machine & cloud credentials, set to prompt for credential on launch
    - schedule for JT provides no credentials
    - spawned job still uses all JT credentials
- - credentials merge overwrite and addition
+ - credentials deprecated behavior
+   - manual launch providing `"extra_credentials": []` should launch with no job credentials
+   - such jobs cannot have schedules created from them

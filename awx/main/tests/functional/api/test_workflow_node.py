@@ -144,7 +144,6 @@ class TestOldCredentialField:
         )
 
     def test_credential_add_remove(self, node, patch, machine_credential, admin_user):
-        # TODO: test promptability of `credential`
         node.unified_job_template.ask_credential_on_launch = True
         node.unified_job_template.save()
         url = node.get_absolute_url()

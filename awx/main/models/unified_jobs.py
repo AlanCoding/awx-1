@@ -390,8 +390,9 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
         if 'extra_vars' in kwargs:
             unified_job.handle_extra_data(kwargs['extra_vars'])
 
-        # Create record of provided prompts for relaunch and rescheduling
-        unified_job.create_config_from_prompts(kwargs)
+        if not getattr(self, '_deprecated_credential_launch', False):
+            # Create record of provided prompts for relaunch and rescheduling
+            unified_job.create_config_from_prompts(kwargs)
 
         return unified_job
 

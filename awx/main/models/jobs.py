@@ -49,8 +49,7 @@ logger = logging.getLogger('awx.main.models.jobs')
 analytics_logger = logging.getLogger('awx.analytics.job_events')
 system_tracking_logger = logging.getLogger('awx.analytics.system_tracking')
 
-__all__ = ['JobTemplate', 'JobLaunchConfig', 'Job', 'JobHostSummary', 'JobEvent',
-           'SystemJobOptions', 'SystemJobTemplate', 'SystemJob']
+__all__ = ['JobTemplate', 'JobLaunchConfig', 'Job', 'JobHostSummary', 'JobEvent', 'SystemJobTemplate', 'SystemJob']
 
 
 class JobOptions(BaseModel):
