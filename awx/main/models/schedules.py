@@ -97,18 +97,12 @@ class Schedule(CommonModel, LaunchTimeConfig):
     def get_absolute_url(self, request=None):
         return reverse('api:schedule_detail', kwargs={'pk': self.pk}, request=request)
 
-    def create_scheduled_job(self):
+    def get_job_kwargs(self):
         config_data = self.prompts_dict()
         prompts, rejected, errors = self.unified_job_template._accept_or_ignore_job_kwargs(**config_data)
         if errors:
             logger.info('Errors creating scheduled job: {}'.format(errors))
-        return self.unified_job_template.create_unified_job(
-            _eager_fields=dict(
-                launch_type='scheduled',
-                schedule=schedule
-            ),
-            **prompts
-        )
+        return prompts
 
     def update_computed_fields(self):
         future_rs = dateutil.rrule.rrulestr(self.rrule, forceset=True)

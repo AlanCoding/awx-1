@@ -2609,6 +2609,7 @@ class JobSerializer(UnifiedJobSerializer, JobOptionsSerializer):
             res['cancel'] = self.reverse('api:job_cancel', kwargs={'pk': obj.pk})
         if obj.project_update:
             res['project_update'] = self.reverse('api:project_update_detail', kwargs={'pk': obj.project_update.pk})
+        res['create_schedule'] = self.reverse('api:job_create_schedule', kwargs={'pk': obj.pk})
         res['relaunch'] = self.reverse('api:job_relaunch', kwargs={'pk': obj.pk})
         return res
 
@@ -2755,6 +2756,42 @@ class JobRelaunchSerializer(JobSerializer):
         attrs.pop('hosts', None)
         attrs = super(JobRelaunchSerializer, self).validate(attrs)
         return attrs
+
+
+class JobCreateScheduleSerializer(BaseSerializer):
+
+    can_schedule = serializers.SerializerMethodField()
+    prompts = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Job
+        fields = ('can_schedule', 'prompts',)
+
+    def get_can_schedule(self, obj):
+        '''
+        Need both a job template and job prompts to schedule
+        '''
+        return obj.can_schedule
+
+    @staticmethod
+    def _summarize(res_name, obj):
+        summary = {}
+        for field in SUMMARIZABLE_FK_FIELDS[res_name]:
+            summary[field] = getattr(obj, field, None)
+        return summary
+
+    def get_prompts(self, obj):
+        try:
+            config = obj.launch_config
+            ret = config.prompts_dict(display=True)
+            if 'inventory' in ret:
+                ret['inventory'] = self._summarize('inventory', ret['inventory'])
+            if 'credentials' in ret:
+                all_creds = [self._summarize('credential', cred) for cred in ret['credentials']]
+                ret['credentials'] = all_creds
+            return ret
+        except JobLaunchConfig.DoesNotExist:
+            return {'all': _('Unknown, job may have been ran before launch configurations were saved.')}
 
 
 class AdHocCommandSerializer(UnifiedJobSerializer):

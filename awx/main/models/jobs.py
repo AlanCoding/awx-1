@@ -843,7 +843,7 @@ class LaunchTimeConfig(BaseModel):
         default={}
     )
 
-    def prompts_dict(self):
+    def prompts_dict(self, display=False):
         data = {}
         for prompt_name in JobTemplate.ask_mapping.keys():
             try:
@@ -858,7 +858,10 @@ class LaunchTimeConfig(BaseModel):
                     data[prompt_name] = prompt_val
             elif prompt_name == 'extra_vars':
                 if self.extra_data:
-                    data[prompt_name] = self.extra_data
+                    if display:
+                        data[prompt_name] = self.display_extra_data()
+                    else:
+                        data[prompt_name] = self.extra_data
                 if self.survey_passwords:
                     data['survey_passwords'] = self.survey_passwords
             else:
@@ -866,6 +869,19 @@ class LaunchTimeConfig(BaseModel):
                 if prompt_val is not None:
                     data[prompt_name] = prompt_val
         return data
+
+    def display_extra_data(self):
+        '''
+        Hides fields marked as passwords in survey.
+        '''
+        if self.survey_passwords:
+            extra_data = json.loads(self.extra_data)
+            for key, value in self.survey_passwords.items():
+                if key in extra_data:
+                    extra_data[key] = value
+            return json.dumps(extra_data)
+        else:
+            return self.extra_data
 
     @property
     def _credential(self):

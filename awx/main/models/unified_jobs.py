@@ -1019,6 +1019,19 @@ class UnifiedJob(PolymorphicModel, PasswordFieldsModel, CommonModelNameNotUnique
         return bool(self.status in ('new', 'waiting'))
 
     @property
+    def can_schedule(self):
+        if getattr(self, 'passwords_needed_to_start', None):
+            return False
+        JobLaunchConfig = self._meta.get_field('launch_config').related_model
+        try:
+            self.launch_config
+            if self.unified_job_template is None:
+                return False
+            return True
+        except JobLaunchConfig.DoesNotExist:
+            return False
+
+    @property
     def task_impact(self):
         raise NotImplementedError # Implement in subclass.
 

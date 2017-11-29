@@ -4015,6 +4015,52 @@ class JobRelaunch(RetrieveAPIView):
             return Response(data, status=status.HTTP_201_CREATED, headers=headers)
 
 
+class JobCreateSchedule(RetrieveAPIView):
+
+    model = Job
+    obj_permission_type = 'start'
+    serializer_class = JobCreateScheduleSerializer
+    new_in_330 = True
+
+    def post(self, request, *args, **kwargs):
+        obj = self.get_object()
+
+        if not obj.can_schedule:
+            return Response({"error": _('Information needed to schedule this job is missing.')},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        config = obj.launch_config
+        if not request.user.can_access(JobLaunchConfig, 'add', {'reference_obj': obj}):
+            raise PermissionDenied()
+
+        # Make up a name for the schedule, guarentee that it is unique
+        name = 'Auto-generated schedule from job {}'.format(obj.id)
+        existing_names = Schedule.objects.filter(name__startswith=name).values_list('name', flat=True)
+        if name in existing_names:
+            idx = 1
+            alt_name = '{} - number {}'.format(name, idx)
+            while alt_name in existing_names:
+                idx += 1
+                alt_name = '{} - number {}'.format(name, idx)
+            name = alt_name
+
+        schedule = Schedule.objects.create(
+            name=name,
+            unified_job_template=obj.unified_job_template,
+            enabled=False,
+            rrule='{}Z RRULE:FREQ=MONTHLY;INTERVAL=1'.format(now().strftime('DTSTART:%Y%m%dT%H%M%S')),
+            extra_data=config.extra_data,
+            survey_passwords=config.survey_passwords,
+            inventory=config.inventory,
+            char_prompts=config.char_prompts
+        )
+        schedule.credentials.add(*config.credentials.all())
+
+        data = ScheduleSerializer(schedule, context=self.get_serializer_context()).data
+        headers = {'Location': schedule.get_absolute_url(request=request)}
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+
+
 class JobNotificationsList(SubListAPIView):
 
     model = Notification
