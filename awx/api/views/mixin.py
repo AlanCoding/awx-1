@@ -8,7 +8,7 @@ from django.db.models import (
     Count,
     F,
 )
-from django.db import transaction
+from django.db import transaction, connection
 from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
 from django.utils.translation import ugettext_lazy as _
@@ -36,6 +36,7 @@ from awx.conf.license import (
     LicenseForbids,
 )
 from awx.api.exceptions import ActiveJobConflict
+from awx.main.scheduler.tasks import run_task_manager
 
 logger = logging.getLogger('awx.api.views.mixin')
 
@@ -131,6 +132,9 @@ class InstanceGroupMembershipMixin(object):
                 if inst_name not in ig_obj.policy_instance_list:
                     ig_obj.policy_instance_list.append(inst_name)
                     ig_obj.save(update_fields=['policy_instance_list'])
+            # the prior action may turn a dead IG into a live IG
+            # so process jobs as soon as the outermost transaction completes
+            connection.on_commit(lambda: run_task_manager.lazy_delay())
         return response
 
     def is_valid_relation(self, parent, sub, created=False):

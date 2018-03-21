@@ -91,7 +91,7 @@ from awx.api.renderers import * # noqa
 from awx.api.serializers import * # noqa
 from awx.api.metadata import RoleMetadata, JobTypeMetadata
 from awx.main.constants import ACTIVE_STATES
-from awx.main.scheduler.tasks import run_job_complete
+from awx.main.scheduler.tasks import run_task_manager
 from awx.api.views.mixin import (
     ActivityStreamEnforcementMixin,
     SystemTrackingEnforcementMixin,
@@ -565,6 +565,7 @@ class InstanceDetail(RetrieveUpdateAPIView):
             else:
                 obj.capacity = 0
             obj.save()
+            connection.on_commit(lambda: run_task_manager.lazy_delay())
             r.data = InstanceSerializer(obj, context=self.get_serializer_context()).to_representation(obj)
         return r
 
@@ -3497,8 +3498,7 @@ class WorkflowJobCancel(WorkflowsEnforcementMixin, RetrieveAPIView):
         obj = self.get_object()
         if obj.can_cancel:
             obj.cancel()
-            #TODO: Figure out whether an immediate schedule is needed.
-            run_job_complete.delay(obj.id)
+            connection.on_commit(lambda: run_task_manager.lazy_delay())
             return Response(status=status.HTTP_202_ACCEPTED)
         else:
             return self.http_method_not_allowed(request, *args, **kwargs)

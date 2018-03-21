@@ -98,6 +98,30 @@ associated Python code:
 
     awx.main.tasks.add(123)
 
+Idempotent (Lazy) Tasks
+-----------------------
+
+Certain system tasks only need to be ran once, even if submitted multiple
+times. An abstraction `lazy_task` exists to handle this in a standardized
+way.
+
+When a lazy task runs, it (non-blocking) acquires a lock which corresponds
+to the name of the method, plus any non-keyword arguments it is given.
+If the same task with the same arguments is submitted while the first task
+is running, a flag is set indicating that it needs to be rescheduled after
+it is finished, to pick up latest changes. If the running process finds the
+flag, then it starts the work over again.
+
+Lazy tasks also have a means of lazy submission, calling `lazy_delay` with
+arguments & keyword arguments will assure the flag to reschedule is raised,
+and will only submit a new task if the lock is not taken. This reduces
+the volume of tasks the messaging system needs to send, and the processes
+the dispatcher needs to spawn.
+
+Lazy tasks task all the same parameters that the standard `task` decorator,
+with the addition of `local_cycles`, which is the number of times it
+will try within the same process before resubmitting itself as a new task.
+
 Dispatcher Implementation
 -------------------------
 Every node in an AWX install runs `awx-manage run_dispatcher`, a Python process
