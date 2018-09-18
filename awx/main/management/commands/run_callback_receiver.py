@@ -145,17 +145,6 @@ class CallbackBrokerWorker(ConsumerMixin):
                     'system_job_id': SystemJobEvent,
                 }
 
-                if not any([key in body for key in event_map]):
-                    raise Exception('Payload does not have a job identifier')
-                if settings.DEBUG:
-                    from pygments import highlight
-                    from pygments.lexers import PythonLexer
-                    from pygments.formatters import Terminal256Formatter
-                    from pprint import pformat
-                    logger.info('Body: {}'.format(
-                        highlight(pformat(body, width=160), PythonLexer(), Terminal256Formatter(style='friendly'))
-                    )[:1024 * 4])
-
                 def _save_event_data():
                     for key, cls in event_map.items():
                         if key in body:
@@ -166,6 +155,20 @@ class CallbackBrokerWorker(ConsumerMixin):
                     if key in body:
                         job_identifier = body[key]
                         break
+
+                if not any([key in body for key in event_map]):
+                    raise Exception('Payload does not have a job identifier')
+                if settings.DEBUG:
+                    from pygments import highlight
+                    from pygments.lexers import PythonLexer
+                    from pygments.formatters import Terminal256Formatter
+                    from pprint import pformat
+                    logger.info('Callback worker {} received event number {} for job {}'.format(
+                        idx, body.get('counter', 'unknown'), job_identifier
+                    ))
+                    logger.debug('Body: {}'.format(
+                        highlight(pformat(body, width=160), PythonLexer(), Terminal256Formatter(style='friendly'))
+                    )[:1024 * 4])
 
                 if body.get('event') == 'EOF':
                     try:

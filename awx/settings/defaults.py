@@ -1160,6 +1160,7 @@ LOGGING = {
             'handlers': ['null']
         }, 'awx.main.commands.run_callback_receiver': {
             'handlers': ['callback_receiver'],
+            'level': 'INFO'  # in debug mode, includes full callback data
         },
         'awx.isolated.manager.playbooks': {
             'handlers': ['management_playbooks'],
