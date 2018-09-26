@@ -129,7 +129,7 @@ class OrganizationAdminsList(BaseUsersList):
 class OrganizationProjectsList(SubListCreateAttachDetachAPIView):
 
     model = Project
-    serializer_class = ProjectSerializer
+    serializer_class = ProjectSerializerCreate
     parent_model = Organization
     relationship = 'projects'
     parent_key = 'organization'

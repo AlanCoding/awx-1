@@ -320,13 +320,24 @@ class Project(UnifiedJobTemplate, ProjectOptions, ResourceMixin, CustomVirtualEn
             ['name', 'description', 'schedule']
         )
 
+    def __init__(self, *args, **kwargs):
+        if 'skip_update' in kwargs:
+            self.skip_update = kwargs.pop('skip_update')
+        r = super(Project, self).__init__(*args, **kwargs)
+        return r
+
     def save(self, *args, **kwargs):
         new_instance = not bool(self.pk)
         pre_save_vals = getattr(self, '_prior_values_store', {})
         # If update_fields has been specified, add our field names to it,
         # if it hasn't been specified, then we're just doing a normal save.
         update_fields = kwargs.get('update_fields', [])
-        skip_update = bool(kwargs.pop('skip_update', False))
+        skip_update = False
+        if kwargs.pop('skip_update', False):
+            skip_update = True
+        if getattr(self, 'skip_update', False):
+            skip_update = True
+            del self.skip_update
         # Create auto-generated local path if project uses SCM.
         if self.pk and self.scm_type and not self.local_path.startswith('_'):
             slug_name = slugify(str(self.name)).replace(u'-', u'_')
@@ -476,19 +487,8 @@ class ProjectUpdate(UnifiedJob, ProjectOptions, JobNotificationMixin, TaskManage
         return 'project'
 
     def _update_parent_instance(self):
-        if not self.project:
-            return  # no parent instance to update
-        if self.job_type == PERM_INVENTORY_DEPLOY:
-            # Do not update project status if this is sync job
-            # unless no other updates have happened or started
-            first_update = False
-            if self.project.status == 'never updated' and self.status == 'running':
-                first_update = True
-            elif self.project.current_job == self:
-                first_update = True
-            if not first_update:
-                return
-        return super(ProjectUpdate, self)._update_parent_instance()
+        if self.should_update_project():
+            return super(ProjectUpdate, self)._update_parent_instance()
 
     @classmethod
     def _get_task_class(cls):
@@ -539,6 +539,18 @@ class ProjectUpdate(UnifiedJob, ProjectOptions, JobNotificationMixin, TaskManage
 
     def get_ui_url(self):
         return urlparse.urljoin(settings.TOWER_URL_BASE, "/#/jobs/project/{}".format(self.pk))
+
+    def should_update_project(self):
+        if not self.project:
+            return False  # no parent instance to update
+        if self.job_type == PERM_INVENTORY_DEPLOY:  # run
+            # Do not update project status if this is sync job
+            # unless no other updates have happened or started
+            return bool(
+                (self.project.status == 'never updated' and self.status == 'running') or
+                self.project.current_job == self
+            )
+        return True
 
     def cancel(self, job_explanation=None, is_chain=False):
         res = super(ProjectUpdate, self).cancel(job_explanation=job_explanation, is_chain=is_chain)

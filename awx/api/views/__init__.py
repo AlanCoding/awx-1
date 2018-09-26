@@ -671,7 +671,7 @@ class TeamAccessList(ResourceAccessList):
 class ProjectList(ListCreateAPIView):
 
     model = models.Project
-    serializer_class = serializers.ProjectSerializer
+    serializer_class = serializers.ProjectSerializerCreate
 
     def get_queryset(self):
         projects_qs = models.Project.accessible_objects(self.request.user, 'read_role')
