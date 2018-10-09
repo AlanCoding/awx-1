@@ -1,6 +1,34 @@
 import pytest
+import json
 
 from awx.api.versioning import reverse
+
+
+@pytest.mark.django_db
+def test_vars_consistency(patch, inventory, job_template, project, wfjt_node, admin_user):
+    d = {'foo': 'bar'}
+    job_template.project = project
+    job_template.ask_variables_on_launch = True
+    job_template.ask_inventory_on_launch = True
+    job_template.inventory = inventory
+    job_template.playbook = 'helloworld.yml'
+    job_template.save()
+    for kind, vars in (('dict', d), ('json_str', json.dumps(d)), ('yaml_str', 'foo: bar')):
+        print ''
+        print ' testing kind: ' + str(kind)
+        for res, fd in ((inventory, 'variables'), (job_template, 'extra_vars'), (wfjt_node, 'extra_data')):
+            print ' field: ' + str(fd)
+            try:
+                patch(
+                    url=res.get_absolute_url(),
+                    data={fd: vars},
+                    user=admin_user,
+                    expect=200
+                )
+                print ' worked '
+            except Exception as e:
+                print ' did not work ' + str(e)
+    assert False
 
 
 @pytest.mark.django_db

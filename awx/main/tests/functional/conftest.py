@@ -691,6 +691,13 @@ def workflow_job_template(organization):
 
 
 @pytest.fixture
+def wfjt_node(workflow_job_template, job_template):
+    return workflow_job_template.workflow_nodes.create(
+        unified_job_template=job_template
+    )
+
+
+@pytest.fixture
 def workflow_job_factory(workflow_job_template, admin):
     def factory(workflow_job_template=workflow_job_template, initial_state='new', created_by=admin):
         return workflow_job_template.create_unified_job(_eager_fields={
