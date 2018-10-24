@@ -45,7 +45,7 @@ def job_event_callback(fake_callback, fake_cache):
             cache_event = fake_cache.get(':1:ev-{}'.format(event_data['uuid']), None)
             if cache_event is not None:
                 event_data.update(cache_event)
-        fake_callback.append(event_data)
+        fake_callback.append(event_data.copy())
     return method
 
 
@@ -76,6 +76,7 @@ def test_separate_verbose_events(fake_callback, wrapped_handle):
     # stop pretending
 
     assert len(fake_callback) == 2
+    assert fake_callback[0]['stdout'] == 'Using /etc/ansible/ansible.cfg as config file'
     for event_data in fake_callback:
         assert 'event' in event_data
         assert event_data['event'] == 'verbose'
@@ -151,7 +152,7 @@ def test_verbose_line_buffering():
     events = []
 
     def _callback(event_data):
-        events.append(event_data)
+        events.append(event_data.copy())
 
     f = OutputVerboseFilter(_callback)
     f.write('one two\r\n\r\n')

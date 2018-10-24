@@ -949,14 +949,17 @@ class OutputEventFilter(object):
     '''
 
     EVENT_DATA_RE = re.compile(r'\x1b\[K((?:[A-Za-z0-9+/=]+\x1b\[\d+D)+)\x1b\[K')
+    LINE_BRAKES = ('\r\n', '\n', '\r')  # given by PEP 278 and PEP 3116
 
-    def __init__(self, event_callback):
+    def __init__(self, event_callback, verbose_size=1000):
         self._event_callback = event_callback
         self._counter = 0
         self._start_line = 0
         self._buffer = StringIO()
         self._last_chunk = ''
         self._current_event_data = None
+        # Maximum stdout length to be used for multi-line verbose event
+        self._verbose_size = verbose_size
 
     def flush(self):
         # pexpect wants to flush the file it writes to, but we're not
@@ -999,6 +1002,35 @@ class OutputEventFilter(object):
             self._buffer = StringIO()
         self._event_callback(dict(event='EOF', final_counter=self._counter))
 
+    def _has_line_break(self, some_string):
+        return bool('\n' in some_string or '\r' in some_string)
+
+    def _condense_lines(self, lines):
+        new_lines = []
+        this_set = []
+        this_len = 0
+        for line in lines:
+            line_len = len(line)
+            if this_len + line_len < self._verbose_size or not this_set:
+                this_set.append(line)
+                this_len += line_len
+            else:
+                new_lines.append(''.join(this_set))
+                this_set = [line]
+                this_len = line_len
+        if this_set:
+            new_lines.append(''.join(this_set))
+        return new_lines
+
+    def _slice_verbose_stdout(self, buffered_stdout):
+        """Given already-buffered output,
+        split on line breaks such that all chunks are either
+        less than allowed threshold, or single lines
+        """
+        if len(buffered_stdout) < self._verbose_size:
+            return [buffered_stdout]
+        return self._condense_lines(buffered_stdout.splitlines(True))
+
     def _emit_event(self, buffered_stdout, next_event_data=None):
         next_event_data = next_event_data or {}
         if self._current_event_data:
@@ -1006,14 +1038,21 @@ class OutputEventFilter(object):
             stdout_chunks = [buffered_stdout]
         elif buffered_stdout:
             event_data = dict(event='verbose')
-            stdout_chunks = buffered_stdout.splitlines(True)
+            stdout_chunks = self._slice_verbose_stdout(buffered_stdout)
+            # stdout_chunks = buffered_stdout.splitlines(True)
         else:
             stdout_chunks = []
 
         for stdout_chunk in stdout_chunks:
             self._counter += 1
             event_data['counter'] = self._counter
-            event_data['stdout'] = stdout_chunk[:-2] if len(stdout_chunk) > 2 else ""
+            for lb in self.LINE_BRAKES:
+                if stdout_chunk.endswith(lb):
+                    event_data['stdout'] = stdout_chunk[:-len(lb)]
+                    break
+            else:
+                # This should not normally happen, but oh well
+                event_data['stdout'] = stdout_chunk
             n_lines = stdout_chunk.count('\n')
             event_data['start_line'] = self._start_line
             event_data['end_line'] = self._start_line + n_lines
@@ -1037,16 +1076,26 @@ class OutputVerboseFilter(OutputEventFilter):
         self._buffer.write(data)
 
         # if the current chunk contains a line break
-        if data and '\n' in data:
-            # emit events for all complete lines we know about
-            lines = self._buffer.getvalue().splitlines(True)  # keep ends
-            remainder = None
-            # if last line is not a complete line, then exclude it
-            if '\n' not in lines[-1]:
-                remainder = lines.pop()
-            # emit all complete lines
-            for line in lines:
-                self._emit_event(line)
+        if data:
+            current = self._buffer.getvalue()
+            lb_syntax = None
+            for lb in self.LINE_BRAKES:
+                if lb == '\r':
+                    # Exclude trailing character - could be a part of rn pattern
+                    idx = current.rfind(lb, 0, len(current) - 1)
+                else:
+                    idx = current.rfind(lb)
+                if idx >= 0:
+                    lb_syntax = lb
+                    break
+            if lb_syntax is None:
+                return  # No line breaks, data already added to current buffer
+
+            split_idx = idx + len(lb_syntax)
+            base = current[:split_idx]
+            remainder = current[split_idx:]
+            # base, remainder = data.rsplit(lb_syntax, 1)
+            self._emit_event(base)
             self._buffer = StringIO()
             # put final partial line back on buffer
             if remainder:
