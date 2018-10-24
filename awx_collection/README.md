@@ -18,6 +18,7 @@ The following notes are changes that may require changes to playbooks.
 
  - Specifying `inputs` or `injectors` as strings in the
    `tower_credential_type` module is no longer supported. Provide as dictionaries instead.
+ - Creating a "scan" type job template is no longer supported.
 
 ## Running
 
