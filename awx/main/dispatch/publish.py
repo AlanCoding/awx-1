@@ -126,3 +126,29 @@ class task:
         setattr(fn, 'apply_async', cls.apply_async)
         setattr(fn, 'delay', cls.delay)
         return fn
+
+
+class LazyPublisher:
+    def __init__(self, _publisher):
+        self.publisher = _publisher
+        self.name = _publisher.name
+
+    def delay(self, *args, **kwargs):
+        return self.apply_async(args, kwargs)
+
+    def apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, **kw):
+        return self.publisher.apply_async(args=None, kwargs=None, queue=None, uuid=None, **kw)
+
+
+class lazy_task:
+    """
+    Wrapper around the task decorator, applies database dual-lock system
+    this is used to schedule time-sensitive idempotent tasks efficiently
+    """
+    def __init__(self, *args, **kwargs):
+        self.decorator = task(*args, **kwargs)
+
+    def __call__(self, fn=None):
+        if inspect.isfunction(fn):
+            raise RuntimeError('lazy tasks only supported for functions')
+        return LazyPublisher(self.decorator(fn))
