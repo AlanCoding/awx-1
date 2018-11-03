@@ -2,9 +2,13 @@ import inspect
 import logging
 import sys
 from uuid import uuid4
+from functools import wraps
+from time import time
 
 from django.conf import settings
 from kombu import Connection, Exchange, Producer
+
+from awx.main.utils.pglock import advisory_lock
 
 logger = logging.getLogger('awx.main.dispatch')
 
@@ -128,16 +132,62 @@ class task:
         return fn
 
 
+def get_names(func_name, args):
+    name = func_name
+    # If function takes args, then make lock specific to those args
+    if args:
+        name += '_' + ','.join([str(arg) for arg in args])
+    wait_name = name + '_wait'
+    return (name, wait_name)
+
+
+def patient_execute(f):
+    @wraps(f)
+    def new_func(*args, **kwargs):
+        name, wait_name = get_names(f.__name__, args)
+
+        # Non-blocking, acquire the wait lock
+        wait_lock_cm = advisory_lock(wait_name, wait=False)
+        wait_lock_result = wait_lock_cm.__enter__()
+        if not wait_lock_result:
+            logger.debug('Another process waits to carry out {}, exiting.'.format(name))
+            wait_lock_cm.__exit__(None, None, None)
+            return
+
+        # blocking, acquire the compute lock
+        start = time()
+        logger.debug('Going to wait for {} lock before performing task.'.format(name))
+        with advisory_lock(name, wait=True):
+            delta = time() - start
+            msg = 'Took {} seconds to obtain {} lock, running now.'
+            if delta < 0.1:
+                logger.debug(msg)
+            else:
+                logger.info(msg)
+            wait_lock_cm.__exit__(None, None, None)
+            return f(*args, **kwargs)
+
+    return new_func
+
+
 class LazyPublisher:
-    def __init__(self, _publisher):
-        self.publisher = _publisher
-        self.name = _publisher.name
+    """
+    Wrapper around PublisherMixin which will not submit
+    the task into the queue if a waiting task exists.
+    """
+    def __init__(self, _f):
+        self.f = _f
 
     def delay(self, *args, **kwargs):
         return self.apply_async(args, kwargs)
 
-    def apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, **kw):
-        return self.publisher.apply_async(args=None, kwargs=None, queue=None, uuid=None, **kw)
+    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, **kw):
+        name, wait_name = get_names(self.f.__name__, args)
+        with advisory_lock(wait_name, wait=False) as wait_lock:
+            if wait_lock:
+                return self.f.apply_async(args=None, kwargs=None, queue=None, uuid=None, **kw)
+            else:
+                logger.debug('Task {} already queued, not submitting.'.format(name))
 
 
 class lazy_task:
@@ -146,9 +196,24 @@ class lazy_task:
     this is used to schedule time-sensitive idempotent tasks efficiently
     """
     def __init__(self, *args, **kwargs):
-        self.decorator = task(*args, **kwargs)
+        # When a method is defined like the following:
+        # @task(queue=get_local_queuename)
+        # def awx_isolated_heartbeat():
+        # this just saves the `task(queue=get_local_queuename)` bit for later
+        self.task_decorator = task(*args, **kwargs)
 
     def __call__(self, fn=None):
         if inspect.isfunction(fn):
             raise RuntimeError('lazy tasks only supported for functions')
-        return LazyPublisher(self.decorator(fn))
+        # LazyPublisher checks for active locks
+        # to determine if there is a need to schedule the task or not
+        return LazyPublisher(
+            # This is the passing-through the instantiated
+            # standard task decorator, that all tasks use
+            self.task_decorator(
+                # This converts the function into a lazier version of itself
+                # which is picky about whether it will perform the work
+                # or not, depending on state of locks from other processes
+                patient_execute(fn)
+            )
+        )

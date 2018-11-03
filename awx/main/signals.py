@@ -36,7 +36,7 @@ from awx.api.serializers import * # noqa
 from awx.main.constants import CENSOR_VALUE
 from awx.main.utils import model_instance_diff, model_to_dict, camelcase_to_underscore, get_current_apps
 from awx.main.utils import ignore_inventory_computed_fields, ignore_inventory_group_removal, _inventory_updates
-from awx.main.tasks import schedule_inventory_computed_fields_update
+from awx.main.tasks import update_inventory_computed_fields
 from awx.main.fields import (
     is_implicit_parent,
     update_role_parentage_for_instance,
@@ -131,7 +131,7 @@ def emit_update_inventory_computed_fields(sender, **kwargs):
     except Inventory.DoesNotExist:
         pass
     else:
-        schedule_inventory_computed_fields_update(inventory.id)
+        update_inventory_computed_fields.delay(inventory.id)
 
 
 def emit_update_inventory_on_created_or_deleted(sender, **kwargs):
@@ -152,7 +152,7 @@ def emit_update_inventory_on_created_or_deleted(sender, **kwargs):
         pass
     else:
         if inventory is not None:
-            schedule_inventory_computed_fields_update(inventory.id)
+            update_inventory_computed_fields.delay(inventory.id)
 
 
 def rebuild_role_ancestor_list(reverse, model, instance, pk_set, action, **kwargs):
