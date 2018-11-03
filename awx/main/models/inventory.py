@@ -817,7 +817,7 @@ class Group(CommonModelNameNotUnique, RelatedJobsMixin):
     @transaction.atomic
     def delete_recursive(self):
         from awx.main.utils import ignore_inventory_computed_fields
-        from awx.main.tasks import schedule_inventory_computed_fields_update
+        from awx.main.tasks import update_inventory_computed_fields
         from awx.main.signals import disable_activity_stream, activity_stream_delete
 
 
@@ -872,7 +872,7 @@ class Group(CommonModelNameNotUnique, RelatedJobsMixin):
                 marked_groups.append(group)
             Group.objects.filter(id__in=marked_groups).delete()
             Host.objects.filter(id__in=marked_hosts).delete()
-            schedule_inventory_computed_fields_update(self.inventory.id)
+            update_inventory_computed_fields.delay(self.inventory.id)
         with ignore_inventory_computed_fields():
             with disable_activity_stream():
                 mark_actual()
