@@ -141,7 +141,7 @@ def get_names(func_name, args):
     return (name, wait_name)
 
 
-def patient_execute(f):
+def lazy_execute(f):
     @wraps(f)
     def new_func(*args, **kwargs):
         name, wait_name = get_names(f.__name__, args)
@@ -159,7 +159,7 @@ def patient_execute(f):
         logger.debug('Going to wait for {} lock before performing task.'.format(name))
         with advisory_lock(name, wait=True):
             delta = time() - start
-            msg = 'Took {} seconds to obtain {} lock, running now.'
+            msg = 'Took {} seconds to obtain {} lock, running now.'.format(delta, name)
             if delta < 0.1:
                 logger.debug(msg)
             else:
@@ -170,50 +170,41 @@ def patient_execute(f):
     return new_func
 
 
-class LazyPublisher:
-    """
-    Wrapper around PublisherMixin which will not submit
-    the task into the queue if a waiting task exists.
-    """
-    def __init__(self, _f):
-        self.f = _f
-
-    def delay(self, *args, **kwargs):
-        return self.apply_async(args, kwargs)
-
-    def apply_async(self, args=None, kwargs=None, queue=None, uuid=None, **kw):
-        name, wait_name = get_names(self.f.__name__, args)
+def lazy_apply_async(orig_fn):
+    @wraps(orig_fn.apply_async)
+    def new_apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, **kw):
+        name, wait_name = get_names(orig_fn.__name__, args)
         with advisory_lock(wait_name, wait=False) as wait_lock:
             if wait_lock:
-                return self.f.apply_async(args=None, kwargs=None, queue=None, uuid=None, **kw)
+                logger.debug('Submitting task with lock {}.'.format(name))  # TODO: remove log
+                return orig_fn.apply_async.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, **kw)
             else:
                 logger.debug('Task {} already queued, not submitting.'.format(name))
+    return new_apply_async
 
 
 class lazy_task:
     """
-    Wrapper around the task decorator, applies database dual-lock system
-    this is used to schedule time-sensitive idempotent tasks efficiently
+    task wrapper to schedule time-sensitive idempotent tasks efficiently
+    see section in docs/tasks.md
     """
     def __init__(self, *args, **kwargs):
-        # When a method is defined like the following:
-        # @task(queue=get_local_queuename)
-        # def awx_isolated_heartbeat():
-        # this just saves the `task(queue=get_local_queuename)` bit for later
+        # Saves the instantiated version of the general task decorator for later
         self.task_decorator = task(*args, **kwargs)
 
     def __call__(self, fn=None):
-        if inspect.isfunction(fn):
-            raise RuntimeError('lazy tasks only supported for functions')
-        # LazyPublisher checks for active locks
-        # to determine if there is a need to schedule the task or not
-        return LazyPublisher(
-            # This is the passing-through the instantiated
-            # standard task decorator, that all tasks use
-            self.task_decorator(
-                # This converts the function into a lazier version of itself
-                # which is picky about whether it will perform the work
-                # or not, depending on state of locks from other processes
-                patient_execute(fn)
-            )
-        )
+        if not inspect.isfunction(fn):
+            raise RuntimeError('lazy tasks only supported for functions, given {}'.format(fn))
+        # This converts the function into a lazier version of itself
+        # which is picky about whether it will perform the work
+        # or not, depending on breadcrumbs from other processes
+        patient_fn = lazy_execute(fn)
+
+        # This is passing-through the original task decorator that all tasks use
+        task_fn = self.task_decorator(patient_fn)
+
+        # lazy_apply_async checks for active locks to determine
+        # if there is a need to schedule the task or, bail as no-op
+        setattr(task_fn, 'apply_async', lazy_apply_async(task_fn))
+
+        return task_fn
