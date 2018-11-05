@@ -10,6 +10,8 @@ from kombu import Connection, Exchange, Producer
 
 from awx.main.utils.pglock import advisory_lock
 
+__all__ = ['task', 'lazy_task']
+
 logger = logging.getLogger('awx.main.dispatch')
 
 
@@ -195,13 +197,13 @@ class lazy_task:
     def __call__(self, fn=None):
         if not inspect.isfunction(fn):
             raise RuntimeError('lazy tasks only supported for functions, given {}'.format(fn))
-        # This converts the function into a lazier version of itself
-        # which is picky about whether it will perform the work
-        # or not, depending on breadcrumbs from other processes
-        patient_fn = lazy_execute(fn)
 
         # This is passing-through the original task decorator that all tasks use
-        task_fn = self.task_decorator(patient_fn)
+        task_fn = self.task_decorator(
+            # This converts the function into a lazier version of itself which
+            # may or may not perform the work, depending on breadcrumbs from other processes
+            lazy_execute(fn)
+        )
 
         # lazy_apply_async checks for active locks to determine
         # if there is a need to schedule the task or, bail as no-op
