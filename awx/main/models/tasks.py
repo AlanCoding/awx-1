@@ -79,6 +79,13 @@ def lazy_execute(f, local_cycles=20):
         # and exit here if not set
         # this weaker form still allows periodic runs to do work
 
+        def resubmit(reason):
+            try:
+                f.apply_async(args=args, kwargs=kwargs)
+                logger.debug('Resubmitted task {}. {}'.format(name, reason))
+            except Exception:
+                logger.exception('Resubmission check of task {} failed, unexecuted work could remain.'.format(name))
+
         # non-blocking, acquire the compute lock
         ret = None
         flag_exists = True  # may not exist, arbitrary initial value
@@ -90,8 +97,7 @@ def lazy_execute(f, local_cycles=20):
                     with advisory_lock(name, wait=False) as compute_lock2:
                         gave_up_lock = bool(compute_lock2)
                     if gave_up_lock:
-                        f.apply_async(args=args, kwargs=kwargs)
-                        logger.debug('Resubmitted task {} due to race condition.'.format(name))
+                        resubmit('Continuity gap due to race condition.')
                 except IntegrityError:
                     logger.debug('Another process is doing {}, reschedule is already planned, no-op.'.format(name))
                 return
@@ -108,13 +114,8 @@ def lazy_execute(f, local_cycles=20):
                     logger.debug('Work for {} lock has been cleared.'.format(name))
                     break
             else:
-                if not flag_exists:
-                    try:
-                        # After so-long, restart in a new context for OOM concerns, etc.
-                        f.apply_async(args=args, kwargs=kwargs)
-                        logger.debug('Resubmitted task {} after {} local cycles.'.format(name, local_cycles))
-                    except Exception:
-                        logger.exception('Resubmission check of task {} failed, unexecuted work could remain.'.format(name))
+                # After so-long, restart in a new context for OOM concerns, etc.
+                resubmit('Reached max of {} local cycles.'.format(local_cycles))
 
         return ret
 
