@@ -47,7 +47,7 @@ from awx import __version__ as awx_application_version
 from awx.main.constants import CLOUD_PROVIDERS, PRIVILEGE_ESCALATION_METHODS, STANDARD_INVENTORY_UPDATE_ENV
 from awx.main.access import access_registry
 from awx.main.models import * # noqa
-from awx.main.models.tasks import TowerScheduleState, lazy_task, resubmit_lazy_tasks
+from awx.main.models.tasks import TowerScheduleState, lazy_task
 from awx.main.constants import ACTIVE_STATES
 from awx.main.exceptions import AwxTaskError
 from awx.main.queue import CallbackQueueDispatcher
@@ -479,8 +479,6 @@ def awx_periodic_scheduler():
             new_unified_job.websocket_emit_status("failed")
         emit_channel_notification('schedules-changed', dict(id=schedule.id, group_name="schedules"))
     state.save()
-    # Also resubmit lost lazy tasks
-    resubmit_lazy_tasks.lazy_apply_async()
 
 
 @task()
@@ -493,8 +491,8 @@ def handle_work_success(task_actual):
     if not instance:
         return
 
-    from awx.main.scheduler.tasks import run_job_complete
-    run_job_complete.delay(instance.id)
+    from awx.main.scheduler.tasks import run_task_manager
+    run_task_manager.delay()
 
 
 @task()
@@ -533,8 +531,8 @@ def handle_work_error(task_id, *args, **kwargs):
     # what the job complete message handler does then we may want to send a
     # completion event for each job here.
     if first_instance:
-        from awx.main.scheduler.tasks import run_job_complete
-        run_job_complete.delay(first_instance.id)
+        from awx.main.scheduler.tasks import run_task_manager
+        run_task_manager.delay()
         pass
 
 
@@ -1439,7 +1437,7 @@ class RunJob(BaseTask):
         except Inventory.DoesNotExist:
             pass
         else:
-            update_inventory_computed_fields.delay(inventory.id)
+            update_inventory_computed_fields.lazy_delay(inventory.id)
 
 
 @task()
@@ -2440,4 +2438,4 @@ def deep_copy_model_obj(
             ), permission_check_func[2])
             permission_check_func(creater, copy_mapping.values())
     if isinstance(new_obj, Inventory):
-        update_inventory_computed_fields.delay(new_obj.id)
+        update_inventory_computed_fields.lazy_delay(new_obj.id)

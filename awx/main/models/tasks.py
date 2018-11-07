@@ -70,7 +70,7 @@ class TaskRescheduleFlag(Model):
         return (fn, args)
 
 
-def lazy_execute(f):
+def lazy_execute(f, local_cycles=20):
     @wraps(f)
     def new_func(*args, **kwargs):
         name = TaskRescheduleFlag.get_task_name(f.__name__, args)
@@ -80,6 +80,8 @@ def lazy_execute(f):
         # this weaker form still allows periodic runs to do work
 
         # non-blocking, acquire the compute lock
+        ret = None
+        flag_exists = True  # may not exist, arbitrary initial value
         with advisory_lock(name, wait=False) as compute_lock:
             if not compute_lock:
                 try:
@@ -94,23 +96,27 @@ def lazy_execute(f):
                     logger.debug('Another process is doing {}, reschedule is already planned, no-op.'.format(name))
                 return
 
-            # Claim flag, a flag may or may not exist, this is fire-and-forget
-            TaskRescheduleFlag.objects.filter(name=name).delete()
             logger.debug('Obtained {} lock, now I am obligated to perform the work.'.format(name))
+            for cycle in range(local_cycles):
+                # Claim flag, a flag may or may not exist, this is fire-and-forget
+                TaskRescheduleFlag.objects.filter(name=name).delete()
 
-            try:
-                return f(*args, **kwargs)
-            finally:
-                # This is import to maintain the execution chain
-                try:
-                    if TaskRescheduleFlag.objects.filter(name=name).exists():
-                        # Another process requested re-scheduling while running, re-submit
+                ret = f(*args, **kwargs)
+
+                flag_exists = TaskRescheduleFlag.objects.filter(name=name).exists()
+                if not flag_exists:
+                    logger.debug('Work for {} lock has been cleared.'.format(name))
+                    break
+            else:
+                if not flag_exists:
+                    try:
+                        # After so-long, restart in a new context for OOM concerns, etc.
                         f.apply_async(args=args, kwargs=kwargs)
-                        logger.debug('Resubmitted task {}.'.format(name))
-                    else:
-                        logger.debug('Work for {} lock has been cleared.'.format(name))
-                except Exception:
-                    logger.exception('Resubmission check of task {} failed, unexecuted work could remain.'.format(name))
+                        logger.debug('Resubmitted task {} after {} local cycles.'.format(name, local_cycles))
+                    except Exception:
+                        logger.exception('Resubmission check of task {} failed, unexecuted work could remain.'.format(name))
+
+        return ret
 
     return new_func
 
@@ -122,19 +128,12 @@ def lazy_apply_async(orig_fn):
 
         name = TaskRescheduleFlag.get_task_name(orig_fn.__name__, args)
 
-        if TaskRescheduleFlag.objects.filter(name=name).exists():
-            logger.debug('Reschedule already planned for {}, no-op.'.format(name))
-            return  # Reschedule is already planned
-            # NOTE: returning here creates the need to reschedule lost processes
-            # alternative would be to check the flag & the lock in this method
-
         # NOTE: setting the flag needs to happen before advisory_lock check, to avoid race condition
         # we count on the running process picking up the flag
         try:
             TaskRescheduleFlag.objects.create(name=name)
         except IntegrityError:
-            # Likely race condition, another process created it in last 0.005 seconds, which is fine
-            pass
+            pass  # Reschedule flag already existed
 
         with advisory_lock(name, wait=False) as compute_lock:
             lock_available = bool(compute_lock)
@@ -160,6 +159,7 @@ def lazy_task(*args, **kwargs):
     task wrapper to schedule time-sensitive idempotent tasks efficiently
     see section in docs/tasks.md
     """
+    local_cycles = kwargs.pop('local_cycles', None)
     # Saves the instantiated version of the general task decorator for later
     task_decorator = task(*args, **kwargs)
 
@@ -172,7 +172,10 @@ def lazy_task(*args, **kwargs):
 
         # This converts the function into a lazier version of itself which
         # may or may not perform the work, depending on breadcrumbs from other processes
-        lazy_fn = lazy_execute(task_fn)
+        lazy_execute_kwargs = {}
+        if local_cycles:
+            lazy_execute_kwargs['local_cycles'] = local_cycles
+        lazy_fn = lazy_execute(task_fn, **lazy_execute_kwargs)
 
         # copy tasks bound to the PublisherMixin from dispatch code
         LAZY_TASK_MODULES[fn.__name__] = task_fn.name.rsplit('.', 1)[0]
@@ -192,6 +195,7 @@ def lazy_task(*args, **kwargs):
 @lazy_task()
 def resubmit_lazy_tasks():
     """Fallback in case that processes running tasks were terminated unexpectedly
+    This should never be used, unless switching to different submission archecture
     """
     for flag in TaskRescheduleFlag.objects.all():
         with advisory_lock(flag.name, wait=False) as compute_lock:

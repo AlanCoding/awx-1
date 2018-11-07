@@ -1245,8 +1245,8 @@ class UnifiedJob(PolymorphicModel, PasswordFieldsModel, CommonModelNameNotUnique
         self.update_fields(start_args=json.dumps(kwargs), status='pending')
         self.websocket_emit_status("pending")
 
-        from awx.main.scheduler.tasks import run_job_launch
-        connection.on_commit(lambda: run_job_launch.delay(self.id))
+        from awx.main.scheduler.tasks import run_task_manager
+        connection.on_commit(lambda: run_task_manager.lazy_delay())
 
         # Each type of unified job has a different Task class; get the
         # appropirate one.

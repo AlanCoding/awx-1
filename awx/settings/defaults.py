@@ -480,11 +480,11 @@ CELERYBEAT_SCHEDULE = {
         'task': 'awx.main.tasks.purge_old_stdout_files',
         'schedule': timedelta(days=7)
     },
-    'task_manager': {
-        'task': 'awx.main.scheduler.tasks.run_task_manager',
-        'schedule': timedelta(seconds=20),
-        'options': {'expires': 20}
-    },
+    # 'task_manager': {
+    #     'task': 'awx.main.scheduler.tasks.run_task_manager',
+    #     'schedule': timedelta(seconds=20),
+    #     'options': {'expires': 20}
+    # },
     'isolated_heartbeat': {
         'task': 'awx.main.tasks.awx_isolated_heartbeat',
         'schedule': timedelta(seconds=AWX_ISOLATED_PERIODIC_CHECK),

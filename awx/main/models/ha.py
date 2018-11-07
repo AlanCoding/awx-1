@@ -284,7 +284,7 @@ class JobOrigin(models.Model):
 
 def schedule_policy_task():
     from awx.main.tasks import apply_cluster_membership_policies
-    connection.on_commit(lambda: apply_cluster_membership_policies.apply_async())
+    connection.on_commit(lambda: apply_cluster_membership_policies.lazy_delay())
 
 
 @receiver(post_save, sender=InstanceGroup)
