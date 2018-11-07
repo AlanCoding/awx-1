@@ -2,15 +2,9 @@ import inspect
 import logging
 import sys
 from uuid import uuid4
-from functools import wraps
-from time import time
 
 from django.conf import settings
 from kombu import Connection, Exchange, Producer
-
-from awx.main.utils.pglock import advisory_lock
-
-__all__ = ['task', 'lazy_task']
 
 logger = logging.getLogger('awx.main.dispatch')
 
@@ -132,81 +126,3 @@ class task:
         setattr(fn, 'apply_async', cls.apply_async)
         setattr(fn, 'delay', cls.delay)
         return fn
-
-
-def get_names(func_name, args):
-    name = func_name
-    # If function takes args, then make lock specific to those args
-    if args:
-        name += '_' + ','.join([str(arg) for arg in args])
-    wait_name = name + '_wait'
-    return (name, wait_name)
-
-
-def lazy_execute(f):
-    @wraps(f)
-    def new_func(*args, **kwargs):
-        name, wait_name = get_names(f.__name__, args)
-
-        # Non-blocking, acquire the wait lock
-        wait_lock_cm = advisory_lock(wait_name, wait=False)
-        wait_lock_result = wait_lock_cm.__enter__()
-        if not wait_lock_result:
-            logger.debug('Another process waits to carry out {}, exiting.'.format(name))
-            wait_lock_cm.__exit__(None, None, None)
-            return
-
-        # blocking, acquire the compute lock
-        start = time()
-        logger.debug('Going to wait for {} lock before performing task.'.format(name))
-        with advisory_lock(name, wait=True):
-            delta = time() - start
-            msg = 'Took {} seconds to obtain {} lock, running now.'.format(delta, name)
-            if delta < 0.1:
-                logger.debug(msg)
-            else:
-                logger.info(msg)
-            wait_lock_cm.__exit__(None, None, None)
-            return f(*args, **kwargs)
-
-    return new_func
-
-
-def lazy_apply_async(orig_fn):
-    @wraps(orig_fn.apply_async)
-    def new_apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, **kw):
-        name, wait_name = get_names(orig_fn.__name__, args)
-        with advisory_lock(wait_name, wait=False) as wait_lock:
-            if wait_lock:
-                logger.debug('Submitting task with lock {}.'.format(name))  # TODO: remove log
-                return orig_fn.apply_async.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, **kw)
-            else:
-                logger.debug('Task {} already queued, not submitting.'.format(name))
-    return new_apply_async
-
-
-class lazy_task:
-    """
-    task wrapper to schedule time-sensitive idempotent tasks efficiently
-    see section in docs/tasks.md
-    """
-    def __init__(self, *args, **kwargs):
-        # Saves the instantiated version of the general task decorator for later
-        self.task_decorator = task(*args, **kwargs)
-
-    def __call__(self, fn=None):
-        if not inspect.isfunction(fn):
-            raise RuntimeError('lazy tasks only supported for functions, given {}'.format(fn))
-
-        # This is passing-through the original task decorator that all tasks use
-        task_fn = self.task_decorator(
-            # This converts the function into a lazier version of itself which
-            # may or may not perform the work, depending on breadcrumbs from other processes
-            lazy_execute(fn)
-        )
-
-        # lazy_apply_async checks for active locks to determine
-        # if there is a need to schedule the task or, bail as no-op
-        setattr(task_fn, 'apply_async', lazy_apply_async(task_fn))
-
-        return task_fn
