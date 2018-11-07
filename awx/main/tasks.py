@@ -47,7 +47,7 @@ from awx import __version__ as awx_application_version
 from awx.main.constants import CLOUD_PROVIDERS, PRIVILEGE_ESCALATION_METHODS, STANDARD_INVENTORY_UPDATE_ENV
 from awx.main.access import access_registry
 from awx.main.models import * # noqa
-from awx.main.models.tasks import TowerScheduleState, lazy_task
+from awx.main.models.tasks import TowerScheduleState, lazy_task, resubmit_lazy_tasks
 from awx.main.constants import ACTIVE_STATES
 from awx.main.exceptions import AwxTaskError
 from awx.main.queue import CallbackQueueDispatcher
@@ -479,6 +479,8 @@ def awx_periodic_scheduler():
             new_unified_job.websocket_emit_status("failed")
         emit_channel_notification('schedules-changed', dict(id=schedule.id, group_name="schedules"))
     state.save()
+    # Also resubmit lost lazy tasks
+    resubmit_lazy_tasks.lazy_apply_async()
 
 
 @task()
