@@ -18,7 +18,7 @@ from awx.main.dispatch.publish import task
 
 __all__ = ['TowerScheduleState', 'lazy_task', 'resubmit_lazy_tasks']
 
-logger = logging.getLogger('awx.main.dispatch')
+logger = logging.getLogger('awx.main.models.tasks')
 
 
 class TowerScheduleState(SingletonModel):

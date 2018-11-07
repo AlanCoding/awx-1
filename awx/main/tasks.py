@@ -450,6 +450,7 @@ def awx_periodic_scheduler():
     except PermissionDenied as e:
         invalid_license = e
 
+    needs_tm = False  # this produces pending jobs, these need task manager
     for schedule in schedules:
         template = schedule.unified_job_template
         schedule.save() # To update next_run timestamp.
@@ -469,6 +470,7 @@ def awx_periodic_scheduler():
                 new_unified_job.websocket_emit_status("failed")
                 raise invalid_license
             can_start = new_unified_job.signal_start()
+            needs_tm = True
         except Exception:
             logger.exception('Error spawning scheduled job.')
             continue
@@ -479,6 +481,8 @@ def awx_periodic_scheduler():
             new_unified_job.websocket_emit_status("failed")
         emit_channel_notification('schedules-changed', dict(id=schedule.id, group_name="schedules"))
     state.save()
+    if needs_tm:
+        run_task_manager.lazy_delay()
 
 
 @task()

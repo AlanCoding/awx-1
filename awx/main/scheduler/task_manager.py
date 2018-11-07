@@ -43,6 +43,7 @@ class TaskManager():
 
     def __init__(self):
         self.graph = dict()
+        self.needs_reschedule = False
         for rampart_group in InstanceGroup.objects.prefetch_related('instances'):
             self.graph[rampart_group.name] = dict(graph=DependencyGraph(rampart_group.name),
                                                   capacity_total=rampart_group.capacity,
@@ -118,6 +119,7 @@ class TaskManager():
                     continue
                 kv = spawn_node.get_job_kwargs()
                 job = spawn_node.unified_job_template.create_unified_job(**kv)
+                self.needs_reschedule = True
                 spawn_node.job = job
                 spawn_node.save()
                 logger.info('Spawned %s in %s for node %s', job.log_format, workflow_job.log_format, spawn_node.pk)
@@ -166,6 +168,8 @@ class TaskManager():
                 cancel_finished = dag.cancel_node_jobs()
                 if cancel_finished:
                     logger.info('Marking %s as canceled, all spawned jobs have concluded.', workflow_job.log_format)
+                    if workflow_job.unified_job_node_id:
+                        self.needs_reschedule = True  # has parent workflow
                     workflow_job.status = 'canceled'
                     workflow_job.start_args = ''  # blank field to remove encrypted passwords
                     workflow_job.save(update_fields=['status', 'start_args'])
@@ -178,6 +182,8 @@ class TaskManager():
                 result.append(workflow_job.id)
                 new_status = 'failed' if has_failed else 'successful'
                 logger.debug(six.text_type("Transitioning {} to {} status.").format(workflow_job.log_format, new_status))
+                if workflow_job.unified_job_node_id:
+                    self.needs_reschedule = True  # has parent workflow
                 workflow_job.status = new_status
                 workflow_job.start_args = ''  # blank field to remove encrypted passwords
                 workflow_job.save(update_fields=['status', 'start_args'])
@@ -215,12 +221,14 @@ class TaskManager():
             if task.job_explanation:
                 task.job_explanation += ' '
             task.job_explanation += 'Task failed pre-start check.'
+            self.needs_reschedule = True
             task.save()
             # TODO: run error handler to fail sub-tasks and send notifications
         else:
             if type(task) is WorkflowJob:
                 task.status = 'running'
                 logger.info('Transitioning %s to running status.', task.log_format)
+                self.needs_reschedule = True  # has parent workflow
             elif not task.supports_isolation() and rampart_group.controller_id:
                 # non-Ansible jobs on isolated instances run on controller
                 task.instance_group = rampart_group.controller
@@ -407,6 +415,8 @@ class TaskManager():
         return dependencies
 
     def process_dependencies(self, dependent_task, dependency_tasks):
+        if dependency_tasks:
+            self.needs_reschedule = True
         for task in dependency_tasks:
             if self.is_job_blocked(task):
                 logger.debug(six.text_type("Dependent {} is blocked from running").format(task.log_format))
