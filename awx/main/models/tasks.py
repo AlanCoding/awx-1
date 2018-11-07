@@ -32,41 +32,37 @@ class TaskRescheduleFlag(Model):
     class Meta:
         app_label = 'main'
 
-
-def get_task_name(func_name, args):
-    name = func_name
-    # If function takes args, then make lock specific to those args
-    if args:
-        name += '_' + ','.join([str(arg) for arg in args])
-    return name
+    @staticmethod
+    def get_task_name(func_name, args):
+        name = func_name
+        # If function takes args, then make lock specific to those args
+        if args:
+            name += ':' + ','.join([str(arg) for arg in args])
+        return name
 
 
 def lazy_execute(f):
     @wraps(f)
     def new_func(*args, **kwargs):
-        name = get_task_name(f.__name__, args)
+        name = TaskRescheduleFlag.get_task_name(f.__name__, args)
 
-        # Check flag
-        try:
-            flag = TaskRescheduleFlag.objects.filter(name=name)
-        except TaskRescheduleFlag.DoesNotExist:
-            logger.debug('Another process seems to have already done {}, exiting.'.format(name))
-            return
+        # NOTE: In a stricter form of this scheme, we would check the flag
+        # and exit here if not set, but this still allows periodic runs to matter
 
         # non-blocking, acquire the compute lock
         with advisory_lock(name, wait=False) as compute_lock:
             if not compute_lock:
-                logger.debug('Another process is doing {}, reschedule is planned, no-op.'.format(name))
+                try:
+                    TaskRescheduleFlag.objects.create(name=name)
+                    logger.debug('Another process is doing {}, reschedule has been planned.'.format(name))
+                except Exception:  # TODO: change to exact exception
+                    logger.debug('Another process is doing {}, reschedule is already planned, no-op.'.format(name))
                 return
 
-            # Claim flag
-            try:
-                flag.delete()
-            except TaskRescheduleFlag.DoesNotExist:  # TODO: also get right exception here
-                logger.debug('Another process seems to have already done {}, exiting.'.format(name))
-                return
-
+            # Claim flag, a flag may or may not exist, this is fire-and-forget
+            TaskRescheduleFlag.objects.filter(name=name).delete()
             logger.debug('Obtained {} lock, now I am obligated to perform the work.'.format(name))
+
             try:
                 return f(*args, **kwargs)
             finally:
@@ -82,59 +78,64 @@ def lazy_execute(f):
 
 
 def lazy_apply_async(orig_fn):
-    @wraps(orig_fn.apply_async)
-    def new_apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, precheck=True, **kw):
-        if not precheck:
-            return orig_fn.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, **kw)
-
-        name = get_task_name(orig_fn.__name__, args)
+    def new_apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, **kw):
+        name = TaskRescheduleFlag.get_task_name(orig_fn.__name__, args)
 
         if TaskRescheduleFlag.objects.filter(name=name).exists():
+            logger.debug('Reschedule already planned for {}, no-op.'.format(name))  # TODO: remove log
             return  # Reschedule is already planned
 
         if connection.in_atomic_block:
             raise RuntimeError('Idempotent tasks should NEVER be called inside a transaction, use on_commit.')
 
+        # NOTE: this needs to happen before advisory_lock check, to avoid race condition
+        # we count on the running process picking up the flag
         try:
             TaskRescheduleFlag.objects.create(name=name)
         except Exception:  # TODO: change to exact exception
             # Likely race condition, another process created it in last 0.005 seconds, which is fine
-            return
+            pass
 
         with advisory_lock(name, wait=False) as compute_lock:
             lock_available = bool(compute_lock)
 
-        if lock_available:
-            logger.debug('Submitting task with lock {}.'.format(name))  # TODO: remove log
-            return orig_fn.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, **kw)
-        else:
+        if not lock_available:
             logger.debug('Task {} already queued, not submitting.'.format(name))
+            return
+
+        logger.debug('Submitting task with lock {}.'.format(name))  # TODO: remove log
+        return orig_fn.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, **kw)
 
     return new_apply_async
 
 
-class lazy_task:
+def lazy_task(*args, **kwargs):
     """
     task wrapper to schedule time-sensitive idempotent tasks efficiently
     see section in docs/tasks.md
     """
-    def __init__(self, *args, **kwargs):
-        # Saves the instantiated version of the general task decorator for later
-        self.task_decorator = task(*args, **kwargs)
+    # Saves the instantiated version of the general task decorator for later
+    task_decorator = task(*args, **kwargs)
 
-    def __call__(self, fn=None):
+    def new_decorator(fn):
         if not inspect.isfunction(fn):
             raise RuntimeError('lazy tasks only supported for functions, given {}'.format(fn))
 
         # This is passing-through the original task decorator that all tasks use
-        task_fn = self.task_decorator(
-            # This converts the function into a lazier version of itself which
-            # may or may not perform the work, depending on breadcrumbs from other processes
-            lazy_execute(fn)
-        )
+        task_fn = task_decorator(fn)
 
+        # This converts the function into a lazier version of itself which
+        # may or may not perform the work, depending on breadcrumbs from other processes
+        lazy_fn = lazy_execute(task_fn)
+
+        # copy tasks bound to the PublisherMixin from dispatch code
+        setattr(lazy_fn, 'name', task_fn.name)
+        setattr(lazy_fn, 'apply_async', task_fn.apply_async)
+        setattr(lazy_fn, 'delay', task_fn.delay)
         # lazy_apply_async checks for active locks to determine
         # if there is a need to schedule the task or, bail as no-op
-        setattr(task_fn, 'apply_async', lazy_apply_async(task_fn))
+        setattr(lazy_fn, 'lazy_apply_async', lazy_apply_async(task_fn))
 
-        return task_fn
+        return lazy_fn
+
+    return new_decorator
