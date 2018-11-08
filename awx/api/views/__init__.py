@@ -565,6 +565,7 @@ class InstanceDetail(RetrieveUpdateAPIView):
             else:
                 obj.capacity = 0
             obj.save()
+            connection.on_commit(lambda: run_task_manager.lazy_delay())
             r.data = InstanceSerializer(obj, context=self.get_serializer_context()).to_representation(obj)
         return r
 

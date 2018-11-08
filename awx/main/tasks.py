@@ -235,6 +235,11 @@ def apply_cluster_membership_policies():
             if instances_to_remove:
                 logger.info('Removing instances {} from group {}'.format(list(instances_to_remove), g.obj.name))
                 g.obj.instances.remove(*instances_to_remove)
+
+    # This was not a no-op, meaning that some jobs may no go from pending to running
+    from awx.main.scheduler.tasks import run_task_manager
+    run_task_manager.lazy_delay()
+
     logger.info('Cluster policy computation finished in {} seconds'.format(time.time() - started_compute))
 
 
@@ -482,6 +487,7 @@ def awx_periodic_scheduler():
         emit_channel_notification('schedules-changed', dict(id=schedule.id, group_name="schedules"))
     state.save()
     if needs_tm:
+        from awx.main.scheduler.tasks import run_task_manager
         run_task_manager.lazy_delay()
 
 
@@ -496,7 +502,7 @@ def handle_work_success(task_actual):
         return
 
     from awx.main.scheduler.tasks import run_task_manager
-    run_task_manager.delay()
+    run_task_manager.lazy_delay()
 
 
 @task()
@@ -536,7 +542,7 @@ def handle_work_error(task_id, *args, **kwargs):
     # completion event for each job here.
     if first_instance:
         from awx.main.scheduler.tasks import run_task_manager
-        run_task_manager.delay()
+        run_task_manager.lazy_delay()
         pass
 
 
