@@ -130,13 +130,13 @@ def lazy_execute(f, local_cycles=20):
 
                 flag_exists = TaskRescheduleFlag.objects.filter(name=name).exists()
                 if not flag_exists:
-                    logger.info('Work for {} lock has been cleared.'.format(name))
+                    logger.info('Work for {} lock cleared in {} cycles.'.format(name, cycle + 1))
                     break
                 else:
-                    logger.debug('Lazy task {} got rescheduled while running, repeating.'.format(name))
+                    logger.debug('Lazy task {} got rescheduled running cycle {}, repeating.'.format(name, cycle + 1))
             else:
                 # After so-long, restart in a new context for OOM concerns, etc.
-                resubmit('Reached max of {} local cycles.'.format(local_cycles))
+                resubmit('Reached max of {} local cycles.'.format(local_cycles + 1))
 
         return ret
 
