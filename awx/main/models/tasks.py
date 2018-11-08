@@ -75,21 +75,20 @@ def lazy_execute(f, local_cycles=20):
     def new_func(*args, **kwargs):
         name = TaskRescheduleFlag.get_task_name(f.__name__, args)
 
-        # NOTE: In a stricter form of this scheme, we would check the flag
-        # and exit here if not set
-        # this weaker form still allows periodic runs to do work
+        # NOTE: In a stricter form of this design, we would check the flag
+        # and exit before doing any work if the flag was not set
+        # this current form (the weaker form) still allows periodic runs to do work
 
         def resubmit(reason):
             try:
                 f.apply_async(args=args, kwargs=kwargs)
-                logger.debug('Resubmitted task {}. {}'.format(name, reason))
+                logger.info('Resubmitted lazy task {}. {}'.format(name, reason))
             except Exception:
                 logger.exception('Resubmission check of task {} failed, unexecuted work could remain.'.format(name))
 
-        # non-blocking, acquire the compute lock
         ret = None
         flag_exists = True  # may not exist, arbitrary initial value
-        with advisory_lock(name, wait=False) as compute_lock:
+        with advisory_lock(name, wait=False) as compute_lock:  # non-blocking, acquire lock
             if not compute_lock:
                 try:
                     TaskRescheduleFlag.objects.create(name=name)
@@ -104,15 +103,17 @@ def lazy_execute(f, local_cycles=20):
 
             logger.debug('Obtained {} lock, now I am obligated to perform the work.'.format(name))
             for cycle in range(local_cycles):
-                # Claim flag, a flag may or may not exist, this is fire-and-forget
+                # Claim flag, flag may or may not exist, this is fire-and-forget
                 TaskRescheduleFlag.objects.filter(name=name).delete()
 
                 ret = f(*args, **kwargs)
 
                 flag_exists = TaskRescheduleFlag.objects.filter(name=name).exists()
                 if not flag_exists:
-                    logger.debug('Work for {} lock has been cleared.'.format(name))
+                    logger.info('Work for {} lock has been cleared.'.format(name))  # TODO: maybe downgrade to debug
                     break
+                else:
+                    logger.debug('Lazy task {} got rescheduled while running, repeating.'.format(name))
             else:
                 # After so-long, restart in a new context for OOM concerns, etc.
                 resubmit('Reached max of {} local cycles.'.format(local_cycles))
@@ -124,13 +125,13 @@ def lazy_execute(f, local_cycles=20):
 
 def lazy_apply_async(orig_fn):
     def new_apply_async(args=None, kwargs=None, queue=None, uuid=None, **kw):
-        if connection.in_atomic_block:
+        if connection.in_atomic_block:  # TODO: final version also check "and settings.DEBUG"
             raise RuntimeError('Idempotent tasks should NEVER be called inside a transaction, use on_commit.')
 
         name = TaskRescheduleFlag.get_task_name(orig_fn.__name__, args)
 
-        # NOTE: setting the flag needs to happen before advisory_lock check, to avoid race condition
-        # we count on the running process picking up the flag
+        # NOTE: setting the flag needs to happen before advisory_lock check
+        # to avoid race condition - running task checks flag before releasing lock
         try:
             TaskRescheduleFlag.objects.create(name=name)
         except IntegrityError:

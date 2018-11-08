@@ -168,7 +168,7 @@ class TaskManager():
                 cancel_finished = dag.cancel_node_jobs()
                 if cancel_finished:
                     logger.info('Marking %s as canceled, all spawned jobs have concluded.', workflow_job.log_format)
-                    if workflow_job.unified_job_node_id:
+                    if workflow_job.spawned_by_workflow:
                         self.needs_reschedule = True  # has parent workflow
                     workflow_job.status = 'canceled'
                     workflow_job.start_args = ''  # blank field to remove encrypted passwords
@@ -182,7 +182,7 @@ class TaskManager():
                 result.append(workflow_job.id)
                 new_status = 'failed' if has_failed else 'successful'
                 logger.debug(six.text_type("Transitioning {} to {} status.").format(workflow_job.log_format, new_status))
-                if workflow_job.unified_job_node_id:
+                if workflow_job.spawned_by_workflow:
                     self.needs_reschedule = True  # has parent workflow
                 workflow_job.status = new_status
                 workflow_job.start_args = ''  # blank field to remove encrypted passwords
