@@ -558,16 +558,11 @@ class TaskManager():
         return finished_wfjs
 
     def schedule(self):
-        # Lock
-        with advisory_lock('task_manager_lock', wait=False) as acquired:
-            with transaction.atomic():
-                if acquired is False:
-                    logger.debug("Not running scheduler, another task holds lock")
-                    return
-                logger.debug("Starting Scheduler")
+        # Lock expected to be handled by lazy_task
+        with transaction.atomic():
 
-                finished_wfjs = self._schedule()
+            finished_wfjs = self._schedule()
 
-                # Operations whose queries rely on modifications made during the atomic scheduling session
-                for wfj in WorkflowJob.objects.filter(id__in=finished_wfjs):
-                    wfj.send_notification_templates('succeeded' if wfj.status == 'successful' else 'failed')
+            # Operations whose queries rely on modifications made during the atomic scheduling session
+            for wfj in WorkflowJob.objects.filter(id__in=finished_wfjs):
+                wfj.send_notification_templates('succeeded' if wfj.status == 'successful' else 'failed')
