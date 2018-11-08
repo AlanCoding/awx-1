@@ -130,12 +130,6 @@ def inform_cluster_of_shutdown():
         logger.exception('Encountered problem with normal shutdown signal.')
 
 
-
-@lazy_task()
-def sleep_alan(s):
-    time.sleep(s)
-
-
 @lazy_task()
 def apply_cluster_membership_policies():
     started_compute = time.time()
