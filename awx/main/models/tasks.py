@@ -6,7 +6,8 @@ from inspect import isfunction
 
 # Django
 from django.db.models import DateTimeField, Model, CharField
-from django.db import connection, IntegrityError
+from django.db import connection, transaction, IntegrityError
+from django.conf import settings
 
 # solo, Django app
 from solo.models import SingletonModel
@@ -44,7 +45,20 @@ class TaskRescheduleFlag(Model):
         return self.name
 
     @staticmethod
-    def get_task_name(func_name, args):
+    def gently_set_flag(name):
+        """Create a flag in a way that avoids interference with any
+        other actomic blocks that may be active
+        """
+        if connection.in_atomic_block:
+            # Nesting transaction block does not set parent rollback
+            with transaction.atomic():
+                TaskRescheduleFlag.objects.create(name=name)
+        else:
+            # Preferable option, immediate and efficient
+            TaskRescheduleFlag.objects.create(name=name)
+
+    @staticmethod
+    def get_lock_name(func_name, args):
         name = func_name
         # If function takes args, then make lock specific to those args
         if args:
@@ -70,10 +84,16 @@ class TaskRescheduleFlag(Model):
         return (fn, args)
 
 
+def validate_not_atomic():
+    if connection.in_atomic_block and settings.DEBUG:
+        raise RuntimeError('Idempotent tasks should NEVER be called inside a transaction, use on_commit.')
+
+
 def lazy_execute(f, local_cycles=20):
     @wraps(f)
     def new_func(*args, **kwargs):
-        name = TaskRescheduleFlag.get_task_name(f.__name__, args)
+        validate_not_atomic()
+        name = TaskRescheduleFlag.get_lock_name(f.__name__, args)
 
         # NOTE: In a stricter form of this design, we would check the flag
         # and exit before doing any work if the flag was not set
@@ -91,7 +111,7 @@ def lazy_execute(f, local_cycles=20):
         with advisory_lock(name, wait=False) as compute_lock:  # non-blocking, acquire lock
             if not compute_lock:
                 try:
-                    TaskRescheduleFlag.objects.create(name=name)
+                    TaskRescheduleFlag.gently_set_flag(name)
                     logger.debug('Another process is doing {}, rescheduled for after it completes.'.format(name))
                     with advisory_lock(name, wait=False) as compute_lock2:
                         gave_up_lock = bool(compute_lock2)
@@ -110,7 +130,7 @@ def lazy_execute(f, local_cycles=20):
 
                 flag_exists = TaskRescheduleFlag.objects.filter(name=name).exists()
                 if not flag_exists:
-                    logger.info('Work for {} lock has been cleared.'.format(name))  # TODO: maybe downgrade to debug
+                    logger.info('Work for {} lock has been cleared.'.format(name))
                     break
                 else:
                     logger.debug('Lazy task {} got rescheduled while running, repeating.'.format(name))
@@ -125,27 +145,25 @@ def lazy_execute(f, local_cycles=20):
 
 def lazy_apply_async(orig_fn):
     def new_apply_async(args=None, kwargs=None, queue=None, uuid=None, **kw):
-        if connection.in_atomic_block:  # TODO: final version also check "and settings.DEBUG"
-            raise RuntimeError('Idempotent tasks should NEVER be called inside a transaction, use on_commit.')
-
-        name = TaskRescheduleFlag.get_task_name(orig_fn.__name__, args)
+        validate_not_atomic()
+        name = TaskRescheduleFlag.get_lock_name(orig_fn.__name__, args)
 
         # NOTE: setting the flag needs to happen before advisory_lock check
         # to avoid race condition - running task checks flag before releasing lock
         try:
-            TaskRescheduleFlag.objects.create(name=name)
+            TaskRescheduleFlag.gently_set_flag(name)
         except IntegrityError:
             pass  # Reschedule flag already existed
 
         with advisory_lock(name, wait=False) as compute_lock:
             lock_available = bool(compute_lock)
 
-        if not lock_available:
+        if lock_available:
+            logger.debug('Submitting lazy task with lock {}.'.format(name))
+            return orig_fn.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, **kw)
+        else:
             logger.debug('Task {} already queued, not submitting.'.format(name))
             return
-
-        logger.debug('Submitting task with lock {}.'.format(name))  # TODO: remove log
-        return orig_fn.apply_async(args=args, kwargs=kwargs, queue=queue, uuid=uuid, **kw)
 
     return new_apply_async
 
