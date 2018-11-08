@@ -10,8 +10,6 @@ from urlparse import urljoin
 import os.path
 import six
 
-import time
-
 # Django
 from django.conf import settings
 from django.db import models, connection
@@ -431,7 +429,6 @@ class Inventory(CommonModelNameNotUnique, ResourceMixin, RelatedJobsMixin):
         Update model fields that are computed from database relationships.
         '''
         logger.debug("Going to update inventory computed fields")
-        start_time = time.time()
         if update_hosts:
             self.update_host_computed_fields()
         if update_groups:
@@ -468,8 +465,7 @@ class Inventory(CommonModelNameNotUnique, ResourceMixin, RelatedJobsMixin):
                 computed_fields.pop(field)
         if computed_fields:
             iobj.save(update_fields=computed_fields.keys())
-        logger.debug("Finished updating inventory computed fields in "
-                     "{0:.3f} seconds".format(time.time() - start_time))
+        logger.debug("Finished updating inventory computed fields")
 
     def websocket_emit_status(self, status):
         connection.on_commit(lambda: emit_channel_notification(
