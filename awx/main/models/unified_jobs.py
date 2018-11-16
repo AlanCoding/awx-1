@@ -1330,7 +1330,6 @@ class UnifiedJob(PolymorphicModel, PasswordFieldsModel, CommonModelNameNotUnique
                     self.job_explanation = job_explanation
                     cancel_fields.append('job_explanation')
                 self.save(update_fields=cancel_fields)
-                self.websocket_emit_status("canceled")
         return self.cancel_flag
 
     @property
