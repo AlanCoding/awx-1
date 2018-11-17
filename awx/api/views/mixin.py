@@ -134,7 +134,7 @@ class InstanceGroupMembershipMixin(object):
                     ig_obj.save(update_fields=['policy_instance_list'])
             # the prior action may turn a dead IG into a live IG
             # so process jobs as soon as the outermost transaction completes
-            schedule_task_manager
+            schedule_task_manager()
         return response
 
     def is_valid_relation(self, parent, sub, created=False):

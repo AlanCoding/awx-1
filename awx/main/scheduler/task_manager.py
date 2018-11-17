@@ -152,6 +152,7 @@ class TaskManager():
                     job.status = 'failed'
                     job.save(update_fields=['status', 'job_explanation'])
                     job.websocket_emit_status('failed')
+                    schedule_task_manager()
 
                 # TODO: should we emit a status on the socket here similar to tasks.py awx_periodic_scheduler() ?
                 #emit_websocket_notification('/socket.io/jobs', '', dict(id=))

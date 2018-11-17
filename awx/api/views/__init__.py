@@ -326,10 +326,10 @@ class InstanceDetail(RetrieveUpdateAPIView):
             obj = self.get_object()
             if obj.enabled:
                 obj.refresh_capacity()
+                schedule_task_manager()
             else:
                 obj.capacity = 0
             obj.save()
-            schedule_task_manager()
             r.data = InstanceSerializer(obj, context=self.get_serializer_context()).to_representation(obj)
         return r
 
