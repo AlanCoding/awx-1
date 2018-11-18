@@ -4,6 +4,7 @@ import sys
 from uuid import uuid4
 
 from django.conf import settings
+from django.db import connection
 from kombu import Connection, Exchange, Producer
 
 logger = logging.getLogger('awx.main.dispatch')
@@ -66,6 +67,8 @@ class task:
 
             @classmethod
             def apply_async(cls, args=None, kwargs=None, queue=None, uuid=None, **kw):
+                if connection.in_atomic_block:
+                    raise RuntimeError('Tasks should NEVER be called inside a transaction, use on_commit.')
                 task_id = uuid or str(uuid4())
                 args = args or []
                 kwargs = kwargs or {}
