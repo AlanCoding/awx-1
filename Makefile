@@ -544,22 +544,16 @@ docker-auth:
 
 # Docker isolated rampart
 docker-isolated: docker-auth
-	CURRENT_UID=$(shell id -u) TAG=$(COMPOSE_TAG) DEV_DOCKER_TAG_BASE=$(DEV_DOCKER_TAG_BASE) docker-compose -f tools/docker-compose.yml -f tools/docker-isolated-override.yml up --no-start
-	$(eval AWX_NAME = $(shell docker ps -aq -f name=awx -f status=created -f status=exited -f status=running))
-	$(eval ISO_NAME = $(shell docker ps -aq -f name=isolated -f status=created -f status=exited -f status=running))
-	docker start $(AWX_NAME)
-	docker start $(ISO_NAME)
-	$(eval MAIN_KEY = $(shell docker exec --user=0 -t $(AWX_NAME) cat /root/.ssh/id_rsa.pub))
-	$(eval SAT_KEY = $(shell docker exec -i -t $(ISO_NAME) cat /root/.ssh/authorized_keys))
-	echo $(MAIN_KEY)
-	echo $(SAT_KEY)
-	echo "__version__ = '`git describe --long | cut -d - -f 1-1`'" | docker exec -i $(ISO_NAME) /bin/bash -c "cat > /venv/awx/lib/python2.7/site-packages/awx.py"
-	if [ MAIN_KEY == SAT_KEY ]; then \
+	CURRENT_UID=$(shell id -u) TAG=$(COMPOSE_TAG) DEV_DOCKER_TAG_BASE=$(DEV_DOCKER_TAG_BASE) docker-compose -f tools/docker-compose.yml -f tools/docker-isolated-override.yml up
+	$(eval AWX_PUB = $(shell docker exec -t tools_awx_1 awx-manage generate_isolated_key))
+	echo $(AWX_PUB)
+	echo "__version__ = '`git describe --long | cut -d - -f 1-1`'" | docker exec -i tools_isolated_1 /bin/bash -c "cat > /venv/awx/lib/python2.7/site-packages/awx.py"
+	if [ "`docker exec -i -t tools_isolated_1 cat /root/.ssh/authorized_keys`" == AWX_PUB ]; then \
 		echo "SSH keys already copied to isolated instance"; \
 	else \
-		docker exec $(shell docker ps -aq -f name=isolated -f status=created -f status=exited -f status=running) bash -c "mkdir -p /root/.ssh && rm -f /root/.ssh/authorized_keys && echo $$(MAIN_KEY) >> /root/.ssh/authorized_keys"; \
+		docker exec "tools_isolated_1" bash -c "mkdir -p /root/.ssh && rm -f /root/.ssh/authorized_keys && echo $$(AWX_PUB) >> /root/.ssh/authorized_keys"; \
 	fi
-	# CURRENT_UID=$(shell id -u) TAG=$(COMPOSE_TAG) DEV_DOCKER_TAG_BASE=$(DEV_DOCKER_TAG_BASE) docker-compose -f tools/docker-compose.yml -f tools/docker-isolated-override.yml up
+	CURRENT_UID=$(shell id -u) TAG=$(COMPOSE_TAG) DEV_DOCKER_TAG_BASE=$(DEV_DOCKER_TAG_BASE) docker-compose -f tools/docker-compose.yml -f tools/docker-isolated-override.yml up
 
 # Docker Compose Development environment
 docker-compose: docker-auth
