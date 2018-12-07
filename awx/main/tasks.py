@@ -1808,7 +1808,7 @@ class RunInventoryUpdate(BaseTask):
         private_data = {'credentials': {}}
         credential = inventory_update.get_cloud_credential()
 
-        if inventory_update.source == 'openstack':
+        if credential.kind == 'openstack':
             openstack_auth = dict(auth_url=credential.host,
                                   username=credential.username,
                                   password=decrypt_field(credential, "password"),
@@ -1852,7 +1852,7 @@ class RunInventoryUpdate(BaseTask):
 
         cp = ConfigParser.ConfigParser()
         # Build custom ec2.ini for ec2 inventory script to use.
-        if inventory_update.source == 'ec2':
+        if credential.kind == 'aws':
             section = 'ec2'
             cp.add_section(section)
             ec2_opts = dict(inventory_update.source_vars_dict.items())
@@ -1884,7 +1884,7 @@ class RunInventoryUpdate(BaseTask):
             for k,v in ec2_opts.items():
                 cp.set(section, k, six.text_type(v))
         # Allow custom options to vmware inventory script.
-        elif inventory_update.source == 'vmware':
+        elif credential.kind == 'vmware':
 
             section = 'vmware'
             cp.add_section(section)
@@ -1903,7 +1903,7 @@ class RunInventoryUpdate(BaseTask):
             for k,v in vmware_opts.items():
                 cp.set(section, k, six.text_type(v))
 
-        elif inventory_update.source == 'satellite6':
+        elif credential.kind == 'satellite6':
             section = 'foreman'
             cp.add_section(section)
 
@@ -1939,7 +1939,7 @@ class RunInventoryUpdate(BaseTask):
             cp.set(section, 'path', '/tmp')
             cp.set(section, 'max_age', '0')
 
-        elif inventory_update.source == 'cloudforms':
+        elif credential.kind == 'cloudforms':
             section = 'cloudforms'
             cp.add_section(section)
 
@@ -1963,7 +1963,7 @@ class RunInventoryUpdate(BaseTask):
             )
             cp.set(section, 'path', cache_path)
 
-        elif inventory_update.source == 'azure_rm':
+        elif credential.kind == 'azure_rm':
             section = 'azure'
             cp.add_section(section)
             cp.set(section, 'include_powerstate', 'yes')
@@ -2036,17 +2036,18 @@ class RunInventoryUpdate(BaseTask):
         # sync with those in Ansible core at all times.
 
         ini_mapping = {
-            'ec2': 'EC2_INI_PATH',
+            'aws': 'EC2_INI_PATH',
             'vmware': 'VMWARE_INI_PATH',
             'azure_rm': 'AZURE_INI_PATH',
             'openstack': 'OS_CLIENT_CONFIG_FILE',
             'satellite6': 'FOREMAN_INI_PATH',
             'cloudforms': 'CLOUDFORMS_INI_PATH'
         }
-        if inventory_update.source in ini_mapping:
+        cloud_cred = inventory_update.get_cloud_credential()
+        if cloud_cred.kind in ini_mapping:
             cred_data = kwargs.get('private_data_files', {}).get('credentials', '')
-            env[ini_mapping[inventory_update.source]] = cred_data.get(
-                inventory_update.get_cloud_credential(), ''
+            env[ini_mapping[cloud_cred.kind]] = cred_data.get(
+                cloud_cred, ''
             )
 
         if inventory_update.source == 'gce':
