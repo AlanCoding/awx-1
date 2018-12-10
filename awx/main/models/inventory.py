@@ -1518,8 +1518,15 @@ class InventorySource(UnifiedJobTemplate, InventorySourceOptions, RelatedJobsMix
             return bool(self.source_script)
         elif self.source == 'scm':
             return bool(self.source_project)
-        else:
-            return bool(self.source in CLOUD_INVENTORY_SOURCES)
+        elif self.source == 'file':
+            return False
+        elif self.source == 'ec2':
+            # Permit credential-less ec2 updates to allow IAM roles
+            return True
+        elif self.source == 'gce':
+            # These updates will hang if correct credential is not supplied
+            return bool(self.get_cloud_credential().kind == 'gce')
+        return True
 
     def create_inventory_update(self, **kwargs):
         return self.create_unified_job(**kwargs)
@@ -1699,13 +1706,7 @@ class InventoryUpdate(UnifiedJob, InventorySourceOptions, JobNotificationMixin, 
     def can_start(self):
         if not super(InventoryUpdate, self).can_start:
             return False
-
-        if (self.source not in ('custom', 'ec2', 'scm') and
-                not (self.get_cloud_credential())):
-            return False
-        elif self.source == 'scm' and not self.inventory_source.source_project:
-            return False
-        elif self.source == 'file':
+        elif not self.inventory_source or not self.inventory_source._can_update():
             return False
         return True
 
