@@ -1116,7 +1116,7 @@ class RunJob(BaseTask):
             if credential.ssh_key_data not in (None, ''):
                 private_data['credentials'][credential] = decrypt_field(credential, 'ssh_key_data') or ''
 
-            if credential.kind == 'openstack':
+            if credential and credential.kind == 'openstack':
                 openstack_auth = dict(auth_url=credential.host,
                                       username=credential.username,
                                       password=decrypt_field(credential, "password"),
@@ -1808,7 +1808,7 @@ class RunInventoryUpdate(BaseTask):
         private_data = {'credentials': {}}
         credential = inventory_update.get_cloud_credential()
 
-        if credential.kind == 'openstack':
+        if credential and credential.kind == 'openstack':
             openstack_auth = dict(auth_url=credential.host,
                                   username=credential.username,
                                   password=decrypt_field(credential, "password"),
@@ -1852,7 +1852,7 @@ class RunInventoryUpdate(BaseTask):
 
         cp = ConfigParser.ConfigParser()
         # Build custom ec2.ini for ec2 inventory script to use.
-        if credential.kind == 'aws':
+        if credential and credential.kind == 'aws':
             section = 'ec2'
             cp.add_section(section)
             ec2_opts = dict(inventory_update.source_vars_dict.items())
@@ -1884,7 +1884,7 @@ class RunInventoryUpdate(BaseTask):
             for k,v in ec2_opts.items():
                 cp.set(section, k, six.text_type(v))
         # Allow custom options to vmware inventory script.
-        elif credential.kind == 'vmware':
+        elif credential and credential.kind == 'vmware':
 
             section = 'vmware'
             cp.add_section(section)
@@ -1903,7 +1903,7 @@ class RunInventoryUpdate(BaseTask):
             for k,v in vmware_opts.items():
                 cp.set(section, k, six.text_type(v))
 
-        elif credential.kind == 'satellite6':
+        elif credential and credential.kind == 'satellite6':
             section = 'foreman'
             cp.add_section(section)
 
@@ -1939,7 +1939,7 @@ class RunInventoryUpdate(BaseTask):
             cp.set(section, 'path', '/tmp')
             cp.set(section, 'max_age', '0')
 
-        elif credential.kind == 'cloudforms':
+        elif credential and credential.kind == 'cloudforms':
             section = 'cloudforms'
             cp.add_section(section)
 
@@ -1963,7 +1963,7 @@ class RunInventoryUpdate(BaseTask):
             )
             cp.set(section, 'path', cache_path)
 
-        elif credential.kind == 'azure_rm':
+        elif credential and credential.kind == 'azure_rm':
             section = 'azure'
             cp.add_section(section)
             cp.set(section, 'include_powerstate', 'yes')
@@ -2044,7 +2044,7 @@ class RunInventoryUpdate(BaseTask):
             'cloudforms': 'CLOUDFORMS_INI_PATH'
         }
         cloud_cred = inventory_update.get_cloud_credential()
-        if cloud_cred.kind in ini_mapping:
+        if cloud_cred and cloud_cred.kind in ini_mapping:
             cred_data = kwargs.get('private_data_files', {}).get('credentials', '')
             env[ini_mapping[cloud_cred.kind]] = cred_data.get(
                 cloud_cred, ''
