@@ -2122,28 +2122,34 @@ class RunInventoryUpdate(BaseTask):
                         getattr(settings, '%s_INSTANCE_ID_VAR' % src.upper()),])
         # Add arguments for the source inventory script
         args.append('--source')
-        if src in CLOUD_PROVIDERS:
-            # Get the path to the inventory plugin, and append it to our
-            # arguments.
-            plugin_path = self.get_path_to('..', 'plugins', 'inventory',
-                                           '%s.py' % src)
-            args.append(plugin_path)
-        elif src == 'scm':
-            args.append(inventory_update.get_actual_source_path())
-        elif src == 'custom':
-            handle, path = tempfile.mkstemp(dir=kwargs['private_data_dir'])
-            f = os.fdopen(handle, 'w')
-            if inventory_update.source_script is None:
-                raise RuntimeError('Inventory Script does not exist')
-            f.write(inventory_update.source_script.script.encode('utf-8'))
-            f.close()
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-            args.append(path)
+        args.append(self.build_inventory(inventory_update, **kwargs))
+        if src == 'custom':
             args.append("--custom")
         args.append('-v%d' % inventory_update.verbosity)
         if settings.DEBUG:
             args.append('--traceback')
         return args
+
+    def build_inventory(self, inventory_update, **kwargs):
+        # If called via build_safe_args, do not re-create file
+        if getattr(self, '_inventory_path', False):
+            return self._inventory_path
+        if src in CLOUD_PROVIDERS:
+            # Get the path to the inventory plugin, and append it to our
+            # arguments.
+            inventory_path = self.get_path_to('..', 'plugins', 'inventory', '%s.py' % src)
+        elif src == 'scm':
+            inventory_path = inventory_update.get_actual_source_path()
+        elif src == 'custom':
+            handle, inventory_path = tempfile.mkstemp(dir=kwargs['private_data_dir'])
+            f = os.fdopen(handle, 'w')
+            if inventory_update.source_script is None:
+                raise RuntimeError('Inventory Script does not exist')
+            f.write(inventory_update.source_script.script.encode('utf-8'))
+            f.close()
+            os.chmod(inventory_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        self._inventory_path = inventory_path
+        return inventory_path
 
     def build_cwd(self, inventory_update, **kwargs):
         if inventory_update.source == 'scm' and inventory_update.source_project_update:
