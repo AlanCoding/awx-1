@@ -1329,7 +1329,7 @@ class InventorySourceOptions(BaseModel):
             valid_regions = [x[0] for x in get_regions()]
             region_transform = lambda x: x.strip().lower()
         else:
-            return ''
+            return regions
         all_region = region_transform('all')
         valid_regions = [region_transform(x) for x in valid_regions]
         regions = [region_transform(x) for x in regions.split(',') if x.strip()]
@@ -1370,7 +1370,7 @@ class InventorySourceOptions(BaseModel):
         elif self.source in ('vmware', 'tower'):
             return instance_filters
         else:
-            return ''
+            return instance_filters
 
     def clean_group_by(self):
         group_by = six.text_type(self.group_by or '')
@@ -1391,7 +1391,7 @@ class InventorySourceOptions(BaseModel):
         elif self.source == 'vmware':
             return group_by
         else:
-            return ''
+            return group_by
 
 
 class InventorySource(UnifiedJobTemplate, InventorySourceOptions, RelatedJobsMixin):

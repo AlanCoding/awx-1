@@ -2011,9 +2011,13 @@ class RunInventoryUpdate(BaseTask):
     def build_env(self, inventory_update, **kwargs):
         """Build environment dictionary for inventory import.
 
-        This is the mechanism by which any data that needs to be passed
+        This used to be the mechanism by which any data that needs to be passed
         to the inventory update script is set up. In particular, this is how
         inventory update is aware of its proper credentials.
+
+        Most environment injection is now accomplished by the credential
+        injectors. The primary purpose this still serves is to
+        still point to the inventory update INI or config file.
         """
         env = super(RunInventoryUpdate, self).build_env(inventory_update,
                                                         **kwargs)
@@ -2050,7 +2054,7 @@ class RunInventoryUpdate(BaseTask):
                 cloud_cred, ''
             )
 
-        if inventory_update.source == 'gce':
+        if cloud_cred and cloud_cred.kind == 'gce':
             env['GCE_ZONE'] = inventory_update.source_regions if inventory_update.source_regions != 'all' else ''  # noqa
 
             # by default, the GCE inventory source caches results on disk for
@@ -2062,13 +2066,14 @@ class RunInventoryUpdate(BaseTask):
             cp.write(os.fdopen(handle, 'w'))
             os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
             env['GCE_INI_PATH'] = path
-        elif inventory_update.source in ['scm', 'custom']:
+        elif cloud_cred and cloud_cred.kind == 'tower':
+            env['TOWER_INVENTORY'] = inventory_update.instance_filters
+            env['TOWER_LICENSE_TYPE'] = get_licenser().validate()['license_type']
+
+        if inventory_update.source in ['scm', 'custom']:
             for env_k in inventory_update.source_vars_dict:
                 if str(env_k) not in env and str(env_k) not in settings.INV_ENV_VARIABLE_BLACKLIST:
                     env[str(env_k)] = six.text_type(inventory_update.source_vars_dict[env_k])
-        elif inventory_update.source == 'tower':
-            env['TOWER_INVENTORY'] = inventory_update.instance_filters
-            env['TOWER_LICENSE_TYPE'] = get_licenser().validate()['license_type']
         elif inventory_update.source == 'file':
             raise NotImplementedError('Cannot update file sources through the task system.')
         # add private_data_files
@@ -2131,6 +2136,7 @@ class RunInventoryUpdate(BaseTask):
         return args
 
     def build_inventory(self, inventory_update, **kwargs):
+        src = inventory_update.source
         # If called via build_safe_args, do not re-create file
         if getattr(self, '_inventory_path', False):
             return self._inventory_path
