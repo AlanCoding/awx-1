@@ -32,13 +32,12 @@ def gce(cred, env, private_data_dir):
 
 
 def azure_rm(cred, env, private_data_dir):
+    env['AZURE_SUBSCRIPTION_ID'] = cred.subscription
     if len(cred.client) and len(cred.tenant):
         env['AZURE_CLIENT_ID'] = cred.client
         env['AZURE_SECRET'] = decrypt_field(cred, 'secret')
         env['AZURE_TENANT'] = cred.tenant
-        env['AZURE_SUBSCRIPTION_ID'] = cred.subscription
     else:
-        env['AZURE_SUBSCRIPTION_ID'] = cred.subscription
         env['AZURE_AD_USER'] = cred.username
         env['AZURE_PASSWORD'] = decrypt_field(cred, 'password')
     if cred.inputs.get('cloud_environment', None):
