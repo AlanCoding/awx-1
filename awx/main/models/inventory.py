@@ -9,6 +9,10 @@ import copy
 from urlparse import urljoin
 import os.path
 import six
+import yaml
+import ConfigParser
+import stat
+import tempfile
 
 # Django
 from django.conf import settings
@@ -32,9 +36,18 @@ from awx.main.fields import (
     SmartFilterField,
 )
 from awx.main.managers import HostManager
-from awx.main.models.base import * # noqa
+from awx.main.models.base import (
+    BaseModel,
+    CommonModelNameNotUnique,
+    VarsDictProperty,
+    CLOUD_INVENTORY_SOURCES,
+    prevent_search
+)
 from awx.main.models.events import InventoryUpdateEvent
-from awx.main.models.unified_jobs import * # noqa
+from awx.main.models.unified_jobs import (
+    UnifiedJob,
+    UnifiedJobTemplate
+)
 from awx.main.models.mixins import (
     ResourceMixin,
     TaskManagerInventoryUpdateMixin,
@@ -1001,6 +1014,8 @@ class InventorySourceOptions(BaseModel):
     Common fields for InventorySource and InventoryUpdate.
     '''
 
+    injectors = dict()
+
     SOURCE_CHOICES = [
         ('', _('Manual')),
         ('file', _('File, Directory or Script')),
@@ -1772,3 +1787,82 @@ class CustomInventoryScript(CommonModelNameNotUnique, ResourceMixin):
 
     def get_absolute_url(self, request=None):
         return reverse('api:inventory_script_detail', kwargs={'pk': self.pk}, request=request)
+
+
+# TODO: move these to their own file somewhere?
+class PluginFileInjector:
+    filename = None
+    initial_version = None
+
+    def __init__(self, ansible_version):
+        # This is InventoryOptions instance, could be source or inventory update
+        self.ansible_version = ansible_version
+
+    def inventory_contents(self, inventory_source):
+        return yaml.dump(self.inventory_as_dict(inventory_source), default_flow_style=False)
+
+    def should_use_plugin(self):
+        return bool(
+            self.initial_version and
+            Version(self.ansible_version) >= Version(self.initial_version)
+        )
+
+    def build_env(self, *args, **kwargs):
+        if self.should_use_plugin():
+            return self.build_plugin_env(*args, **kwargs)
+        else:
+            return self.build_script_env(*args, **kwargs)
+
+    def build_plugin_env(self, *args, **kwargs):
+        pass
+
+    def build_script_env(self, *args, **kwargs):
+        pass
+
+    def build_private_data(self, *args, **kwargs):
+        if self.should_use_plugin():
+            return self.build_private_data(*args, **kwargs)
+        else:
+            return self.build_private_data(*args, **kwargs)
+
+    def build_script_private_data(self, *args, **kwargs):
+        pass
+
+    def build_plugin_private_data(self, *args, **kwargs):
+        pass
+
+
+class gce(PluginFileInjector):
+    filename = 'gcp_compute.yml'
+    initial_version = '2.6'
+
+    def build_script_env(self, inventory_update, env, private_data_dir):
+        env['GCE_ZONE'] = inventory_update.source_regions if inventory_update.source_regions != 'all' else ''  # noqa
+
+        # by default, the GCE inventory source caches results on disk for
+        # 5 minutes; disable this behavior
+        cp = ConfigParser.ConfigParser()
+        cp.add_section('cache')
+        cp.set('cache', 'cache_max_age', '0')
+        handle, path = tempfile.mkstemp(dir=private_data_dir)
+        cp.write(os.fdopen(handle, 'w'))
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        env['GCE_INI_PATH'] = path
+        return env
+
+    def inventory_as_dict(self, inventory_source):
+        return dict(
+            plugin='gcp_compute',
+            # NOTE: generalizing this to be use templating like credential types would be nice
+            # but with YAML content that need to inject list parameters into the YAML,
+            # it is hard to see any clean way we can possibly do this
+            zones=self.source_regions.split(','),
+            projects=[inventory_source.get_deprecated_credential().project],
+            filters=None,  # necessary cruft, see: https://github.com/ansible/ansible/pull/50025
+            service_account_file="creds.json",
+            auth_kind="serviceaccount"
+        )
+
+
+for cls in PluginFileInjector.__subclasses__():
+    InventorySource.injectors[cls.__name__] = cls

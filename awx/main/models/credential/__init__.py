@@ -582,6 +582,10 @@ class CredentialType(CommonModelNameNotUnique):
                                  by `file` injectors (like config files or key
                                  files)
         """
+        # TODO: create new wrapper for this method for inventory updates
+        # inventory updates do injection which is a superset of these injectors
+        # this only applies if replacing use in tasks.py build_private_data, etc.
+
         if not self.injectors:
             if self.managed_by_tower and credential.kind in dir(builtin_injectors):
                 injected_env = {}

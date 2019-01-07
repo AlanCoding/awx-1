@@ -2054,19 +2054,12 @@ class RunInventoryUpdate(BaseTask):
                 cloud_cred, ''
             )
 
-        if cloud_cred and cloud_cred.kind == 'gce':
-            env['GCE_ZONE'] = inventory_update.source_regions if inventory_update.source_regions != 'all' else ''  # noqa
+        if cloud_cred and cloud_cred.kind in InventorySource.injectors:
+            # TODO: mapping from credential.kind to inventory_source.source
+            injector = InventorySource.injectors[cloud_cred.kind](kwargs['ansible_version'])
+            env = injector.build_env(self, inventory_update, env, private_data_dir)
 
-            # by default, the GCE inventory source caches results on disk for
-            # 5 minutes; disable this behavior
-            cp = ConfigParser.ConfigParser()
-            cp.add_section('cache')
-            cp.set('cache', 'cache_max_age', '0')
-            handle, path = tempfile.mkstemp(dir=kwargs.get('private_data_dir', None))
-            cp.write(os.fdopen(handle, 'w'))
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-            env['GCE_INI_PATH'] = path
-        elif cloud_cred and cloud_cred.kind == 'tower':
+        if cloud_cred and cloud_cred.kind == 'tower':
             env['TOWER_INVENTORY'] = inventory_update.instance_filters
             env['TOWER_LICENSE_TYPE'] = get_licenser().validate()['license_type']
 
@@ -2141,9 +2134,19 @@ class RunInventoryUpdate(BaseTask):
         if getattr(self, '_inventory_path', False):
             return self._inventory_path
         if src in CLOUD_PROVIDERS:
-            # Get the path to the inventory plugin, and append it to our
-            # arguments.
-            inventory_path = self.get_path_to('..', 'plugins', 'inventory', '%s.py' % src)
+            if src in InventorySource.injectors:
+                injector = InventorySource.injectors[cloud_cred.kind](kwargs['ansible_version'])
+                content = injector.inventory_contents(inventory_update)
+                content = content.encode('utf-8')
+                # must be a statically named file
+                inventory_path = os.path.join(kwargs['private_data_dir'], injector.filename)
+                with os.open(inventory_path, 'w') as f:
+                    f.write(content)
+                os.chmod(inventory_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+            else:
+                # Get the path to the inventory plugin, and append it to our
+                # arguments.
+                inventory_path = self.get_path_to('..', 'plugins', 'inventory', '%s.py' % src)
         elif src == 'scm':
             inventory_path = inventory_update.get_actual_source_path()
         elif src == 'custom':
