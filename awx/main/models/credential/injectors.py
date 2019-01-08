@@ -23,10 +23,9 @@ def gce(cred, env, private_data_dir):
         'client_email': cred.username,
         'project_id': cred.project
     }
-    handle, path = tempfile.mkstemp(dir=private_data_dir)
-    f = os.fdopen(handle, 'w')
-    json.dump(json_cred, f, indent=2)
-    f.close()
+    path = os.path.join(private_data_dir, 'creds.json')
+    with open(path, 'w') as f:
+        json.dump(json_cred, f, indent=2)
     os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
     env['GCE_CREDENTIALS_FILE_PATH'] = path
 

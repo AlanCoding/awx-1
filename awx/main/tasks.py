@@ -2022,6 +2022,7 @@ class RunInventoryUpdate(BaseTask):
         env = super(RunInventoryUpdate, self).build_env(inventory_update,
                                                         **kwargs)
         env = self.add_awx_venv(env)
+        env = self.add_ansible_venv(inventory_update.ansible_virtualenv_path, env, **kwargs)
         # Pass inventory source ID to inventory script.
         env['INVENTORY_SOURCE_ID'] = str(inventory_update.inventory_source_id)
         env['INVENTORY_UPDATE_ID'] = str(inventory_update.pk)
@@ -2057,7 +2058,7 @@ class RunInventoryUpdate(BaseTask):
         if cloud_cred and cloud_cred.kind in InventorySource.injectors:
             # TODO: mapping from credential.kind to inventory_source.source
             injector = InventorySource.injectors[cloud_cred.kind](kwargs['ansible_version'])
-            env = injector.build_env(self, inventory_update, env, private_data_dir)
+            env = injector.build_env(inventory_update, env, kwargs['private_data_dir'])
 
         if cloud_cred and cloud_cred.kind == 'tower':
             env['TOWER_INVENTORY'] = inventory_update.instance_filters
@@ -2135,12 +2136,13 @@ class RunInventoryUpdate(BaseTask):
             return self._inventory_path
         if src in CLOUD_PROVIDERS:
             if src in InventorySource.injectors:
+                cloud_cred = inventory_update.get_cloud_credential()
                 injector = InventorySource.injectors[cloud_cred.kind](kwargs['ansible_version'])
                 content = injector.inventory_contents(inventory_update)
                 content = content.encode('utf-8')
                 # must be a statically named file
                 inventory_path = os.path.join(kwargs['private_data_dir'], injector.filename)
-                with os.open(inventory_path, 'w') as f:
+                with open(inventory_path, 'w') as f:
                     f.write(content)
                 os.chmod(inventory_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
             else:
@@ -2161,9 +2163,23 @@ class RunInventoryUpdate(BaseTask):
         return inventory_path
 
     def build_cwd(self, inventory_update, **kwargs):
-        if inventory_update.source == 'scm' and inventory_update.source_project_update:
+        '''
+        There are two cases where the inventory "source" is in a different
+        location from the private data:
+         - deprecated vendored inventory scripts in awx/plugins/inventory
+         - SCM, where source needs to live in the project folder
+        in these cases, the inventory does not exist in the standard tempdir
+        '''
+        src = inventory_update.source
+        if src == 'scm' and inventory_update.source_project_update:
             return inventory_update.source_project_update.get_project_path(check_if_exists=False)
-        return self.get_path_to('..', 'plugins', 'inventory')
+        if src in CLOUD_PROVIDERS:
+            injector = None
+            if src in InventorySource.injectors:
+                injector = InventorySource.injectors[src](kwargs['ansible_version'])
+            if (not injector) or (not injector.should_use_plugin()):
+                return self.get_path_to('..', 'plugins', 'inventory')
+        return kwargs['private_data_dir']
 
     def get_idle_timeout(self):
         return getattr(settings, 'INVENTORY_UPDATE_IDLE_TIMEOUT', None)
