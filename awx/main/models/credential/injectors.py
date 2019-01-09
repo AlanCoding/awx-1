@@ -21,7 +21,10 @@ def gce(cred, env, private_data_dir):
         'type': 'service_account',
         'private_key': decrypt_field(cred, 'ssh_key_data'),
         'client_email': cred.username,
-        'project_id': cred.project
+        'project_id': cred.project,
+        # need token_uri for inventory plugins
+        # should this really be hard coded? Good question.
+        'token_uri': 'https://accounts.google.com/o/oauth2/token'
     }
     path = os.path.join(private_data_dir, 'creds.json')
     with open(path, 'w') as f:

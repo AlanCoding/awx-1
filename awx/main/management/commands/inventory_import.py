@@ -105,7 +105,13 @@ class AnsibleInventoryLoader(object):
                 logger.debug('source read')
                 with open(self.source, 'r') as f:
                     logger.debug(f.read())
-                return [potential_path, '-i', self.source]
+                # NOTE: look, we have all written code that made us cringe
+                # why do we add "python" to the start of these args?
+                # the script that runs ansible-inventory specifies a python interpreter
+                # that makes no sense in light of the fact that we put all the dependencies
+                # inside of /venv/ansible, so we override the specified interpreter
+                # https://github.com/ansible/ansible/issues/50714
+                return ['python', potential_path, '-i', self.source]
 
         # Stopgap solution for group_vars, do not use backported module for official
         # vendored cloud modules or custom scripts TODO: remove after Ansible 2.3 deprecation
