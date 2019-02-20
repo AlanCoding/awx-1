@@ -1834,6 +1834,10 @@ class PluginFileInjector(object):
     def filename(self):
         return '{0}.yml'.format(self.plugin_name)
 
+    @property
+    def script_name(self):
+        return '{0}.py'.format(self.__class__.__name__)
+
     def inventory_contents(self, inventory_update, private_data_dir):
         return yaml.safe_dump(self.inventory_as_dict(inventory_update, private_data_dir), default_flow_style=False)
 
@@ -2232,6 +2236,7 @@ class gce(PluginFileInjector):
 
 
 class vmware(PluginFileInjector):
+    plugin_name = 'vmware_vm_inventory'  # FIXME: implement me
     ini_env_reference = 'VMWARE_INI_PATH'
     base_injector = 'managed'
 
@@ -2264,6 +2269,10 @@ class openstack(PluginFileInjector):
     ini_env_reference = 'OS_CLIENT_CONFIG_FILE'
     plugin_name = 'openstack'
     initial_version = '2.7.8'  # https://github.com/ansible/ansible/pull/52369
+
+    @property
+    def script_name(self):
+        return 'openstack_inventory.py'  # exception
 
     def _get_clouds_dict(self, inventory_update, credential, private_data_dir, mk_cache=True):
         openstack_auth = dict(auth_url=credential.get_input('host', default=''),
@@ -2368,12 +2377,22 @@ class openstack(PluginFileInjector):
 class rhv(PluginFileInjector):
     """ovirt uses the custom credential templating, and that is all
     """
+    # plugin_name = 'FIXME'  # contribute inventory plugin to Ansible
     base_injector = 'template'
+
+    @property
+    def script_name(self):
+        return 'ovirt4.py'  # exception
 
 
 class satellite6(PluginFileInjector):
+    # plugin_name = 'FIXME'  # contribute inventory plugin to Ansible
     ini_env_reference = 'FOREMAN_INI_PATH'
     # No base injector, because this apparently does not work in playbooks
+
+    @property
+    def script_name(self):
+        return 'foreman.py'  # exception
 
     def build_script_private_data(self, inventory_update, private_data_dir):
         cp = configparser.RawConfigParser()
@@ -2418,6 +2437,7 @@ class satellite6(PluginFileInjector):
 
 
 class cloudforms(PluginFileInjector):
+    # plugin_name = 'FIXME'  # contribute inventory plugin to Ansible
     ini_env_reference = 'CLOUDFORMS_INI_PATH'
     # Also no base_injector because this does not work in playbooks
 
@@ -2452,6 +2472,7 @@ class cloudforms(PluginFileInjector):
 
 
 class tower(PluginFileInjector):
+    plugin_name = 'vmware_vm_inventory'  # FIXME: fix license issue and implement me
     base_injector = 'template'
 
     def get_script_env(self, inventory_update, private_data_dir, private_data_files):

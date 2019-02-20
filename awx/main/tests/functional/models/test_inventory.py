@@ -13,6 +13,7 @@ from awx.main.models import (
     InventoryUpdate,
     Job
 )
+from awx.main.constants import CLOUD_PROVIDERS
 from awx.main.models.inventory import PluginFileInjector
 from awx.main.utils.filters import SmartFilter
 
@@ -226,6 +227,40 @@ class TestInventorySourceInjectors:
         inventory_source.source = 'ec2'
         assert inventory_source.get_cloud_credential() == credential
         assert inventory_source.get_extra_credentials() == []
+
+    def test_all_cloud_sources_covered(self):
+        """Code in several places relies on the fact that the older
+        CLOUD_PROVIDERS constant contains the same names as what are
+        defined within the injectors
+        """
+        assert set(CLOUD_PROVIDERS) == set(InventorySource.injectors.keys())
+
+    @pytest.mark.parametrize('source,filename', [
+        ('ec2', 'aws_ec2.yml'),
+        ('openstack', 'openstack.yml'),
+        ('gce', 'gcp_compute.yml')
+    ])
+    def test_plugin_filenames(self, source, filename):
+        """It is important that the filenames for inventory plugin files
+        are named correctly, because Ansible will reject files that do
+        not have these exact names
+        """
+        print(InventorySource.injectors)
+        injector = InventorySource.injectors[source]('2.7.7')
+        assert injector.filename == filename
+
+    @pytest.mark.parametrize('source,script_name', [
+        ('ec2', 'ec2.py'),
+        ('rhv', 'ovirt4.py'),
+        ('satellite6', 'foreman.py'),
+        ('openstack', 'openstack_inventory.py')
+    ], ids=['ec2', 'rhv', 'satellite6', 'openstack'])
+    def test_script_filenames(self, source, script_name):
+        """Ansible has several exceptions in naming of scripts
+        """
+        print(InventorySource.injectors)
+        injector = InventorySource.injectors[source]('2.7.7')
+        assert injector.script_name == script_name
 
 
 @pytest.fixture
