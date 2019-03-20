@@ -1952,7 +1952,8 @@ class PluginFileInjector(object):
 
 class azure_rm(PluginFileInjector):
     plugin_name = 'azure_rm'
-    initial_version = '2.8'  # Driven by unsafe group names issue, hostvars
+    # FIXME: https://github.com/ansible/ansible/issues/54065 need resolving to enable
+    # initial_version = '2.8'  # Driven by unsafe group names issue, hostvars
     ini_env_reference = 'AZURE_INI_PATH'
     base_injector = 'managed'
 
