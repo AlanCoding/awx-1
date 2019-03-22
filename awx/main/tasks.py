@@ -1150,7 +1150,6 @@ class BaseTask(object):
                 'private_data_dir': private_data_dir,
                 'project_dir': cwd,
                 'playbook': self.build_playbook_path_relative_to_cwd(self.instance, private_data_dir),
-                'inventory': self.build_inventory(self.instance, private_data_dir),
                 'passwords': expect_passwords,
                 'envvars': env,
                 'event_handler': self.event_handler,
@@ -1164,6 +1163,8 @@ class BaseTask(object):
                 },
                 **process_isolation_params,
             }
+            if not isinstance(self.instance, InventoryUpdate):
+                params['inventory'] = self.build_inventory(self.instance, private_data_dir)
 
             if isinstance(self.instance, AdHocCommand):
                 params['module'] = self.build_module_name(self.instance)
@@ -1180,6 +1181,8 @@ class BaseTask(object):
             Delete parameters if the values are None or empty array
             '''
             for v in ['passwords', 'playbook', 'inventory']:
+                if v not in params:
+                    continue
                 if not params[v]:
                     del params[v]
 

@@ -1901,9 +1901,8 @@ class PluginFileInjector(object):
             injected_env['INVENTORY_UPDATE_ID'] = str(inventory_update.pk)  # so injector knows this is inventory
             safe_env = injected_env.copy()
             args = []
-            safe_args = []
             credential.credential_type.inject_credential(
-                credential, injected_env, safe_env, args, safe_args, private_data_dir
+                credential, injected_env, safe_env, args, private_data_dir
             )
             if safe:
                 return safe_env

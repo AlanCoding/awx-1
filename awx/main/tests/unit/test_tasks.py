@@ -1840,22 +1840,14 @@ class TestInventoryUpdateCredentials(TestJobExecution):
         private_data_files = task.build_private_data_files(inventory_update, private_data_dir)
         env = task.build_env(inventory_update, private_data_dir, False, private_data_files)
 
-        safe_env = {}
-        credentials = task.build_credentials_list(inventory_update)
-        for credential in credentials:
-            if credential:
-                credential.credential_type.inject_credential(
-                    credential, env, safe_env, [], private_data_dir
-                )
+        injector = InventorySource.injectors['ec2']('2.7')
+        env = injector.get_script_env(inventory_update, private_data_dir, private_data_files)
 
         assert env['AWS_ACCESS_KEY_ID'] == 'bob'
         assert env['AWS_SECRET_ACCESS_KEY'] == 'secret'
         assert 'EC2_INI_PATH' in env
 
-        config = configparser.ConfigParser()
-        config.read(env['EC2_INI_PATH'])
-        assert 'ec2' in config.sections()
-
+        safe_env = injector.get_script_env(inventory_update, private_data_dir, private_data_files, safe=True)
         assert safe_env['AWS_SECRET_ACCESS_KEY'] == tasks.HIDDEN_PASSWORD
 
     def test_vmware_source(self, inventory_update, private_data_dir, mocker):
