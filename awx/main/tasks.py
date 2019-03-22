@@ -2130,7 +2130,7 @@ class RunInventoryUpdate(BaseTask):
 
     def build_credentials_list(self, inventory_update):
         # All credentials not used by inventory source injector
-        return [inventory_update.get_extra_credentials()]
+        return inventory_update.get_extra_credentials()
 
     def get_idle_timeout(self):
         return getattr(settings, 'INVENTORY_UPDATE_IDLE_TIMEOUT', None)
