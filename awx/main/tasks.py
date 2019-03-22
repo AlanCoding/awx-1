@@ -1150,6 +1150,7 @@ class BaseTask(object):
                 'private_data_dir': private_data_dir,
                 'project_dir': cwd,
                 'playbook': self.build_playbook_path_relative_to_cwd(self.instance, private_data_dir),
+                'inventory': self.build_inventory(self.instance, private_data_dir),
                 'passwords': expect_passwords,
                 'envvars': env,
                 'event_handler': self.event_handler,
@@ -1163,8 +1164,6 @@ class BaseTask(object):
                 },
                 **process_isolation_params,
             }
-            if not isinstance(self.instance, InventoryUpdate):
-                params['inventory'] = self.build_inventory(self.instance, private_data_dir)
 
             if isinstance(self.instance, AdHocCommand):
                 params['module'] = self.build_module_name(self.instance)
@@ -1181,8 +1180,6 @@ class BaseTask(object):
             Delete parameters if the values are None or empty array
             '''
             for v in ['passwords', 'playbook', 'inventory']:
-                if v not in params:
-                    continue
                 if not params[v]:
                     del params[v]
 
@@ -2068,7 +2065,7 @@ class RunInventoryUpdate(BaseTask):
                         getattr(settings, '%s_INSTANCE_ID_VAR' % src.upper()),])
         # Add arguments for the source inventory script
         args.append('--source')
-        args.append(self.build_inventory(inventory_update, private_data_dir))
+        args.append(self.psuedo_build_inventory(inventory_update, private_data_dir))
         if src == 'custom':
             args.append("--custom")
         args.append('-v%d' % inventory_update.verbosity)
@@ -2077,6 +2074,15 @@ class RunInventoryUpdate(BaseTask):
         return args
 
     def build_inventory(self, inventory_update, private_data_dir):
+        return None  # what runner expects in order to not deal with inventory
+
+    def psuedo_build_inventory(self, inventory_update, private_data_dir):
+        """Inventory imports are ran through a management command
+        we pass the inventory in args to that command, so this is not considered
+        to be "Ansible" inventory (by runner) even though it is
+        Eventually, we would like to cut out the management command,
+        and thus use this as the real inventory
+        """
         src = inventory_update.source
 
         injector = None
