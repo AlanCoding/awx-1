@@ -266,7 +266,6 @@ class TestInventorySourceInjectors:
         injector = InventorySource.injectors['azure_rm']('2.9')
         inv_src = InventorySource(
             name='azure source', source='azure_rm',
-            compatibility_mode=True,
             source_vars={'group_by_os_family': True}
         )
         group_by_on = injector.inventory_as_dict(inv_src, '/tmp/foo')
@@ -277,23 +276,6 @@ class TestInventorySourceInjectors:
         group_by_off = injector.inventory_as_dict(inv_src, '/tmp/foo')
         # much better, everyone should turn off the flag and live in the future
         assert len(group_by_off['keyed_groups']) == expected_groups - 1
-
-    @pytest.mark.parametrize('source', ['ec2', 'azure_rm'])
-    def test_default_groupings_same(self, source):
-        """Just a sanity check, the number of groupings should be the same
-        with or without compatibility mode turned on.
-        This was a change made during feature development.
-        """
-        injector = InventorySource.injectors[source]('2.9')
-        inv_src = InventorySource(
-            name='test source', source=source, compatibility_mode=True)
-        compat_on = injector.inventory_as_dict(inv_src, '/tmp/foo')
-        inv_src = InventorySource(
-            name='test source', source=source, compatibility_mode=False)
-        compat_off = injector.inventory_as_dict(inv_src, '/tmp/foo')
-        # Both default uses should give the same number of groups
-        assert len(compat_on['keyed_groups']) > 0
-        assert len(compat_on['keyed_groups']) == len(compat_off['keyed_groups'])
 
     def test_tower_plugin_named_url(self):
         injector = InventorySource.injectors['tower']('2.9')

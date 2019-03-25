@@ -240,7 +240,6 @@ def test_inventory_update_injected_content(this_kind, script_or_plugin, inventor
         inventory=inventory,
         source=this_kind,
         source_vars=src_vars,
-        compatibility_mode=True,
         **extra_kwargs
     )
     inventory_source.credentials.add(fake_credential_factory(this_kind))
