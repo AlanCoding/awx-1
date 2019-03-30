@@ -55,7 +55,7 @@ from awx.main.models import (
     build_safe_env
 )
 from awx.main.constants import ACTIVE_STATES
-from awx.main.exceptions import AwxTaskError
+from awx.main.exceptions import AwxTaskError, SkipJobException
 from awx.main.queue import CallbackQueueDispatcher
 from awx.main.isolated import manager as isolated_manager
 from awx.main.dispatch.publish import task
@@ -1221,6 +1221,10 @@ class BaseTask(object):
                 status = 'failed'
                 extra_update_fields['job_explanation'] = self.instance.job_explanation
 
+        except SkipJobException as exc:
+            status = 'successful'
+            self.instance.status = status
+            self.instance.result_traceback = exc.args[0]
         except Exception:
             # this could catch programming or file system errors
             tb = traceback.format_exc()
@@ -1856,6 +1860,7 @@ class RunProjectUpdate(BaseTask):
             raise
 
         start_time = time.time()
+        last_update_time = 0.0
         while True:
             try:
                 instance.refresh_from_db(fields=['cancel_flag'])
@@ -1863,6 +1868,17 @@ class RunProjectUpdate(BaseTask):
                     logger.info("ProjectUpdate({0}) was cancelled".format(instance.pk))
                     return
                 fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                flo = os.fdopen(self.lock_fd, 'r')
+                contents = flo.read()
+                logger.debug('contents of the lock file: {}'.format(contents))
+                try:
+                    if contents:
+                        last_update_time = float(contents.strip())
+                except ValueError:
+                    logger.error('unexpected contents of lock file {}: {}'.format(lock_path, contents))
+                flo = os.fdopen(self.lock_fd, 'w')
+                flo.truncate(0)
+                flo.write(str(start_time))
                 break
             except IOError as e:
                 if e.errno not in (errno.EAGAIN, errno.EACCES):
@@ -1877,6 +1893,12 @@ class RunProjectUpdate(BaseTask):
             logger.info(
                 '{} spent {} waiting to acquire lock for local source tree '
                 'for path {}.'.format(instance.log_format, waiting_time, lock_path))
+
+        if last_update_time > start_time:
+            logger.debug('Skipping project sync {}, project updated at {}, checked at {}'.format(
+                instance.log_format, last_update_time, start_time
+            ))
+            raise SkipJobException('Update was performed by another local sync')
 
     def pre_run_hook(self, instance):
         # re-create root project folder if a natural disaster has destroyed it
