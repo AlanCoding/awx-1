@@ -1222,6 +1222,7 @@ class BaseTask(object):
                 extra_update_fields['job_explanation'] = self.instance.job_explanation
 
         except SkipJobException as exc:
+            logger.info('skipping job {}'.format(self.instance.log_format))
             status = 'successful'
             self.instance.status = status
             self.instance.result_traceback = exc.args[0]
@@ -1860,7 +1861,6 @@ class RunProjectUpdate(BaseTask):
             raise
 
         start_time = time.time()
-        last_update_time = 0.0
         while True:
             try:
                 instance.refresh_from_db(fields=['cancel_flag'])
@@ -1868,17 +1868,6 @@ class RunProjectUpdate(BaseTask):
                     logger.info("ProjectUpdate({0}) was cancelled".format(instance.pk))
                     return
                 fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                flo = os.fdopen(self.lock_fd, 'r')
-                contents = flo.read()
-                logger.debug('contents of the lock file: {}'.format(contents))
-                try:
-                    if contents:
-                        last_update_time = float(contents.strip())
-                except ValueError:
-                    logger.error('unexpected contents of lock file {}: {}'.format(lock_path, contents))
-                flo = os.fdopen(self.lock_fd, 'w')
-                flo.truncate(0)
-                flo.write(str(start_time))
                 break
             except IOError as e:
                 if e.errno not in (errno.EAGAIN, errno.EACCES):
@@ -1894,11 +1883,31 @@ class RunProjectUpdate(BaseTask):
                 '{} spent {} waiting to acquire lock for local source tree '
                 'for path {}.'.format(instance.log_format, waiting_time, lock_path))
 
-        if last_update_time > start_time:
-            logger.debug('Skipping project sync {}, project updated at {}, checked at {}'.format(
-                instance.log_format, last_update_time, start_time
+        if instance.job_type == 'run' and self.lock_fd:
+            last_update_time = 0.0
+            contents = os.fdopen(self.lock_fd, 'r').read()
+            logger.debug('contents of the lock file: {}'.format(contents))  # remove
+            try:
+                if contents:
+                    last_update_time = float(contents.strip())
+            except ValueError:
+                logger.error('unexpected contents of lock file {}: {}'.format(lock_path, contents))
+            if last_update_time > start_time:
+                logger.info('Skipping project sync {}, project updated at {}, checked at {}'.format(
+                    instance.log_format, last_update_time, start_time
+                ))  # change to debug
+                raise SkipJobException('Update was performed by another local sync')
+            else:
+                sync_time = time.time()
+                logger.info('writing time to lock file {} {}'.format(instance.log_format, sync_time))
+                write_fd = os.open(lock_path, os.O_WRONLY)
+                flo = os.fdopen(write_fd, 'w')
+                flo.truncate(0)
+                flo.write(str(sync_time))
+        else:
+            logger.info('stuff: {} {} - {}'.format(
+                instance.job_type, self.lock_fd, start_time
             ))
-            raise SkipJobException('Update was performed by another local sync')
 
     def pre_run_hook(self, instance):
         # re-create root project folder if a natural disaster has destroyed it
