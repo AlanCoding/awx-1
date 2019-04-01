@@ -1900,7 +1900,8 @@ class RunProjectUpdate(BaseTask):
             else:
                 sync_time = time.time()
                 logger.info('writing time to lock file {} {}'.format(instance.log_format, sync_time))
-                write_fd = os.open(lock_path, os.O_WRONLY)
+                write_fd = os.open(lock_path, os.O_WRONLY | fcntl.LOCK_NB)  # need LOCK_NB as well??
+                self.lock_fd = write_fd
                 flo = os.fdopen(write_fd, 'w')
                 flo.truncate(0)
                 flo.write(str(sync_time))
