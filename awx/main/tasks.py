@@ -1222,10 +1222,9 @@ class BaseTask(object):
                 extra_update_fields['job_explanation'] = self.instance.job_explanation
 
         except SkipJobException as exc:
-            logger.info('skipping job {}'.format(self.instance.log_format))
             status = 'successful'
             self.instance.status = status
-            self.instance.result_traceback = exc.args[0]
+            extra_update_fields['job_explanation'] = exc.args[0]
         except Exception:
             # this could catch programming or file system errors
             tb = traceback.format_exc()
@@ -1876,39 +1875,28 @@ class RunProjectUpdate(BaseTask):
                     raise
                 else:
                     time.sleep(1.0)
-        waiting_time = time.time() - start_time
 
-        if waiting_time > 1.0:
-            logger.info(
-                '{} spent {} waiting to acquire lock for local source tree '
-                'for path {}.'.format(instance.log_format, waiting_time, lock_path))
-
-        if instance.job_type == 'run' and self.lock_fd:
+        acquired_time = time.time()
+        if acquired_time - start_time > 1.0:
+            log_method = logger.info
+        else:
+            log_method = logger.debug
+        try:
+            last_update_time = os.fstat(self.lock_fd).st_mtime
+        except OSError:
             last_update_time = 0.0
-            contents = os.fdopen(self.lock_fd, 'r').read()
-            logger.debug('contents of the lock file: {}'.format(contents))  # remove
-            try:
-                if contents:
-                    last_update_time = float(contents.strip())
-            except ValueError:
-                logger.error('unexpected contents of lock file {}: {}'.format(lock_path, contents))
+        details_msg = '{0}, last synced {1:.4g}s ago, started waiting {2:.4g}s ago'.format(
+            instance.log_format, acquired_time - last_update_time, acquired_time - start_time)
+
+        if instance.job_type == 'run':
             if last_update_time > start_time:
-                logger.info('Skipping project sync {}, project updated at {}, checked at {}'.format(
-                    instance.log_format, last_update_time, start_time
-                ))  # change to debug
+                log_method('Skipping project sync {}'.format(details_msg))
                 raise SkipJobException('Update was performed by another local sync')
             else:
-                sync_time = time.time()
-                logger.info('writing time to lock file {} {}'.format(instance.log_format, sync_time))
-                write_fd = os.open(lock_path, os.O_WRONLY | fcntl.LOCK_NB)  # need LOCK_NB as well??
-                self.lock_fd = write_fd
-                flo = os.fdopen(write_fd, 'w')
-                flo.truncate(0)
-                flo.write(str(sync_time))
+                log_method('Running project sync {}'.format(details_msg))
+                os.utime(lock_path, None)
         else:
-            logger.info('stuff: {} {} - {}'.format(
-                instance.job_type, self.lock_fd, start_time
-            ))
+            log_method('Runing project update {}'.format(details_msg))
 
     def pre_run_hook(self, instance):
         # re-create root project folder if a natural disaster has destroyed it
