@@ -36,7 +36,7 @@ jinja2==2.10.1  # required for native jinja2 types for inventory compat mode
 ncclient==0.6.3
 # netaddr filter
 netaddr
-# oVirt/RHV
+# oVirt/RHV (see README about pip-compile problem)
 ovirt-engine-sdk-python==4.2.4    # minimum set inside Ansible facts module requirements
 # AWX usage
 pexpect==4.6.0    # same as AWX requirement
