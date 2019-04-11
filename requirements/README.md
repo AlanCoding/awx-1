@@ -27,3 +27,18 @@ pip-compile requirements/requirements_ansible.in > requirements/requirements_ans
 * Python3 exceptions need to be re-added back to `requirements_ansible.txt`
 
 * The pip-compile tool is known to error due to a pycurl dependency from ovirt-engine-sdk-python. Until this is resolved, you may need to manually remove the ovirt dependency before running the tool and add it back in once finished.
+
+
+## Licenses and Source Files
+
+If any library has a change to its license with the upgrde, then the license for that library
+inside of `docs/licenses` needs to be updated.
+
+For certain libraries, a tarball of the library is kept along with the license.
+To download the PyPI tarball, you can run this command:
+
+```
+pip download <pypi library name> -d docs/licenses/ --no-binary :all: --no-deps
+```
+
+Make sure to delete the old tarball if you do this.
