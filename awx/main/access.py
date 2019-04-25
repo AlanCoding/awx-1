@@ -168,6 +168,22 @@ def consumer_access(group_name):
     return class_map.get(group_name)
 
 
+def through_model_fields_names(model, relationship):
+    '''
+    Given a Django model or object for 'model',
+    this returns a 2-tuple of the field names for its through model,
+    where the first element is the reference back to the original model,
+    and the second element is the related model via the many-to-many field
+    '''
+    manager = getattr(obj, relationship)
+    # "reverse" points back to the original model
+    ret = (manager.field.m2m_reverse_field_name(), manager.field.m2m_field_name())
+    if manager.reverse:
+        # if we got to the field from the other model, then we must swap
+        return reversed(ret)
+    return ret
+
+
 class BaseAccess(object):
     '''
     Base class for checking user access to a given model.  Subclasses should
@@ -247,9 +263,11 @@ class BaseAccess(object):
             raise RuntimeError('Attchment logic for {}<-{} via {} has not be written'.format(
                 obj, sub_obj, relationship
             ))
+        manager = getattr(obj, relationship)
+        obj_field, sub_obj_field = through_model_fields_names(obj, relationship)
         kwargs = {
-            obj._meta.model_name: obj,
-            sub_obj._meta.model_name: sub_obj
+            obj_field: obj,
+            sub_obj_field: sub_obj
         }
         return kwargs, attach_registry[through_model]
 
@@ -486,8 +504,7 @@ class BaseAttachAccess(object):
     def __init__(self, user):
         self.user = user
         self.modelB = self.modelA._meta.get_field(self.relationship).related_model
-        self.field_name_A = self.modelA._meta.model_name
-        self.field_name_B = self.modelB._meta.model_name
+        self.field_name_A, self.field_name_B = through_model_fields_names(self.modelA, self.relationship)
 
     def has_obj_A_admin(self, data):
         access_A = access_registry[self.modelA](self.user)
