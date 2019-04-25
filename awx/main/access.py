@@ -51,6 +51,11 @@ access_registry = {
     # ...
 }
 
+attach_registry = {
+    # <through_model_class>: <through_access_class>
+    # ...
+}
+
 
 def get_object_from_data(field, Model, data, obj=None):
     """
@@ -233,16 +238,31 @@ class BaseAccess(object):
         '''
         return True
 
-    def can_attach(self, obj, sub_obj, relationship, data,
-                   skip_sub_obj_read_check=False):
-        if skip_sub_obj_read_check:
-            return self.can_change(obj, None)
-        else:
-            return bool(self.can_change(obj, None) and
-                        self.user.can_access(type(sub_obj), 'read', sub_obj))
+    def get_attach_kwargs_and_class(self, obj, sub_obj, relationship):
+        if '.' in relationship:
+            hop, relationship = relationship.split('.', 1)
+            obj = getattr(obj, hop)
+        through_model = obj._meta.get_field(relationship).through
+        if through_model not in attach_registry:
+            raise RuntimeError('Attchment logic for {}<-{} via {} has not be written'.format(
+                obj, sub_obj, relationship
+            ))
+        kwargs = {
+            obj._meta.model_name: obj,
+            sub_obj._meta.model_name: sub_obj
+        }
+        return kwargs, attach_registry[through_model]
+
+    # TODO: remove data as a parameter
+    # TODO: finish management of skip_sub_obj_read_check
+    def can_attach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
+        kwargs, access = self.get_attach_kwargs_and_class(obj, sub_obj, relationship)
+        return access(self.user).can_add(kwargs)
 
     def can_unattach(self, obj, sub_obj, relationship, data=None):
-        return self.can_change(obj, data)
+        kwargs, access = self.get_attach_kwargs_and_class(obj, sub_obj, relationship)
+        obj = access.model(**kwargs)
+        return self.can_delete(obj)
 
     def check_related(self, field, Model, data, role_field='admin_role',
                       obj=None, mandatory=False):
@@ -449,7 +469,53 @@ class BaseAccess(object):
         return False
 
 
-class NotificationAttachMixin(BaseAccess):
+class BaseAttachAccess(object):
+    '''
+    Base class for checking attachment permission between two models
+    Permission is directional A<-B and specific to relationship
+    Example: Does user have permission to make B a parent of A
+    This will be automatically reversed
+    Defers: Does user have permission to make A a child of B
+    '''
+
+    modelA = None
+    relationship = None
+    symmetric = False
+
+    def __init__(self, user):
+        self.user = user
+        self.modelB = self.modelA._meta.get_field(self.relationship).related_model
+        self.field_name_A = self.modelA._meta.model_name
+        self.field_name_B = self.modelB._meta.model_name
+
+    def has_obj_A_admin(self, data):
+        access_A = access_registry[self.modelA](self.user)
+        obj_A = get_object_from_data(self.field_name_A, self.modelA, data)
+        return access_A.can_change(obj_A, None)
+
+    def has_obj_B_read(self, data):
+        access_B = access_registry[self.modelB](self.user)
+        obj_B = get_object_from_data(self.field_name_B, self.modelB, data)
+        return access_B.can_read(obj_B)
+
+    @check_superuser
+    def can_add(self, data):
+        return bool(self.has_obj_A_admin(data) and self.has_obj_B_read(data))
+
+    @check_superuser
+    def can_delete(self, obj):
+        if self.symmetric:
+            return self.can_add({
+                self.field_name_A: getattr(obj, self.field_name_A),
+                self.field_name_B: getattr(obj, self.field_name_B)
+            })
+            return self.can_add()
+        access_A = access_registry[self.modelA](self.user)
+        obj_A = getattr(obj, self.modelA._meta.model_name)
+        return access_A.can_change(obj_A, None)
+
+
+class NotificationAttachMixin(BaseAttachAccess):
     '''For models that can have notifications attached
 
     I can attach a notification template when
@@ -459,30 +525,201 @@ class NotificationAttachMixin(BaseAccess):
     I can unattach when those same critiera are met
     '''
     notification_attach_roles = None
+    symmetric = True
 
-    def _can_attach(self, notification_template, resource_obj):
+    def __init__(self, user):
+        super(NotificationAttachMixin, self).__init__(user)
+        if self.modelB is not NotificationTemplate:
+            raise RuntimeError('Attach mixin used incorrectly, modelB must be Notification Template.')
+
+    def can_add(self, data):
+        # notification_template, resource_obj):
+        notification_template = data['notificationtemplate']  # verbose model name
         if not NotificationTemplateAccess(self.user).can_change(notification_template, {}):
             return False
+        resource_obj = data[self.modelA._meta.model_name]
         if self.notification_attach_roles is None:
             return self.can_read(resource_obj)
         return any(self.user in getattr(resource_obj, role) for role in self.notification_attach_roles)
 
-    @check_superuser
-    def can_attach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
-        if isinstance(sub_obj, NotificationTemplate):
-            # reverse obj and sub_obj
-            return self._can_attach(notification_template=sub_obj, resource_obj=obj)
-        return super(NotificationAttachMixin, self).can_attach(
-            obj, sub_obj, relationship, data, skip_sub_obj_read_check=skip_sub_obj_read_check)
+
+class OrganizationIGAccess(BaseAttachAccess):
+    modelA = Organization
+    relationship = 'instance_groups'
+
+    def can_add(self, data):
+        return self.user.is_superuser
+
+    def can_delete(self, obj):
+        return self.user.is_superuser
+
+
+class InventoryIGAccess(BaseAttachAccess):
+    modelA = Inventory
+    relationship = 'instance_groups'
+    symmetric = True
 
     @check_superuser
-    def can_unattach(self, obj, sub_obj, relationship, data=None):
-        if isinstance(sub_obj, NotificationTemplate):
-            # due to this special case, we use symmetrical logic with attach permission
-            return self._can_attach(notification_template=sub_obj, resource_obj=obj)
-        return super(NotificationAttachMixin, self).can_unattach(
-            obj, sub_obj, relationship, relationship, data=data
+    def can_add(self, data):
+        return bool(self.has_obj_B_read(data) and self.user in obj.inventory.organization.admin_role)
+
+
+class OrganizationNTAccessSuccess(NotificationAttachMixin, BaseAttachAccess):
+    modelA = Organization
+    relationship = 'notification_templates_success'
+    notification_attach_roles = ['admin_role', 'auditor_role']
+
+
+class OrganizationNTAccessError(NotificationAttachMixin, BaseAttachAccess):
+    modelA = Organization
+    relationship = 'notification_templates_error'
+    notification_attach_roles = ['admin_role', 'auditor_role']
+
+
+class OrganizationNTAccessAny(NotificationAttachMixin, BaseAttachAccess):
+    modelA = Organization
+    relationship = 'notification_templates_any'
+    notification_attach_roles = ['admin_role', 'auditor_role']
+
+
+class ProjectNTAccessSuccess(NotificationAttachMixin, BaseAttachAccess):
+    modelA = Project
+    relationship = 'notification_templates_success'
+    notification_attach_roles = ['admin_role']
+
+
+class ProjectNTAccessError(NotificationAttachMixin, BaseAttachAccess):
+    modelA = Project
+    relationship = 'notification_templates_error'
+    notification_attach_roles = ['admin_role']
+
+
+class ProjectNTAccessAny(NotificationAttachMixin, BaseAttachAccess):
+    modelA = Project
+    relationship = 'notification_templates_any'
+    notification_attach_roles = ['admin_role']
+
+
+class JTNTAccessSuccess(NotificationAttachMixin, BaseAttachAccess):
+    modelA = JobTemplate
+    relationship = 'notification_templates_success'
+
+
+class JTNTAccessError(NotificationAttachMixin, BaseAttachAccess):
+    modelA = JobTemplate
+    relationship = 'notification_templates_error'
+
+
+class JTNTAccessAny(NotificationAttachMixin, BaseAttachAccess):
+    modelA = JobTemplate
+    relationship = 'notification_templates_any'
+
+
+class InstanceIGAccess(BaseAttachAccess):
+    modelA = Instance
+    relationship = 'rampart_groups'
+
+    def can_add(self, data):
+        return self.user.is_superuser
+
+    def can_delete(self, obj):
+        return self.user.is_superuser
+
+
+class InventorySourceCredentialsAttachAccess(BaseAttachAccess):
+    modelA = InventorySource
+    relationship = 'credentials'
+
+    @check_superuser
+    def can_add(self, data):
+        return bool(self.has_obj_A_admin(data) and self.user in obj.credential.use_role)
+
+
+class LaunchConfigCredentialsAttachAccess(BaseAttachAccess):
+    modelA = JobLaunchConfig
+    relationship = 'credentials'
+
+    @check_superuser
+    def can_add(self, data):
+        return bool(self.has_obj_A_admin(data) and self.user in obj.credential.use_role)
+
+
+class JobTemplateCredentialAttachAccess(BaseAttachAccess):
+    modelA = JobTemplate
+    relationship = 'credentials'
+
+    @check_superuser
+    def can_add(self, data):
+        return bool(self.has_obj_A_admin(data) and self.user in obj.credential.use_role)
+
+
+class JobTemplateIGAttachAccess(BaseAttachAccess):
+    modelA = JobTemplate
+    relationship = 'instance_groups'
+    symmetric = True
+
+    @check_superuser
+    def can_add(self, data):
+        return bool(
+            self.has_obj_B_read(data) and
+            obj.jobtemplate.project.organization and
+            self.user in obj.jobtemplate.project.organization.admin_role
         )
+
+
+class UserRoleAttachAccess(BaseAttachAccess):
+    modelA = Role
+    relationship = 'members'
+    symmetric = True
+
+    @check_superuser
+    def can_add(self, data):
+        role = data['role']
+        user = data['user']
+        resource_obj = role.content_object
+        # check admin permission on sub object / resource item
+        if not isinstance(resource_obj, ResourceMixin) or self.user not in resource_obj.admin_role:
+            return False
+        # address user related permissions
+        if role.role_field in ('admin_role', 'member_role'):
+            if isinstance(resource_obj, (Organization, Team)) and not settings.MANAGE_ORGANIZATION_AUTH:
+                return self.user.is_superuser
+            # Being a user in the member_role or admin_role of an organization grants
+            # administrators of that Organization the ability to edit that user. To prevent
+            # unwanted escalations let's ensure that the Organization administrator has the ability
+            # to admin the user being added to the role.
+            if isinstance(resource_obj, Organization):
+                return UserAccess(self.user).can_admin(user, None, allow_orphans=True)
+        # this is a straightforward granting of access, check read permission to user
+        return UserAccess(self.user).can_read()
+
+
+class RoleRoleAttachAccess(BaseAttachAccess):
+    modelA = Role
+    membership = 'children'
+    symmetric = True
+
+    @check_superuser
+    def can_add(self, data):
+        parent_role = data['from_role']
+        child_role = data['to_role']
+        # The only parentage that a user can define is the team member role
+        team = parent_role.content_object
+        if parent_role.role_field != 'member_role' or not isinstance(team, Team):
+            raise RuntimeError('Only team member role is allowed to be become a parent.')
+        resource_obj = child_role.content_object
+        # system admin and auditor are not allowed for teams
+        if resource_obj is None:
+            raise PermissionDenied(_("The {} role cannot be assigned to a team").format(sub_obj.name))
+        elif isinstance(resource_obj, Organization) and child_role.role_field in ('admin_role', 'member_role'):
+            raise PermissionDenied(_("Teams cannot be granted organization member or admin abilities"))
+        # check admin permission on sub object / resource item
+        if not isinstance(resource_obj, ResourceMixin) or self.user not in resource_obj.admin_role:
+            return False
+        # check read permission to the team itself
+        return TeamAccess(self.user).can_read(team)
+
+# -------------------------
 
 
 class InstanceAccess(BaseAccess):
@@ -493,22 +730,6 @@ class InstanceAccess(BaseAccess):
     def filtered_queryset(self):
         return Instance.objects.filter(
             rampart_groups__in=self.user.get_queryset(InstanceGroup)).distinct()
-
-
-    def can_attach(self, obj, sub_obj, relationship, data,
-                   skip_sub_obj_read_check=False):
-        if relationship == 'rampart_groups' and isinstance(sub_obj, InstanceGroup):
-            return self.user.is_superuser
-        return super(InstanceAccess, self).can_attach(
-            obj, sub_obj, relationship, data, skip_sub_obj_read_check=skip_sub_obj_read_check
-        )
-
-    def can_unattach(self, obj, sub_obj, relationship, data=None):
-        if relationship == 'rampart_groups' and isinstance(sub_obj, InstanceGroup):
-            return self.user.is_superuser
-        return super(InstanceAccess, self).can_unattach(
-            obj, sub_obj, relationship, relationship, data=data
-        )
 
     def can_add(self, data):
         return False
@@ -644,24 +865,6 @@ class UserAccess(BaseAccess):
             return True
         return False
 
-    def can_attach(self, obj, sub_obj, relationship, *args, **kwargs):
-        # The only thing that a User should ever have attached is a Role
-        if relationship == 'roles':
-            role_access = RoleAccess(self.user)
-            return role_access.can_attach(sub_obj, obj, 'members', *args, **kwargs)
-
-        logger.error('Unexpected attempt to associate {} with a user.'.format(sub_obj))
-        return False
-
-    def can_unattach(self, obj, sub_obj, relationship, *args, **kwargs):
-        # The only thing that a User should ever have to be unattached is a Role
-        if relationship == 'roles':
-            role_access = RoleAccess(self.user)
-            return role_access.can_unattach(sub_obj, obj, 'members', *args, **kwargs)
-
-        logger.error('Unexpected attempt to de-associate {} from a user.'.format(sub_obj))
-        return False
-
 
 class OAuth2ApplicationAccess(BaseAccess):
     '''
@@ -770,28 +973,6 @@ class OrganizationAccess(NotificationAttachMixin, BaseAccess):
             return False
         return True
 
-    def can_attach(self, obj, sub_obj, relationship, *args, **kwargs):
-        # If the request is updating the membership, check the membership role permissions instead
-        if relationship in ('member_role.members', 'admin_role.members'):
-            rel_role = getattr(obj, relationship.split('.')[0])
-            return RoleAccess(self.user).can_attach(rel_role, sub_obj, 'members', *args, **kwargs)
-
-        if relationship == "instance_groups":
-            if self.user.is_superuser:
-                return True
-            return False
-        return super(OrganizationAccess, self).can_attach(obj, sub_obj, relationship, *args, **kwargs)
-
-    def can_unattach(self, obj, sub_obj, relationship, *args, **kwargs):
-        # If the request is updating the membership, check the membership role permissions instead
-        if relationship in ('member_role.members', 'admin_role.members'):
-            rel_role = getattr(obj, relationship.split('.')[0])
-            return RoleAccess(self.user).can_unattach(rel_role, sub_obj, 'members', *args, **kwargs)
-
-        if relationship == "instance_groups":
-            return self.can_attach(obj, sub_obj, relationship, *args, **kwargs)
-        return super(OrganizationAccess, self).can_attach(obj, sub_obj, relationship, *args, **kwargs)
-
 
 class InventoryAccess(BaseAccess):
     '''
@@ -866,18 +1047,6 @@ class InventoryAccess(BaseAccess):
     def can_run_ad_hoc_commands(self, obj):
         return self.user in obj.adhoc_role
 
-    def can_attach(self, obj, sub_obj, relationship, *args, **kwargs):
-        if relationship == "instance_groups":
-            if self.user.can_access(type(sub_obj), "read", sub_obj) and self.user in obj.organization.admin_role:
-                return True
-            return False
-        return super(InventoryAccess, self).can_attach(obj, sub_obj, relationship, *args, **kwargs)
-
-    def can_unattach(self, obj, sub_obj, relationship, *args, **kwargs):
-        if relationship == "instance_groups":
-            return self.can_attach(obj, sub_obj, relationship, *args, **kwargs)
-        return super(InventoryAccess, self).can_attach(obj, sub_obj, relationship, *args, **kwargs)
-
 
 class HostAccess(BaseAccess):
     '''
@@ -930,16 +1099,6 @@ class HostAccess(BaseAccess):
         # the user can edit variable data.
         return obj and self.user in obj.inventory.admin_role
 
-    def can_attach(self, obj, sub_obj, relationship, data,
-                   skip_sub_obj_read_check=False):
-        if not super(HostAccess, self).can_attach(obj, sub_obj, relationship,
-                                                  data, skip_sub_obj_read_check):
-            return False
-        # Prevent assignments between different inventories.
-        if obj.inventory != sub_obj.inventory:
-            raise ParseError(_('Cannot associate two items from different inventories.'))
-        return True
-
     def can_delete(self, obj):
         return obj and self.user in obj.inventory.admin_role
 
@@ -974,16 +1133,6 @@ class GroupAccess(BaseAccess):
         # Checks for admin or change permission on inventory, controls whether
         # the user can attach subgroups or edit variable data.
         return obj and self.user in obj.inventory.admin_role
-
-    def can_attach(self, obj, sub_obj, relationship, data,
-                   skip_sub_obj_read_check=False):
-        if not super(GroupAccess, self).can_attach(obj, sub_obj, relationship,
-                                                   data, skip_sub_obj_read_check):
-            return False
-        # Prevent assignments between different inventories.
-        if obj.inventory != sub_obj.inventory:
-            raise ParseError(_('Cannot associate two items from different inventories.'))
-        return True
 
     def can_delete(self, obj):
         return bool(obj and self.user in obj.inventory.admin_role)
@@ -1054,21 +1203,6 @@ class InventorySourceAccess(NotificationAttachMixin, BaseAccess):
         if obj and obj.inventory:
             return self.user in obj.inventory.update_role
         return False
-
-    @check_superuser
-    def can_attach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
-        if relationship == 'credentials' and isinstance(sub_obj, Credential):
-            return (
-                obj and obj.inventory and self.user in obj.inventory.admin_role and
-                self.user in sub_obj.use_role)
-        return super(InventorySourceAccess, self).can_attach(
-            obj, sub_obj, relationship, data, skip_sub_obj_read_check=skip_sub_obj_read_check)
-
-    @check_superuser
-    def can_unattach(self, obj, sub_obj, relationship, *args, **kwargs):
-        if relationship == 'credentials' and isinstance(sub_obj, Credential):
-            return obj and obj.inventory and self.user in obj.inventory.admin_role
-        return super(InventorySourceAccess, self).can_attach(obj, sub_obj, relationship, *args, **kwargs)
 
 
 class InventoryUpdateAccess(BaseAccess):
@@ -1293,45 +1427,6 @@ class TeamAccess(BaseAccess):
 
     def can_delete(self, obj):
         return self.can_change(obj, None)
-
-    def can_attach(self, obj, sub_obj, relationship, *args, **kwargs):
-        """Reverse obj and sub_obj, defer to RoleAccess if this is an assignment
-        of a resource role to the team."""
-        # MANAGE_ORGANIZATION_AUTH setting checked in RoleAccess
-        if isinstance(sub_obj, Role):
-            if sub_obj.content_object is None:
-                raise PermissionDenied(_("The {} role cannot be assigned to a team").format(sub_obj.name))
-
-            if isinstance(sub_obj.content_object, ResourceMixin):
-                role_access = RoleAccess(self.user)
-                return role_access.can_attach(sub_obj, obj, 'member_role.parents',
-                                              *args, **kwargs)
-        if self.user.is_superuser:
-            return True
-
-        # If the request is updating the membership, check the membership role permissions instead
-        if relationship in ('member_role.members', 'admin_role.members'):
-            rel_role = getattr(obj, relationship.split('.')[0])
-            return RoleAccess(self.user).can_attach(rel_role, sub_obj, 'members', *args, **kwargs)
-
-        return super(TeamAccess, self).can_attach(obj, sub_obj, relationship,
-                                                  *args, **kwargs)
-
-    def can_unattach(self, obj, sub_obj, relationship, *args, **kwargs):
-        # MANAGE_ORGANIZATION_AUTH setting checked in RoleAccess
-        if isinstance(sub_obj, Role):
-            if isinstance(sub_obj.content_object, ResourceMixin):
-                role_access = RoleAccess(self.user)
-                return role_access.can_unattach(sub_obj, obj, 'member_role.parents',
-                                                *args, **kwargs)
-
-        # If the request is updating the membership, check the membership role permissions instead
-        if relationship in ('member_role.members', 'admin_role.members'):
-            rel_role = getattr(obj, relationship.split('.')[0])
-            return RoleAccess(self.user).can_unattach(rel_role, sub_obj, 'members', *args, **kwargs)
-
-        return super(TeamAccess, self).can_unattach(obj, sub_obj, relationship,
-                                                    *args, **kwargs)
 
 
 class ProjectAccess(NotificationAttachMixin, BaseAccess):
@@ -1560,25 +1655,6 @@ class JobTemplateAccess(NotificationAttachMixin, BaseAccess):
     def can_delete(self, obj):
         return self.user.is_superuser or self.user in obj.admin_role
 
-    @check_superuser
-    def can_attach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
-        if relationship == "instance_groups":
-            if not obj.project.organization:
-                return False
-            return self.user.can_access(type(sub_obj), "read", sub_obj) and self.user in obj.project.organization.admin_role
-        if relationship == 'credentials' and isinstance(sub_obj, Credential):
-            return self.user in obj.admin_role and self.user in sub_obj.use_role
-        return super(JobTemplateAccess, self).can_attach(
-            obj, sub_obj, relationship, data, skip_sub_obj_read_check=skip_sub_obj_read_check)
-
-    @check_superuser
-    def can_unattach(self, obj, sub_obj, relationship, *args, **kwargs):
-        if relationship == "instance_groups":
-            return self.can_attach(obj, sub_obj, relationship, *args, **kwargs)
-        if relationship == 'credentials' and isinstance(sub_obj, Credential):
-            return self.user in obj.admin_role
-        return super(JobTemplateAccess, self).can_attach(obj, sub_obj, relationship, *args, **kwargs)
-
 
 class JobAccess(BaseAccess):
     '''
@@ -1802,21 +1878,6 @@ class JobLaunchConfigAccess(BaseAccess):
 
     def can_change(self, obj, data):
         return self.check_related('inventory', Inventory, data, obj=obj, role_field='use_role')
-
-    def can_attach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
-        if isinstance(sub_obj, Credential) and relationship == 'credentials':
-            return self.user in sub_obj.use_role
-        else:
-            raise NotImplementedError('Only credentials can be attached to launch configurations.')
-
-    def can_unattach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
-        if isinstance(sub_obj, Credential) and relationship == 'credentials':
-            if skip_sub_obj_read_check:
-                return True
-            else:
-                return self.user in sub_obj.read_role
-        else:
-            raise NotImplementedError('Only credentials can be attached to launch configurations.')
 
 
 class WorkflowJobTemplateNodeAccess(BaseAccess):
@@ -2716,41 +2777,6 @@ class RoleAccess(BaseAccess):
         # Unsupported for now
         return False
 
-    def can_attach(self, obj, sub_obj, relationship, *args, **kwargs):
-        return self.can_unattach(obj, sub_obj, relationship, *args, **kwargs)
-
-    @check_superuser
-    def can_unattach(self, obj, sub_obj, relationship, data=None, skip_sub_obj_read_check=False):
-        if not skip_sub_obj_read_check and relationship in ['members', 'member_role.parents', 'parents']:
-            # If we are unattaching a team Role, check the Team read access
-            if relationship == 'parents':
-                sub_obj_resource = sub_obj.content_object
-            else:
-                sub_obj_resource = sub_obj
-            if not check_user_access(self.user, sub_obj_resource.__class__, 'read', sub_obj_resource):
-                return False
-
-        # Being a user in the member_role or admin_role of an organization grants
-        # administrators of that Organization the ability to edit that user. To prevent
-        # unwanted escalations let's ensure that the Organization administrator has the ability
-        # to admin the user being added to the role.
-        if isinstance(obj.content_object, Organization) and obj.role_field in ['admin_role', 'member_role']:
-            if not isinstance(sub_obj, User):
-                logger.error('Unexpected attempt to associate {} with organization role.'.format(sub_obj))
-                return False
-            if not settings.MANAGE_ORGANIZATION_AUTH and not self.user.is_superuser:
-                return False
-            if not UserAccess(self.user).can_admin(sub_obj, None, allow_orphans=True):
-                return False
-
-        if isinstance(obj.content_object, Team) and obj.role_field in ['admin_role', 'member_role']:
-            if not settings.MANAGE_ORGANIZATION_AUTH and not self.user.is_superuser:
-                return False
-
-        if isinstance(obj.content_object, ResourceMixin) and self.user in obj.content_object.admin_role:
-            return True
-        return False
-
     def can_delete(self, obj):
         # Unsupported for now
         return False
@@ -2758,3 +2784,8 @@ class RoleAccess(BaseAccess):
 
 for cls in BaseAccess.__subclasses__():
     access_registry[cls.model] = cls
+
+
+for cls in BaseAttachAccess.__subclasses__():
+    through_model = getattr(self.modelA, self.relationship).through
+    attach_registry[through_model] = cls

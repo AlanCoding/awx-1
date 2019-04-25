@@ -1532,7 +1532,7 @@ class HostAnsibleFactsDetail(RetrieveAPIView):
     serializer_class = serializers.AnsibleFactsSerializer
 
 
-class InventoryHostsList(HostRelatedSearchMixin, SubListCreateAttachDetachAPIView):
+class InventoryHostsList(HostRelatedSearchMixin, SubListCreateAPIView):
 
     model = models.Host
     serializer_class = serializers.HostSerializer
@@ -1920,7 +1920,7 @@ class GroupDetail(RelatedJobsPreventDeleteMixin, ControlledByScmMixin, RetrieveU
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class InventoryGroupsList(SubListCreateAttachDetachAPIView):
+class InventoryGroupsList(SubListCreateAPIView):
 
     model = models.Group
     serializer_class = serializers.GroupSerializer
@@ -4516,9 +4516,8 @@ class RoleTeamsList(SubListAttachDetachAPIView):
             data = dict(msg=_("You cannot grant system-level permissions to a team."))
             return Response(data, status=status.HTTP_400_BAD_REQUEST)
 
-        if not request.user.can_access(self.parent_model, action, role, team,
-                                       self.relationship, request.data,
-                                       skip_sub_obj_read_check=False):
+        if not request.user.can_access(self.parent_model, action, role, team.member_role,
+                                       'parents', request.data):
             raise PermissionDenied()
         if request.data.get('disassociate', None):
             team.member_role.children.remove(role)
