@@ -175,7 +175,7 @@ def through_model_fields_names(model, relationship):
     where the first element is the reference back to the original model,
     and the second element is the related model via the many-to-many field
     '''
-    manager = getattr(obj, relationship)
+    manager = getattr(model, relationship)
     # "reverse" points back to the original model
     ret = (manager.field.m2m_reverse_field_name(), manager.field.m2m_field_name())
     if manager.reverse:
@@ -263,7 +263,6 @@ class BaseAccess(object):
             raise RuntimeError('Attchment logic for {}<-{} via {} has not be written'.format(
                 obj, sub_obj, relationship
             ))
-        manager = getattr(obj, relationship)
         obj_field, sub_obj_field = through_model_fields_names(obj, relationship)
         kwargs = {
             obj_field: obj,
@@ -508,12 +507,12 @@ class BaseAttachAccess(object):
 
     def has_obj_A_admin(self, data):
         access_A = access_registry[self.modelA](self.user)
-        obj_A = get_object_from_data(self.field_name_A, self.modelA, data)
-        return access_A.can_change(obj_A, None)
+        obj_A = data[self.field_name_A]
+        return access_A.can_change(obj_A, {})
 
     def has_obj_B_read(self, data):
         access_B = access_registry[self.modelB](self.user)
-        obj_B = get_object_from_data(self.field_name_B, self.modelB, data)
+        obj_B = data[self.field_name_B]
         return access_B.can_read(obj_B)
 
     @check_superuser
@@ -530,7 +529,7 @@ class BaseAttachAccess(object):
             return self.can_add()
         access_A = access_registry[self.modelA](self.user)
         obj_A = getattr(obj, self.modelA._meta.model_name)
-        return access_A.can_change(obj_A, None)
+        return access_A.can_change(obj_A, {})
 
 
 class NotificationAttachMixin(BaseAttachAccess):
@@ -579,7 +578,21 @@ class InventoryIGAccess(BaseAttachAccess):
 
     @check_superuser
     def can_add(self, data):
-        return bool(self.has_obj_B_read(data) and self.user in obj.inventory.organization.admin_role)
+        return bool(self.has_obj_B_read(data) and self.user in data['inventory'].organization.admin_role)
+
+
+class JobTemplateIGAttachAccess(BaseAttachAccess):
+    modelA = JobTemplate
+    relationship = 'instance_groups'
+    symmetric = True
+
+    @check_superuser
+    def can_add(self, data):
+        jt = data['unifiedjobtemplate']
+        return bool(
+            self.has_obj_B_read(data) and
+            jt.project.organization and self.user in jt.project.organization.admin_role
+        )
 
 
 class OrganizationNTAccess(NotificationAttachMixin, BaseAttachAccess):
@@ -613,13 +626,17 @@ class InstanceIGAccess(BaseAttachAccess):
         return self.user.is_superuser
 
 
-class InventorySourceCredentialsAttachAccess(BaseAttachAccess):
-    modelA = InventorySource
-    relationship = 'credentials'
+class TemplateCredentialsAttachAccess(BaseAttachAccess):
+    modelA = Credential
+    relationship = 'unifiedjobtemplates'
 
     @check_superuser
     def can_add(self, data):
-        return bool(self.has_obj_A_admin(data) and self.user in obj.credential.use_role)
+        return bool(self.user in data['unifiedjobtemplate'].admin_role and self.user in data['credential'].use_role)
+
+    @check_superuser
+    def can_delete(self, obj):
+        return self.user in obj.unifiedjobtemplate
 
 
 class LaunchConfigCredentialsAttachAccess(BaseAttachAccess):
@@ -628,30 +645,7 @@ class LaunchConfigCredentialsAttachAccess(BaseAttachAccess):
 
     @check_superuser
     def can_add(self, data):
-        return bool(self.has_obj_A_admin(data) and self.user in obj.credential.use_role)
-
-
-class JobTemplateCredentialAttachAccess(BaseAttachAccess):
-    modelA = JobTemplate
-    relationship = 'credentials'
-
-    @check_superuser
-    def can_add(self, data):
-        return bool(self.has_obj_A_admin(data) and self.user in obj.credential.use_role)
-
-
-class JobTemplateIGAttachAccess(BaseAttachAccess):
-    modelA = JobTemplate
-    relationship = 'instance_groups'
-    symmetric = True
-
-    @check_superuser
-    def can_add(self, data):
-        return bool(
-            self.has_obj_B_read(data) and
-            obj.jobtemplate.project.organization and
-            self.user in obj.jobtemplate.project.organization.admin_role
-        )
+        return bool(self.has_obj_A_admin(data) and self.user in data['credential'].use_role)
 
 
 class UserRoleAttachAccess(BaseAttachAccess):
@@ -697,7 +691,8 @@ class RoleRoleAttachAccess(BaseAttachAccess):
         resource_obj = child_role.content_object
         # system admin and auditor are not allowed for teams
         if resource_obj is None:
-            raise PermissionDenied(_("The {} role cannot be assigned to a team").format(sub_obj.name))
+            raise PermissionDenied(_("The {} role for {} cannot be assigned to a team").format(
+                child_role.role_field, resource_obj.__class__.__name__))
         elif isinstance(resource_obj, Organization) and child_role.role_field in ('admin_role', 'member_role'):
             raise PermissionDenied(_("Teams cannot be granted organization member or admin abilities"))
         # check admin permission on sub object / resource item
@@ -2774,8 +2769,8 @@ for cls in BaseAccess.__subclasses__():
 
 
 for cls in BaseAttachAccess.__subclasses__():
-    through_model = getattr(self.modelA, self.relationship).through
+    through_model = getattr(cls.modelA, cls.relationship).through
     attach_registry[through_model] = cls
     for alias in cls.relationship_aliases:
-        through_model = getattr(self.modelA, self.relationship).through
+        through_model = getattr(cls.modelA, cls.relationship).through
         attach_registry[through_model] = cls
