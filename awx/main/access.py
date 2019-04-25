@@ -480,6 +480,7 @@ class BaseAttachAccess(object):
 
     modelA = None
     relationship = None
+    relationship_aliases = ()
     symmetric = False
 
     def __init__(self, user):
@@ -564,55 +565,24 @@ class InventoryIGAccess(BaseAttachAccess):
         return bool(self.has_obj_B_read(data) and self.user in obj.inventory.organization.admin_role)
 
 
-class OrganizationNTAccessSuccess(NotificationAttachMixin, BaseAttachAccess):
+class OrganizationNTAccess(NotificationAttachMixin, BaseAttachAccess):
     modelA = Organization
     relationship = 'notification_templates_success'
+    relationship_aliases = ('notification_templates_error', 'notification_templates_any')
     notification_attach_roles = ['admin_role', 'auditor_role']
 
 
-class OrganizationNTAccessError(NotificationAttachMixin, BaseAttachAccess):
-    modelA = Organization
-    relationship = 'notification_templates_error'
-    notification_attach_roles = ['admin_role', 'auditor_role']
-
-
-class OrganizationNTAccessAny(NotificationAttachMixin, BaseAttachAccess):
-    modelA = Organization
-    relationship = 'notification_templates_any'
-    notification_attach_roles = ['admin_role', 'auditor_role']
-
-
-class ProjectNTAccessSuccess(NotificationAttachMixin, BaseAttachAccess):
+class ProjectNTAccess(NotificationAttachMixin, BaseAttachAccess):
     modelA = Project
     relationship = 'notification_templates_success'
-    notification_attach_roles = ['admin_role']
-
-
-class ProjectNTAccessError(NotificationAttachMixin, BaseAttachAccess):
-    modelA = Project
-    relationship = 'notification_templates_error'
-    notification_attach_roles = ['admin_role']
-
-
-class ProjectNTAccessAny(NotificationAttachMixin, BaseAttachAccess):
-    modelA = Project
-    relationship = 'notification_templates_any'
+    relationship_aliases = ('notification_templates_error', 'notification_templates_any')
     notification_attach_roles = ['admin_role']
 
 
 class JTNTAccessSuccess(NotificationAttachMixin, BaseAttachAccess):
     modelA = JobTemplate
     relationship = 'notification_templates_success'
-
-
-class JTNTAccessError(NotificationAttachMixin, BaseAttachAccess):
-    modelA = JobTemplate
-    relationship = 'notification_templates_error'
-
-
-class JTNTAccessAny(NotificationAttachMixin, BaseAttachAccess):
-    modelA = JobTemplate
-    relationship = 'notification_templates_any'
+    relationship_aliases = ('notification_templates_error', 'notification_templates_any')
 
 
 class InstanceIGAccess(BaseAttachAccess):
@@ -2789,3 +2759,6 @@ for cls in BaseAccess.__subclasses__():
 for cls in BaseAttachAccess.__subclasses__():
     through_model = getattr(self.modelA, self.relationship).through
     attach_registry[through_model] = cls
+    for alias in cls.relationship_aliases:
+        through_model = getattr(self.modelA, self.relationship).through
+        attach_registry[through_model] = cls
