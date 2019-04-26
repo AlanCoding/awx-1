@@ -177,7 +177,8 @@ def through_model_fields_names(model, relationship):
     '''
     manager = getattr(model, relationship)
     # "reverse" points back to the original model
-    ret = (manager.field.m2m_reverse_field_name(), manager.field.m2m_field_name())
+    field = model._meta.get_field(relationship)
+    ret = (field.m2m_reverse_field_name(), field.m2m_field_name())
     if manager.reverse:
         # if we got to the field from the other model, then we must swap
         return reversed(ret)
@@ -258,7 +259,8 @@ class BaseAccess(object):
         if '.' in relationship:
             hop, relationship = relationship.split('.', 1)
             obj = getattr(obj, hop)
-        through_model = obj._meta.get_field(relationship).through
+        through_model = getattr(obj, relationship).through
+        # through_model = obj._meta.get_field(relationship).through
         if through_model not in attach_registry:
             raise RuntimeError('Attchment logic for {}<-{} via {} has not be written'.format(
                 obj, sub_obj, relationship
@@ -677,7 +679,7 @@ class UserRoleAttachAccess(BaseAttachAccess):
 
 class RoleRoleAttachAccess(BaseAttachAccess):
     modelA = Role
-    membership = 'children'
+    relationship = 'children'
     symmetric = True
 
     @check_superuser
@@ -924,7 +926,7 @@ class OAuth2TokenAccess(BaseAccess):
         return True
 
 
-class OrganizationAccess(NotificationAttachMixin, BaseAccess):
+class OrganizationAccess(BaseAccess):
     '''
     I can see organizations when:
      - I am a superuser.
@@ -1411,7 +1413,7 @@ class TeamAccess(BaseAccess):
         return self.can_change(obj, None)
 
 
-class ProjectAccess(NotificationAttachMixin, BaseAccess):
+class ProjectAccess(BaseAccess):
     '''
     I can see projects when:
      - I am a superuser.
@@ -1493,7 +1495,7 @@ class ProjectUpdateAccess(BaseAccess):
         return obj and self.user in obj.project.admin_role
 
 
-class JobTemplateAccess(NotificationAttachMixin, BaseAccess):
+class JobTemplateAccess(BaseAccess):
     '''
     I can see job templates when:
      - I have read role for the job template.
@@ -2002,7 +2004,7 @@ class WorkflowJobNodeAccess(BaseAccess):
 
 
 # TODO: notification attachments?
-class WorkflowJobTemplateAccess(NotificationAttachMixin, BaseAccess):
+class WorkflowJobTemplateAccess(BaseAccess):
     '''
     I can only see/manage Workflow Job Templates if I'm a super user
     '''
@@ -2769,8 +2771,10 @@ for cls in BaseAccess.__subclasses__():
 
 
 for cls in BaseAttachAccess.__subclasses__():
+    if cls.modelA is None:
+        continue  # abstract cls
     through_model = getattr(cls.modelA, cls.relationship).through
     attach_registry[through_model] = cls
     for alias in cls.relationship_aliases:
-        through_model = getattr(cls.modelA, cls.relationship).through
+        through_model = getattr(cls.modelA, alias).through
         attach_registry[through_model] = cls
