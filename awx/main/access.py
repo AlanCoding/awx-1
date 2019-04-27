@@ -248,22 +248,22 @@ class BaseAccess(object):
                 obj, sub_obj, relationship
             ))
         access = attach_registry[through_model](self.user)
-        supported_relationships = (access.relationship,) + access.relationship_aliases
-        if isinstance(obj, access.modelA) and relationship in supported_relationships:
+        if (obj.__class__, relationship) in access.relationships:
             obj_A = obj
             obj_B = sub_obj
         else:
             field = obj._meta.get_field(relationship)
             reverse_relationship = field.remote_field.name
-            if isinstance(sub_obj, access.modelA) and reverse_relationship in supported_relationships:
+            if (sub_obj.__class__, reverse_relationship) in access.relationships:
                 obj_A = sub_obj
                 obj_B = obj
             else:
                 raise RuntimeError('Access logic for either {} or {} via {} or {} not implemented'.format(
-                    obj, sub_obj, relationship, reverse_relationship))
-        if not isinstance(obj_B, access.modelB):
+                    obj.__class__, sub_obj.__class__, relationship, reverse_relationship))
+        modelB = obj_A._meta.get_field(relationship).related_model
+        if not isinstance(obj_B, modelB):
             raise RuntimeError('Incorrect type given in {} for object B. Given {}, expected {}.'.format(
-                access, obj_B, access.modelB))
+                access, obj_B.__class__, modelB))
         return (obj_A, obj_B, access)
 
     # TODO: remove data as a parameter
@@ -272,7 +272,7 @@ class BaseAccess(object):
         obj_A, obj_B, access = self.order_for_attach_access(obj, sub_obj, relationship)
         return access.can_add(obj_A=obj_A, obj_B=obj_B)
 
-    def can_unattach(self, obj, sub_obj, relationship, data=None):
+    def can_unattach(self, obj, sub_obj, relationship, data=None, skip_sub_obj_read_check=False):
         obj_A, obj_B, access = self.order_for_attach_access(obj, sub_obj, relationship)
         return access.can_delete(obj_A=obj_A, obj_B=obj_B)
 
@@ -490,14 +490,12 @@ class BaseAttachAccess(object):
     Defers: Does user have permission to make A a child of B
     '''
 
-    modelA = None
-    relationship = None
-    relationship_aliases = ()
+    models = None
+    relationships = None
     symmetric = False
 
     def __init__(self, user):
         self.user = user
-        self.modelB = self.modelA._meta.get_field(self.relationship).related_model
 
     def obj_read(self, obj):
         access = access_registry[obj.__class__](self.user)
@@ -518,32 +516,49 @@ class BaseAttachAccess(object):
         return self.obj_admin(obj_A)
 
 
-class NotificationAttachMixin(BaseAttachAccess):
+class NotificationAttachAccess(BaseAttachAccess):
     '''For models that can have notifications attached
 
     I can attach a notification template when
     - I have notification_admin_role to organization of the NT
     - I can read the object I am attaching it to
     '''
-    notification_attach_roles = None
+    relationships = (
+        (Organization, 'notification_templates_success'),
+        (Organization, 'notification_templates_error'),
+        (Organization, 'notification_templates_any'),
+        (Project, 'notification_templates_success'),
+        (Project, 'notification_templates_error'),
+        (Project, 'notification_templates_any'),
+        (JobTemplate, 'notification_templates_success'),
+        (JobTemplate, 'notification_templates_error'),
+        (JobTemplate, 'notification_templates_any'),
+        (WorkflowJobTemplate, 'notification_templates_success'),
+        (WorkflowJobTemplate, 'notification_templates_error'),
+        (WorkflowJobTemplate, 'notification_templates_any'),
+        (InventorySource, 'notification_templates_success'),
+        (InventorySource, 'notification_templates_error'),
+        (InventorySource, 'notification_templates_any'),
+    )
     symmetric = True  # I can unattach when those same critiera are met
-
-    def __init__(self, user):
-        super(NotificationAttachMixin, self).__init__(user)
-        if self.modelB is not NotificationTemplate:
-            raise RuntimeError('Attach mixin used incorrectly, modelB must be Notification Template.')
 
     def can_add(self, obj_A, obj_B):
         if not self.obj_admin(obj_B):
             return False
-        if self.notification_attach_roles is None:
-            return self.obj_read(obj_A)
-        return any(self.user in getattr(obj_A, role) for role in self.notification_attach_roles)
+        if isinstance(obj_A, (Organization, Project)):
+            if isinstance(obj_A, Organization):
+                notification_attach_roles = ['admin_role', 'auditor_role']
+            else:
+                notification_attach_roles = ['admin_role']
+            return any(self.user in getattr(obj_A, role) for role in notification_attach_roles)
+        return self.obj_read(obj_A)
 
 
-class OrganizationIGAccess(BaseAttachAccess):
-    modelA = Organization
-    relationship = 'instance_groups'
+class SuperuserAttachAccess(BaseAttachAccess):
+    relationships = (
+        (Organization, 'instance_groups'),
+        (Instance, 'rampart_groups')
+    )
 
     def can_add(self, obj_A, obj_B):
         return self.user.is_superuser
@@ -553,8 +568,7 @@ class OrganizationIGAccess(BaseAttachAccess):
 
 
 class InventoryIGAccess(BaseAttachAccess):
-    modelA = Inventory
-    relationship = 'instance_groups'
+    relationships = ((Inventory, 'instance_groups'),)
     symmetric = True
 
     @check_superuser
@@ -563,8 +577,7 @@ class InventoryIGAccess(BaseAttachAccess):
 
 
 class JobTemplateIGAttachAccess(BaseAttachAccess):
-    modelA = JobTemplate
-    relationship = 'instance_groups'
+    relationships = ((JobTemplate, 'instance_groups'),)
     symmetric = True
 
     @check_superuser
@@ -575,40 +588,8 @@ class JobTemplateIGAttachAccess(BaseAttachAccess):
         )
 
 
-class OrganizationNTAccess(NotificationAttachMixin, BaseAttachAccess):
-    modelA = Organization
-    relationship = 'notification_templates_success'
-    relationship_aliases = ('notification_templates_error', 'notification_templates_any')
-    notification_attach_roles = ['admin_role', 'auditor_role']
-
-
-class ProjectNTAccess(NotificationAttachMixin, BaseAttachAccess):
-    modelA = Project
-    relationship = 'notification_templates_success'
-    relationship_aliases = ('notification_templates_error', 'notification_templates_any')
-    notification_attach_roles = ['admin_role']
-
-
-class JTNTAccessSuccess(NotificationAttachMixin, BaseAttachAccess):
-    modelA = JobTemplate
-    relationship = 'notification_templates_success'
-    relationship_aliases = ('notification_templates_error', 'notification_templates_any')
-
-
-class InstanceIGAccess(BaseAttachAccess):
-    modelA = Instance
-    relationship = 'rampart_groups'
-
-    def can_add(self, obj_A, obj_B):
-        return self.user.is_superuser
-
-    def can_delete(self, obj_A, obj_B):
-        return self.user.is_superuser
-
-
 class TemplateCredentialsAttachAccess(BaseAttachAccess):
-    modelA = Credential
-    relationship = 'unifiedjobtemplates'
+    relationships = ((Credential, 'unifiedjobtemplates'),)
 
     @check_superuser
     def can_add(self, obj_A, obj_B):
@@ -620,8 +601,7 @@ class TemplateCredentialsAttachAccess(BaseAttachAccess):
 
 
 class LaunchConfigCredentialsAttachAccess(BaseAttachAccess):
-    modelA = JobLaunchConfig
-    relationship = 'credentials'
+    relationships = ((JobLaunchConfig, 'credentials'),)
 
     @check_superuser
     def can_add(self, obj_A, obj_B):
@@ -629,8 +609,7 @@ class LaunchConfigCredentialsAttachAccess(BaseAttachAccess):
 
 
 class UserRoleAttachAccess(BaseAttachAccess):
-    modelA = Role
-    relationship = 'members'
+    relationships = ((Role, 'members'),)
     symmetric = True
 
     @check_superuser
@@ -639,7 +618,9 @@ class UserRoleAttachAccess(BaseAttachAccess):
         user = obj_B
         resource_obj = role.content_object
         # check admin permission on sub object / resource item
-        if not isinstance(resource_obj, ResourceMixin) or self.user not in resource_obj.admin_role:
+        if resource_obj is not None and not isinstance(resource_obj, ResourceMixin):
+            raise RuntimeError('Unexpected target object with role association: {}'.format(resource_obj))
+        if resource_obj is None or self.user not in resource_obj.admin_role:
             return False
         # address user related permissions
         if role.role_field in ('admin_role', 'member_role'):
@@ -652,12 +633,11 @@ class UserRoleAttachAccess(BaseAttachAccess):
             if isinstance(resource_obj, Organization):
                 return UserAccess(self.user).can_admin(user, None, allow_orphans=True)
         # this is a straightforward granting of access, check read permission to user
-        return UserAccess(self.user).can_read()
+        return self.obj_admin(user)
 
 
 class RoleRoleAttachAccess(BaseAttachAccess):
-    modelA = Role
-    relationship = 'children'
+    relationships = ((Role, 'children'),)
     symmetric = True
 
     @check_superuser
@@ -1113,7 +1093,7 @@ class GroupAccess(BaseAccess):
         return False
 
 
-class InventorySourceAccess(NotificationAttachMixin, BaseAccess):
+class InventorySourceAccess(BaseAccess):
     '''
     I can see inventory sources whenever I can see their inventory.
     I can change inventory sources whenever I can change their inventory.
@@ -2749,10 +2729,8 @@ for cls in BaseAccess.__subclasses__():
 
 
 for cls in BaseAttachAccess.__subclasses__():
-    if cls.modelA is None:
+    if cls.relationships is None:
         continue  # abstract cls
-    through_model = getattr(cls.modelA, cls.relationship).through
-    attach_registry[through_model] = cls
-    for alias in cls.relationship_aliases:
-        through_model = getattr(cls.modelA, alias).through
+    for modelA, relationship in cls.relationships:
+        through_model = getattr(modelA, relationship).through
         attach_registry[through_model] = cls
