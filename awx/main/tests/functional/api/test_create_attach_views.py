@@ -17,6 +17,7 @@ def test_user_role_view_access(rando, inventory, mocker, post):
 def test_user_role_view_access(rando, inventory, mocker, post):
     "Assure same call pattern is used when using the reverse URL"
     mock_method = mocker.MagicMock(return_value=False)
+    inventory.read_role.members.add(rando)  # so parent read access is satisfied
     with mocker.patch('awx.main.access.UserRoleAttachAccess.can_add', mock_method):
         post(url=reverse('api:role_users_list', kwargs={'pk': inventory.admin_role.pk}),
              data={"id": rando.pk}, user=rando, expect=403)
