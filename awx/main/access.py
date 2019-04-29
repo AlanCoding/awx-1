@@ -722,8 +722,6 @@ class OrganizationAccess(BaseAccess):
 
     model = Organization
     prefetch_related = ('created_by', 'modified_by',)
-    # organization admin_role is not a parent of organization auditor_role
-    notification_attach_roles = ['admin_role', 'auditor_role']
 
     def filtered_queryset(self):
         return self.model.accessible_objects(self.user, 'read_role')
@@ -1214,7 +1212,6 @@ class ProjectAccess(BaseAccess):
 
     model = Project
     select_related = ('modified_by', 'credential', 'current_job', 'last_job',)
-    notification_attach_roles = ['admin_role']
 
     def filtered_queryset(self):
         return self.model.accessible_objects(self.user, 'read_role')
@@ -1747,7 +1744,6 @@ class WorkflowJobNodeAccess(BaseAccess):
         return False
 
 
-# TODO: notification attachments?
 class WorkflowJobTemplateAccess(BaseAccess):
     '''
     I can only see/manage Workflow Job Templates if I'm a super user
@@ -2541,11 +2537,19 @@ class BaseAttachAccess(object):
 
 
 class DefaultAttachAccess(BaseAttachAccess):
+    relationships = ((JobTemplate, 'labels'),)
+
+
+class InventoryContentAttachAccess(BaseAttachAccess):
     relationships = (
-        (JobTemplate, 'labels'),
         (Group, 'children'),
         (Group, 'hosts')
     )
+
+    def can_add(self, obj_A, obj_B):
+        if obj_A.inventory != obj_B.inventory:
+            raise ParseError(_('Cannot associate two items from different inventories.'))
+        return super(InventoryContentAttachAccess, self).can_add(obj_A, obj_B)
 
 
 class NotificationAttachAccess(BaseAttachAccess):
