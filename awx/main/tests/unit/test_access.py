@@ -11,6 +11,8 @@ from awx.main.access import (
     JobTemplateAccess,
     WorkflowJobTemplateAccess,
     SystemJobTemplateAccess,
+    ActivityStreamAccess,
+    SystemJobTemplateAccess
 )
 
 from awx.main.models import (
@@ -20,6 +22,10 @@ from awx.main.models import (
     Project,
     Role,
     Organization,
+    ActivityStream,
+    Job,
+    JobTemplate,
+    SystemJobTemplate
 )
 
 
@@ -279,3 +285,42 @@ def test_system_job_template_can_start(mocker):
     user.is_superuser = True
     access = SystemJobTemplateAccess(user)
     assert access.can_start(None)
+
+
+class TestAttachUtilities:
+    def test_relationship_not_editable(self):
+        with pytest.raises(RuntimeError) as exe:
+            # valid relationship but not editable by user, should error
+            ActivityStreamAccess(User()).can_attach(ActivityStream(id=42), Job(), 'job')
+        assert 'has not be written' in exe.value.args[0]
+
+    def test_relationship_does_not_exist(self):
+        with pytest.raises(Exception) as exe:
+            # relationship not valid, should error
+            ActivityStreamAccess(User()).can_attach(ActivityStream(id=42), Job(), 'newspapers')
+
+    def test_valid_field_but_not_editable(self):
+        # This case gets weird, a relationship exists technically within the models
+        # but for the given model and field, this is not an editable field by the user
+        with pytest.raises(RuntimeError) as exe:
+            SystemJobTemplateAccess(User()).can_attach(SystemJobTemplate(pk=42), Credential(pk=43), 'credentials')
+        assert 'Access logic for either SystemJobTemplate or Credential' in exe.value.args[0]
+        assert 'not implemented' in exe.value.args[0]
+
+    def test_bad_sub_object_type(self):
+        with pytest.raises(RuntimeError) as exe:
+            # valid and editable relationship but wrong type given for object being attached
+            JobTemplateAccess(User()).can_attach(JobTemplate(pk=42), Job(pk=43), 'credentials')
+        assert 'Incorrect type given' in exe.value.args[0]
+
+    def test_valid_association_access_call(self, mocker):
+        mock_method = mocker.MagicMock(return_value='fooooo')
+        with mocker.patch('awx.main.access.RelatedCredentialsAttachAccess.can_add', mock_method):
+            assert JobTemplateAccess(User()).can_attach(JobTemplate(pk=42), Credential(pk=43), 'credentials') == 'fooooo'
+        mock_method.assert_called_once_with(obj_A=JobTemplate(pk=42), obj_B=Credential(pk=43))
+
+    def test_valid_association_access_call_in_reverse(self, mocker):
+        mock_method = mocker.MagicMock(return_value='fooooo')
+        with mocker.patch('awx.main.access.RelatedCredentialsAttachAccess.can_add', mock_method):
+            assert JobTemplateAccess(User()).can_attach(Credential(pk=43), JobTemplate(pk=42), 'unifiedjobtemplates') == 'fooooo'
+        mock_method.assert_called_once_with(obj_A=JobTemplate(pk=42), obj_B=Credential(pk=43))
