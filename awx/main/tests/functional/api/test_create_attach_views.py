@@ -6,30 +6,32 @@ from awx.api.versioning import reverse
 @pytest.mark.django_db
 def test_user_role_view_access(rando, inventory, mocker, post):
     "Assure correct access method is called when assigning users new roles"
-    role_pk = inventory.admin_role.pk
-    data = {"id": role_pk}
-    mock_access = mocker.MagicMock(can_attach=mocker.MagicMock(return_value=False))
-    with mocker.patch('awx.main.access.RoleAccess', return_value=mock_access):
+    mock_method = mocker.MagicMock(return_value=False)
+    with mocker.patch('awx.main.access.UserRoleAttachAccess.can_add', mock_method):
         post(url=reverse('api:user_roles_list', kwargs={'pk': rando.pk}),
-             data=data, user=rando, expect=403)
-    mock_access.can_attach.assert_called_once_with(
-        inventory.admin_role, rando, 'members', data,
-        skip_sub_obj_read_check=False)
+             data={"id": inventory.admin_role.pk}, user=rando, expect=403)
+    mock_method.assert_called_once_with(obj_A=inventory.admin_role, obj_B=rando)
+
+
+@pytest.mark.django_db
+def test_user_role_view_access(rando, inventory, mocker, post):
+    "Assure same call pattern is used when using the reverse URL"
+    mock_method = mocker.MagicMock(return_value=False)
+    with mocker.patch('awx.main.access.UserRoleAttachAccess.can_add', mock_method):
+        post(url=reverse('api:role_users_list', kwargs={'pk': inventory.admin_role.pk}),
+             data={"id": rando.pk}, user=rando, expect=403)
+    mock_method.assert_called_once_with(obj_A=inventory.admin_role, obj_B=rando)
 
 
 @pytest.mark.django_db
 def test_team_role_view_access(rando, team, inventory, mocker, post):
     "Assure correct access method is called when assigning teams new roles"
     team.admin_role.members.add(rando)
-    role_pk = inventory.admin_role.pk
-    data = {"id": role_pk}
-    mock_access = mocker.MagicMock(can_attach=mocker.MagicMock(return_value=False))
-    with mocker.patch('awx.main.access.RoleAccess', return_value=mock_access):
+    mock_method = mocker.MagicMock(return_value=False)
+    with mocker.patch('awx.main.access.RoleRoleAttachAccess.can_add', mock_method):
         post(url=reverse('api:team_roles_list', kwargs={'pk': team.pk}),
-             data=data, user=rando, expect=403)
-    mock_access.can_attach.assert_called_once_with(
-        inventory.admin_role, team, 'member_role.parents', data,
-        skip_sub_obj_read_check=False)
+             data={"id": inventory.admin_role.pk}, user=rando, expect=403)
+    mock_method.assert_called_once_with(obj_A=team.member_role, obj_B=inventory.admin_role)
 
 
 @pytest.mark.django_db
@@ -37,14 +39,11 @@ def test_role_team_view_access(rando, team, inventory, mocker, post):
     """Assure that /role/N/teams/ enforces the same permission restrictions
     that /teams/N/roles/ does when assigning teams new roles"""
     role_pk = inventory.admin_role.pk
-    data = {"id": team.pk}
-    mock_access = mocker.MagicMock(return_value=False, __name__='mocked')
-    with mocker.patch('awx.main.access.RoleAccess.can_attach', mock_access):
+    mock_method = mocker.MagicMock(return_value=False)
+    with mocker.patch('awx.main.access.RoleRoleAttachAccess.can_add', mock_method):
         post(url=reverse('api:role_teams_list', kwargs={'pk': role_pk}),
-             data=data, user=rando, expect=403)
-    mock_access.assert_called_once_with(
-        inventory.admin_role, team, 'member_role.parents', data,
-        skip_sub_obj_read_check=False)
+             data={"id": team.pk}, user=rando, expect=403)
+    mock_method.assert_called_once_with(obj_A=team.member_role, obj_B=inventory.admin_role)
 
 
 @pytest.mark.django_db

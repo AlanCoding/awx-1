@@ -245,7 +245,7 @@ class BaseAccess(object):
         through_model = getattr(obj, relationship).through
         if through_model not in attach_registry:
             raise RuntimeError('Attchment logic for {}<-{} via {} has not be written'.format(
-                obj, sub_obj, relationship
+                obj.__class__.__name__, sub_obj.__class__.__name__, relationship
             ))
         access = attach_registry[through_model](self.user)
         if (obj.__class__, relationship) in access.relationships:
@@ -259,16 +259,17 @@ class BaseAccess(object):
                 obj_B = obj
             else:
                 raise RuntimeError('Access logic for either {} or {} via {} or {} not implemented'.format(
-                    obj.__class__, sub_obj.__class__, relationship, reverse_relationship))
+                    obj.__class__.__name__, sub_obj.__class__.__name__, relationship, reverse_relationship))
+            relationship = reverse_relationship  # needed for obj_B type checking
         modelB = obj_A._meta.get_field(relationship).related_model
         if not isinstance(obj_B, modelB):
             raise RuntimeError('Incorrect type given in {} for object B. Given {}, expected {}.'.format(
-                access, obj_B.__class__, modelB))
+                access, obj_B.__class__.__name__, modelB))
         return (obj_A, obj_B, access)
 
     # TODO: remove data as a parameter
     # TODO: finish management of skip_sub_obj_read_check
-    def can_attach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
+    def can_attach(self, obj, sub_obj, relationship, data=None, skip_sub_obj_read_check=False):
         obj_A, obj_B, access = self.order_for_attach_access(obj, sub_obj, relationship)
         return access.can_add(obj_A=obj_A, obj_B=obj_B)
 
@@ -497,6 +498,14 @@ class BaseAttachAccess(object):
     def __init__(self, user):
         self.user = user
 
+    @classmethod
+    def through_models(cls):
+        models = set()
+        for modelA, relationship in getattr(cls, 'relationships', []):
+            through_model = getattr(modelA, relationship).through
+            models.add(through_model)
+        return models
+
     def obj_read(self, obj):
         access = access_registry[obj.__class__](self.user)
         return access.can_read(obj)
@@ -507,13 +516,21 @@ class BaseAttachAccess(object):
 
     @check_superuser
     def can_add(self, obj_A, obj_B):
-        return bool(self.obj_admin(obj_A) and self.obj_admin(obj_B))
+        return bool(self.obj_admin(obj_A) and self.obj_read(obj_B))
 
     @check_superuser
     def can_delete(self, obj_A, obj_B):
         if self.symmetric:
             return self.can_add(obj_A, obj_B)
         return self.obj_admin(obj_A)
+
+
+class DefaultAttachAccess(BaseAttachAccess):
+    relationships = (
+        (JobTemplate, 'labels'),
+        (Group, 'children'),
+        (Group, 'hosts')
+    )
 
 
 class NotificationAttachAccess(BaseAttachAccess):
@@ -588,24 +605,31 @@ class JobTemplateIGAttachAccess(BaseAttachAccess):
         )
 
 
-class TemplateCredentialsAttachAccess(BaseAttachAccess):
-    relationships = ((Credential, 'unifiedjobtemplates'),)
-
-    @check_superuser
-    def can_add(self, obj_A, obj_B):
-        return bool(self.obj_admin(obj_B) and self.user in obj_A.use_role)
-
-    @check_superuser
-    def can_delete(self, obj_A, obj_B):
-        return self.obj_admin(obj_B)
-
-
-class LaunchConfigCredentialsAttachAccess(BaseAttachAccess):
-    relationships = ((JobLaunchConfig, 'credentials'),)
+class RelatedCredentialsAttachAccess(BaseAttachAccess):
+    relationships = (
+        (JobLaunchConfig, 'credentials'),
+        (WorkflowJobTemplateNode, 'credentials'),
+        (JobTemplate, 'credentials'),
+        (InventorySource, 'credentials'),
+        (Schedule, 'credentials')
+    )
 
     @check_superuser
     def can_add(self, obj_A, obj_B):
         return bool(self.obj_admin(obj_A) and self.user in obj_B.use_role)
+
+
+class WorkflowJobTemplateNodeAttachAccess(BaseAttachAccess):
+    relationships = (
+        (WorkflowJobTemplateNode, 'success_nodes'),
+        (WorkflowJobTemplateNode, 'failure_nodes'),
+        (WorkflowJobTemplateNode, 'always_nodes'),
+    )
+
+    def can_add(self, obj_A, obj_B):
+        if obj_A.workflow_job_template != obj_B.workflow_job_template:
+            raise PermissionDenied(_('Workflow nodes cannot attach to nodes in other workflows.'))
+        return self.user in obj_A.workflow_job_template.admin_role
 
 
 class UserRoleAttachAccess(BaseAttachAccess):
@@ -633,7 +657,7 @@ class UserRoleAttachAccess(BaseAttachAccess):
             if isinstance(resource_obj, Organization):
                 return UserAccess(self.user).can_admin(user, None, allow_orphans=True)
         # this is a straightforward granting of access, check read permission to user
-        return self.obj_admin(user)
+        return self.obj_read(user)
 
 
 class RoleRoleAttachAccess(BaseAttachAccess):
@@ -1887,44 +1911,6 @@ class WorkflowJobTemplateNodeAccess(BaseAccess):
     def can_delete(self, obj):
         return self.wfjt_admin(obj)
 
-    def check_same_WFJT(self, obj, sub_obj):
-        if type(obj) != self.model or type(sub_obj) != self.model:
-            raise Exception('Attaching workflow nodes only allowed for other nodes')
-        if obj.workflow_job_template != sub_obj.workflow_job_template:
-            return False
-        return True
-
-    def can_attach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
-        if not self.wfjt_admin(obj):
-            return False
-        if relationship == 'credentials':
-            # Need permission to related template to attach a credential
-            if not self.ujt_execute(obj):
-                return False
-            return JobLaunchConfigAccess(self.user).can_attach(
-                obj, sub_obj, relationship, data,
-                skip_sub_obj_read_check=skip_sub_obj_read_check
-            )
-        elif relationship in ('success_nodes', 'failure_nodes', 'always_nodes'):
-            return self.check_same_WFJT(obj, sub_obj)
-        else:
-            raise NotImplementedError('Relationship {} not understood for WFJT nodes.'.format(relationship))
-
-    def can_unattach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
-        if not self.wfjt_admin(obj):
-            return False
-        if relationship == 'credentials':
-            if not self.ujt_execute(obj):
-                return False
-            return JobLaunchConfigAccess(self.user).can_unattach(
-                obj, sub_obj, relationship, data,
-                skip_sub_obj_read_check=skip_sub_obj_read_check
-            )
-        elif relationship in ('success_nodes', 'failure_nodes', 'always_nodes'):
-            return self.check_same_WFJT(obj, sub_obj)
-        else:
-            raise NotImplementedError('Relationship {} not understood for WFJT nodes.'.format(relationship))
-
 
 class WorkflowJobNodeAccess(BaseAccess):
     '''
@@ -2468,18 +2454,6 @@ class ScheduleAccess(BaseAccess):
     def can_delete(self, obj):
         return self.can_change(obj, {})
 
-    def can_attach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
-        return JobLaunchConfigAccess(self.user).can_attach(
-            obj, sub_obj, relationship, data,
-            skip_sub_obj_read_check=skip_sub_obj_read_check
-        )
-
-    def can_unattach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
-        return JobLaunchConfigAccess(self.user).can_unattach(
-            obj, sub_obj, relationship, data,
-            skip_sub_obj_read_check=skip_sub_obj_read_check
-        )
-
 
 class NotificationTemplateAccess(BaseAccess):
     '''
@@ -2729,8 +2703,8 @@ for cls in BaseAccess.__subclasses__():
 
 
 for cls in BaseAttachAccess.__subclasses__():
-    if cls.relationships is None:
-        continue  # abstract cls
-    for modelA, relationship in cls.relationships:
-        through_model = getattr(modelA, relationship).through
+    for through_model in cls.through_models():
+        if through_model in attach_registry:
+            raise RuntimeError('Relationship {} is claimed by both classes {} and {}'.format(
+                through_model.__name__, attach_registry[through_model].__name__, cls.__name__))
         attach_registry[through_model] = cls
