@@ -9,6 +9,7 @@ from awx.api.views import (
     RoleUsersList,
     RoleTeamsList,
     RoleParentsList,
+    RoleAncestorsList,
     RoleChildrenList,
 )
 
@@ -19,6 +20,7 @@ urls = [
     url(r'^(?P<pk>[0-9]+)/users/$', RoleUsersList.as_view(), name='role_users_list'),
     url(r'^(?P<pk>[0-9]+)/teams/$', RoleTeamsList.as_view(), name='role_teams_list'),
     url(r'^(?P<pk>[0-9]+)/parents/$', RoleParentsList.as_view(), name='role_parents_list'),
+    url(r'^(?P<pk>[0-9]+)/ancestors/$', RoleAncestorsList.as_view(), name='role_ancestors_list'),
     url(r'^(?P<pk>[0-9]+)/children/$', RoleChildrenList.as_view(), name='role_children_list'),
 ]
 
