@@ -4488,7 +4488,7 @@ class RoleTeamsList(SubListAttachDetachAPIView):
     model = models.Team
     serializer_class = serializers.TeamSerializer
     parent_model = models.Role
-    relationship = 'member_role.parents'
+    relationship = 'parents.content_object'
     permission_classes = (IsAuthenticated,)
 
     def get_queryset(self):
