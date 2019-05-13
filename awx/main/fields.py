@@ -169,7 +169,7 @@ def is_implicit_parent(parent_role, child_role):
         # The only singleton implicit parent is the system admin being
         # a parent of the system auditor role
         return bool(
-            child_role.singleton_name == ROLE_SINGLETON_SYSTEM_AUDITOR and 
+            child_role.singleton_name == ROLE_SINGLETON_SYSTEM_AUDITOR and
             parent_role.singleton_name == ROLE_SINGLETON_SYSTEM_ADMINISTRATOR
         )
     # Get the list of implicit parents that were defined at the class level.
@@ -202,7 +202,7 @@ def update_role_parentage_for_instance(instance):
     updates the parents listing for all the roles
     of a given instance if they have changed
     '''
-    for implicit_role_field in getattr(instance.__class__, '__implicit_role_fields'):
+    for implicit_role_field in instance._implicit_role_fields:
         cur_role = getattr(instance, implicit_role_field.name)
         original_parents = set(json.loads(cur_role.implicit_parents))
         new_parents = implicit_role_field._resolve_parent_roles(instance)
@@ -242,9 +242,9 @@ class ImplicitRoleField(models.ForeignKey):
         super(ImplicitRoleField, self).contribute_to_class(cls, name)
         setattr(cls, self.name, ImplicitRoleDescriptor(self))
 
-        if not hasattr(cls, '__implicit_role_fields'):
-            setattr(cls, '__implicit_role_fields', [])
-        getattr(cls, '__implicit_role_fields').append(self)
+        if not hasattr(cls, '_implicit_role_fields'):
+            setattr(cls, '_implicit_role_fields', [])
+        getattr(cls, '_implicit_role_fields').append(self)
 
         post_save.connect(self._post_save, cls, True, dispatch_uid='implicit-role-post-save')
         post_delete.connect(self._post_delete, cls, True, dispatch_uid='implicit-role-post-delete')
@@ -323,7 +323,7 @@ class ImplicitRoleField(models.ForeignKey):
         with batch_role_ancestor_rebuilding():
             # Create any missing role objects
             missing_roles = []
-            for implicit_role_field in getattr(latest_instance.__class__, '__implicit_role_fields'):
+            for implicit_role_field in latest_instance._implicit_role_fields:
                 cur_role = getattr(latest_instance, implicit_role_field.name, None)
                 if cur_role is None:
                     missing_roles.append(
@@ -375,7 +375,7 @@ class ImplicitRoleField(models.ForeignKey):
 
     def _post_delete(self, instance, *args, **kwargs):
         role_ids = []
-        for implicit_role_field in getattr(instance.__class__, '__implicit_role_fields'):
+        for implicit_role_field in instance._implicit_role_fields:
             role_ids.append(getattr(instance, implicit_role_field.name + '_id'))
 
         Role_ = utils.get_current_apps().get_model('main', 'Role')
