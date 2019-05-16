@@ -3072,7 +3072,9 @@ class JobOptionsSerializer(LabelsListMixin, BaseSerializer):
             if not project:
                 raise serializers.ValidationError({'project': _('This field is required.')})
             if project and project.scm_type and playbook and force_text(playbook) not in project.playbook_files:
-                raise serializers.ValidationError({'playbook': _('Playbook not found for project.')})
+                # If never updated, don't validate playbook, as a loophole for clients to do faster scripting
+                if project.status not in (['never updated'] + ACTIVE_STATES):
+                    raise serializers.ValidationError({'playbook': _('Playbook not found for project.')})
             if project and not project.scm_type and playbook and force_text(playbook) not in project.playbooks:
                 raise serializers.ValidationError({'playbook': _('Playbook not found for project.')})
             if project and not playbook:
