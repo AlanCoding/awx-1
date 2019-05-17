@@ -104,12 +104,13 @@ class InvalidVirtualenvError(Exception):
 def dispatch_startup():
     startup_logger = logging.getLogger('awx.main.tasks')
     startup_logger.debug("Syncing Schedules")
+    from awx.main.signals import disable_activity_stream
     for sch in Schedule.objects.all():
         try:
-            sch.update_computed_fields()
-            from awx.main.signals import disable_activity_stream
-            with disable_activity_stream():
-                sch.save()
+            changed = sch.update_computed_fields()
+            if changed:
+                with disable_activity_stream():
+                    sch.save()
         except Exception:
             logger.exception("Failed to rebuild schedule {}.".format(sch))
 
@@ -128,10 +129,10 @@ def dispatch_startup():
     # deprovisioned when they miss their heartbeat, so this code is mostly a
     # no-op.
     #
-    apply_cluster_membership_policies()
-    cluster_node_heartbeat()
-    if Instance.objects.me().is_controller():
-        awx_isolated_heartbeat()
+    # apply_cluster_membership_policies()
+    # cluster_node_heartbeat()
+    # if Instance.objects.me().is_controller():
+    #     awx_isolated_heartbeat()
 
 
 def inform_cluster_of_shutdown():

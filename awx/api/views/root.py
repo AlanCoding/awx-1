@@ -84,6 +84,8 @@ class ApiVersionRootView(APIView):
 
     def get(self, request, format=None):
         ''' List top level resources '''
+        from awx.main.tasks import dispatch_startup
+        dispatch_startup()
         data = OrderedDict()
         data['ping'] = reverse('api:api_v1_ping_view', request=request)
         data['instances'] = reverse('api:instance_list', request=request)

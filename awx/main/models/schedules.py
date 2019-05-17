@@ -228,6 +228,7 @@ class Schedule(PrimordialModel, LaunchTimeConfig):
         return job_kwargs
 
     def update_computed_fields(self):
+        changed = False
         future_rs = Schedule.rrulestr(self.rrule)
         next_run_actual = future_rs.after(now())
 
@@ -237,7 +238,10 @@ class Schedule(PrimordialModel, LaunchTimeConfig):
                 next_run_actual = future_rs.after(next_run_actual)
             next_run_actual = next_run_actual.astimezone(pytz.utc)
 
+        if self.next_run != next_run_actual:
+            changed = True
         self.next_run = next_run_actual
+        old_dtstart, old_dtend = (self.dtstart, self.dtend)
         try:
             self.dtstart = future_rs[0].astimezone(pytz.utc)
         except IndexError:
@@ -248,9 +252,13 @@ class Schedule(PrimordialModel, LaunchTimeConfig):
                 self.dtend = future_rs[-1].astimezone(pytz.utc)
             except IndexError:
                 self.dtend = None
+        if self.dtstart != old_dtstart or self.dtend != old_dtend:
+            changed = True
         emit_channel_notification('schedules-changed', dict(id=self.id, group_name='schedules'))
-        with ignore_inventory_computed_fields():
-            self.unified_job_template.update_computed_fields()
+        if changed and self.enabled:
+            with ignore_inventory_computed_fields():
+                self.unified_job_template.update_computed_fields()
+        return changed
 
     def save(self, *args, **kwargs):
         self.update_computed_fields()

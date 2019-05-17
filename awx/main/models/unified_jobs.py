@@ -254,9 +254,10 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
     def update_computed_fields(self):
         Schedule = self._meta.get_field('schedules').related_model
         related_schedules = Schedule.objects.filter(enabled=True, unified_job_template=self, next_run__isnull=False).order_by('-next_run')
-        if related_schedules.exists():
-            self.next_schedule = related_schedules[0]
-            self.next_job_run = related_schedules[0].next_run
+        next_sch = related_schedules.first()
+        if next_sch and (self.next_schedule_id != next_sch.pk or self.next_job_run != next_sch.next_run):
+            self.next_schedule = next_sch
+            self.next_job_run = next_sch.next_run
             self.save(update_fields=['next_schedule', 'next_job_run'])
 
     def save(self, *args, **kwargs):
