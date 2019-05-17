@@ -169,7 +169,7 @@ def is_implicit_parent(parent_role, child_role):
         # The only singleton implicit parent is the system admin being
         # a parent of the system auditor role
         return bool(
-            child_role.singleton_name == ROLE_SINGLETON_SYSTEM_AUDITOR and 
+            child_role.singleton_name == ROLE_SINGLETON_SYSTEM_AUDITOR and
             parent_role.singleton_name == ROLE_SINGLETON_SYSTEM_ADMINISTRATOR
         )
     # Get the list of implicit parents that were defined at the class level.
@@ -313,6 +313,20 @@ class ImplicitRoleField(models.ForeignKey):
 
 
     def _post_save(self, instance, created, *args, **kwargs):
+        # If the instance is not new, and no RBAC related things are changed
+        # then exit
+        if not created and 'update_fields' in kwargs:
+            role_impacting_fields = set()
+            if not self.parent_role:
+                paths = []
+            elif not isinstance(self.parent_role, list):
+                paths = [self.parent_role]
+            else:
+                paths = self.parent_role
+            for path in paths:
+                role_impacting_fields.add(path.split('.')[0])
+            if not any(field_name in role_impacting_fields for field_name in kwargs['update_fields']):
+                return
         Role_ = utils.get_current_apps().get_model('main', 'Role')
         ContentType_ = utils.get_current_apps().get_model('contenttypes', 'ContentType')
         ct_id = ContentType_.objects.get_for_model(instance).id
