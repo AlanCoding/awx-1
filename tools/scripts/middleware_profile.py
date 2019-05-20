@@ -10,6 +10,9 @@ lines = content.strip().split('\n')
 
 data = []
 
+sums = {}
+num_points = 0
+
 for line in lines:
     header, stuff = line.split('alan', 1)
     stuff = stuff.strip().replace('-', ' ')
@@ -63,8 +66,22 @@ for line in lines:
             raise Exception('something went wrong')
 
 
-    print(json.dumps(costs, indent=2))
+    # print(json.dumps(costs, indent=2))
     data.append(costs)
 
+    num_points += 1
+    for key, value in costs.items():
+        if key not in sums:
+            sums[key] = 0.0
+        sums[key] += value
+
+
+averages = {}
+
+for key, value in sums.items():
+    averages[key] = sums[key] / num_points
+
+
+print(json.dumps(averages, indent=2))
 
 
