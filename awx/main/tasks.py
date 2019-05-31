@@ -682,8 +682,11 @@ class BaseTask(object):
     model = None
     event_model = None
     abstract = True
-    cleanup_paths = []
     proot_show_paths = []
+
+    def __init__(self, *args, **kwargs):
+        super(BaseTask, self).__init__(*args, **kwargs)
+        self.cleanup_paths = []
 
     def update_model(self, pk, _attempt=0, **updates):
         """Reload the model instance from the database and update the
@@ -995,7 +998,7 @@ class BaseTask(object):
             expect_passwords[k] = passwords.get(v, '') or ''
         return expect_passwords
 
-    def pre_run_hook(self, instance):
+    def pre_run_hook(self, instance, private_data_dir):
         '''
         Hook for any steps to run before the job/task starts
         '''
@@ -1121,7 +1124,8 @@ class BaseTask(object):
 
         try:
             isolated = self.instance.is_isolated()
-            self.pre_run_hook(self.instance)
+            private_data_dir = self.build_private_data_dir(self.instance)
+            self.pre_run_hook(self.instance, private_data_dir)
             if self.instance.cancel_flag:
                 self.instance = self.update_model(self.instance.pk, status='canceled')
             if self.instance.status != 'running':
@@ -1137,7 +1141,6 @@ class BaseTask(object):
             # store a record of the venv used at runtime
             if hasattr(self.instance, 'custom_virtualenv'):
                 self.update_model(pk, custom_virtualenv=getattr(self.instance, 'ansible_virtualenv_path', settings.ANSIBLE_VENV_PATH))
-            private_data_dir = self.build_private_data_dir(self.instance)
 
             # Fetch "cached" fact data from prior runs and put on the disk
             # where ansible expects to find it
@@ -1546,7 +1549,7 @@ class RunJob(BaseTask):
         '''
         return getattr(settings, 'AWX_PROOT_ENABLED', False)
 
-    def pre_run_hook(self, job):
+    def pre_run_hook(self, job, private_data_dir):
         if job.inventory is None:
             error = _('Job could not start because it does not have a valid inventory.')
             self.update_model(job.pk, status='failed', job_explanation=error)
@@ -1563,29 +1566,31 @@ class RunJob(BaseTask):
                 )
                 job = self.update_model(job.pk, status='failed', job_explanation=msg)
                 raise RuntimeError(msg)
-            local_project_sync = job.project.create_project_update(
-                _eager_fields=dict(
-                    launch_type="sync",
-                    job_type='run',
-                    status='running',
-                    instance_group = pu_ig,
-                    execution_node=pu_en,
-                    celery_task_id=job.celery_task_id))
-            # save the associated job before calling run() so that a
-            # cancel() call on the job can cancel the project update
-            job = self.update_model(job.pk, project_update=local_project_sync)
+            repo = Repo(job.project.get_project_path())
+            if repo.head.commit.hexsha != job.project.scm_revision:
+                local_project_sync = job.project.create_project_update(
+                    _eager_fields=dict(
+                        launch_type="sync",
+                        job_type='run',
+                        status='running',
+                        instance_group = pu_ig,
+                        execution_node=pu_en,
+                        celery_task_id=job.celery_task_id))
+                # save the associated job before calling run() so that a
+                # cancel() call on the job can cancel the project update
+                job = self.update_model(job.pk, project_update=local_project_sync)
 
-            project_update_task = local_project_sync._get_task_class()
-            try:
-                project_update_task().run(local_project_sync.id)
-                job = self.update_model(job.pk, scm_revision=job.project.scm_revision)
-            except Exception:
-                local_project_sync.refresh_from_db()
-                if local_project_sync.status != 'canceled':
-                    job = self.update_model(job.pk, status='failed',
-                                            job_explanation=('Previous Task Failed: {"job_type": "%s", "job_name": "%s", "job_id": "%s"}' %
-                                                             ('project_update', local_project_sync.name, local_project_sync.id)))
-                    raise
+                project_update_task = local_project_sync._get_task_class()
+                try:
+                    project_update_task().run(local_project_sync.id)
+                    job = self.update_model(job.pk, scm_revision=job.project.scm_revision)
+                except Exception:
+                    local_project_sync.refresh_from_db()
+                    if local_project_sync.status != 'canceled':
+                        job = self.update_model(job.pk, status='failed',
+                                                job_explanation=('Previous Task Failed: {"job_type": "%s", "job_name": "%s", "job_id": "%s"}' %
+                                                                 ('project_update', local_project_sync.name, local_project_sync.id)))
+                        raise
 
     def final_run_hook(self, job, status, private_data_dir, fact_modification_times, isolated_manager_instance=None):
         super(RunJob, self).final_run_hook(job, status, private_data_dir, fact_modification_times)
@@ -1875,7 +1880,7 @@ class RunProjectUpdate(BaseTask):
                 '{} spent {} waiting to acquire lock for local source tree '
                 'for path {}.'.format(instance.log_format, waiting_time, lock_path))
 
-    def pre_run_hook(self, instance):
+    def pre_run_hook(self, instance, private_data_dir):
         # re-create root project folder if a natural disaster has destroyed it
         if not os.path.exists(settings.PROJECTS_ROOT):
             os.mkdir(settings.PROJECTS_ROOT)
@@ -2114,7 +2119,7 @@ class RunInventoryUpdate(BaseTask):
         # All credentials not used by inventory source injector
         return inventory_update.get_extra_credentials()
 
-    def pre_run_hook(self, inventory_update):
+    def pre_run_hook(self, inventory_update, private_data_dir):
         source_project = None
         if inventory_update.inventory_source:
             source_project = inventory_update.inventory_source.source_project
