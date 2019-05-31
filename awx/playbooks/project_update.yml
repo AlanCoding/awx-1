@@ -19,6 +19,7 @@
 
 - hosts: all
   gather_facts: false
+  tags: [ tree ]
   tasks:
 
     - name: delete project directory before update
@@ -140,6 +141,7 @@
 
 - hosts: all
   gather_facts: false
+  tags: [ galaxy ]
   tasks:
 
     - block:
