@@ -21,6 +21,7 @@ from distutils.version import LooseVersion as Version
 import yaml
 import fcntl
 from pathlib import Path
+from uuid import uuid4
 try:
     import psutil
 except Exception:
@@ -41,6 +42,9 @@ from django.core.exceptions import ObjectDoesNotExist
 
 # Django-CRUM
 from crum import impersonate
+
+# GitPython
+import git
 
 # Runner
 import ansible_runner
@@ -772,9 +776,11 @@ class BaseTask(object):
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         if settings.AWX_CLEANUP_PATHS:
             self.cleanup_paths.append(path)
-        # Ansible Runner requires that this directory exists.
-        # Specifically, when using process isolation
-        os.mkdir(os.path.join(path, 'project'))
+        runner_project_folder = os.path.join(path, 'project')
+        if not os.path.exists(runner_project_folder):
+            # Ansible Runner requires that this directory exists.
+            # Specifically, when using process isolation
+            os.mkdir(runner_project_folder)
         return path
 
     def build_private_data_files(self, instance, private_data_dir):
@@ -1578,8 +1584,15 @@ class RunJob(BaseTask):
             error = _('Job could not start because it does not have a valid inventory.')
             self.update_model(job.pk, status='failed', job_explanation=error)
             raise RuntimeError(error)
+        elif job.project is None:
+            error = _('Job could not start because it does not have a valid project.')
+            self.update_model(job.pk, status='failed', job_explanation=error)
+            raise RuntimeError(error)
         galaxy_install_path = None
-        if job.project and job.project.scm_type:
+        git_repo = None
+        local_revision = None
+        project_path = job.project.get_project_path(check_if_exists=False)
+        if job.project.scm_type:
             pu_ig = job.instance_group
             pu_en = job.execution_node
             if job.is_isolated() is True:
@@ -1591,37 +1604,66 @@ class RunJob(BaseTask):
                 )
                 job = self.update_model(job.pk, status='failed', job_explanation=msg)
                 raise RuntimeError(msg)
-            local_project_sync = job.project.create_project_update(
-                _eager_fields=dict(
-                    launch_type="sync",
-                    job_type='run',
-                    status='running',
-                    instance_group = pu_ig,
-                    execution_node=pu_en,
-                    celery_task_id=job.celery_task_id))
-            # save the associated job before calling run() so that a
-            # cancel() call on the job can cancel the project update
-            job = self.update_model(job.pk, project_update=local_project_sync)
+            project_path = job.project.get_project_path()
+            if job.project.scm_type == 'git':
+                try:
+                    git_repo = git.Repo(project_path)
+                    local_revision = git_repo.head.commit.hexsha
+                except git.exc.NoSuchPathError:
+                    logger.debug('Performing fresh clone of {} on this instance.'.format(job.project))
+            needs_sync = bool(local_revision != job.project.scm_revision)
+            if not needs_sync:
+                # see if we need a sync because of presence of roles
+                galaxy_req_path = os.path.join(project_path, 'roles', 'requirements.yml')
+                if os.path.exists(galaxy_req_path):
+                    logger.debug('Running project sync for {} because of galaxy role requirements.'.format(job.log_format))
+                    needs_sync = True
+            if needs_sync:
+                local_project_sync = job.project.create_project_update(
+                    _eager_fields=dict(
+                        launch_type="sync",
+                        job_type='run',
+                        status='running',
+                        instance_group = pu_ig,
+                        execution_node=pu_en,
+                        celery_task_id=job.celery_task_id))
+                # save the associated job before calling run() so that a
+                # cancel() call on the job can cancel the project update
+                job = self.update_model(job.pk, project_update=local_project_sync)
 
-            # Save the roles from galaxy to a temporary directory to be moved later
-            # at this point, the project folder has not yet been coppied into the temporary directory
-            galaxy_install_path = tempfile.mkdtemp(prefix='tmp_roles_', dir=private_data_dir)
-            os.chmod(galaxy_install_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-            project_update_task = local_project_sync._get_task_class()
-            try:
-                project_update_task(roles_destination=galaxy_install_path).run(local_project_sync.id)
-                job = self.update_model(job.pk, scm_revision=job.project.scm_revision)
-            except Exception:
-                local_project_sync.refresh_from_db()
-                if local_project_sync.status != 'canceled':
-                    job = self.update_model(job.pk, status='failed',
-                                            job_explanation=('Previous Task Failed: {"job_type": "%s", "job_name": "%s", "job_id": "%s"}' %
-                                                             ('project_update', local_project_sync.name, local_project_sync.id)))
-                    raise
-
-        # copy the project and roles directory
-        project_path = job.project.get_project_path(check_if_exists=False)
-        self.copy_folders(project_path, galaxy_install_path, private_data_dir)
+                # Save the roles from galaxy to a temporary directory to be moved later
+                # at this point, the project folder has not yet been coppied into the temporary directory
+                galaxy_install_path = tempfile.mkdtemp(prefix='tmp_roles_', dir=private_data_dir)
+                os.chmod(galaxy_install_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+                project_update_task = local_project_sync._get_task_class()
+                try:
+                    project_update_task(roles_destination=galaxy_install_path).run(local_project_sync.id)
+                    job = self.update_model(job.pk, scm_revision=job.project.scm_revision)
+                except Exception:
+                    local_project_sync.refresh_from_db()
+                    if local_project_sync.status != 'canceled':
+                        job = self.update_model(job.pk, status='failed',
+                                                job_explanation=('Previous Task Failed: {"job_type": "%s", "job_name": "%s", "job_id": "%s"}' %
+                                                                 ('project_update', local_project_sync.name, local_project_sync.id)))
+                        raise
+        # copy the project directory
+        runner_project_folder = os.path.join(private_data_dir, 'project')
+        if job.project.scm_type == 'git':
+            if git_repo is None:
+                git_repo = git.Repo(project_path)
+            if not os.path.exists(runner_project_folder):
+                os.mkdir(runner_project_folder)
+            if git_repo.head.is_detached:
+                tmp_branch_name = 'awx_internal/{}'.format(uuid4())
+                source_branch = git_repo.create_head(tmp_branch_name, git_repo.head.commit)
+            else:
+                source_branch = git_repo.head.reference
+            git_repo.clone(runner_project_folder, branch=source_branch, depth=1, single_branch=True)
+        else:
+            copy_tree(project_path, runner_project_folder)
+        if galaxy_install_path:
+            galaxy_run_path = os.path.join(private_data_dir, 'project', 'roles')
+            copy_tree(galaxy_install_path, galaxy_run_path)
 
         if job.inventory.kind == 'smart':
             # cache smart inventory memberships so that the host_filter query is not
@@ -1666,7 +1708,16 @@ class RunProjectUpdate(BaseTask):
 
     def __init__(self, *args, roles_destination=None, **kwargs):
         super(RunProjectUpdate, self).__init__(*args, **kwargs)
+        self.updated_revision = None
         self.roles_destination = roles_destination
+
+    def event_handler(self, event_data):
+        super(RunProjectUpdate, self).event_handler(event_data)
+        returned_data = event_data.get('event_data', {})
+        if returned_data.get('task_action', '') == 'set_fact':
+            returned_facts = returned_data.get('res', {}).get('ansible_facts', {})
+            if 'scm_version' in returned_facts:
+                self.updated_revision = returned_facts['scm_version']
 
     def build_private_data(self, project_update, private_data_dir):
         '''
@@ -1681,9 +1732,6 @@ class RunProjectUpdate(BaseTask):
             }
         }
         '''
-        handle, self.revision_path = tempfile.mkstemp(dir=settings.PROJECTS_ROOT)
-        if settings.AWX_CLEANUP_PATHS:
-            self.cleanup_paths.append(self.revision_path)
         private_data = {'credentials': {}}
         if project_update.credential:
             credential = project_update.credential
@@ -1799,7 +1847,6 @@ class RunProjectUpdate(BaseTask):
             'scm_clean': project_update.scm_clean,
             'scm_delete_on_update': project_update.scm_delete_on_update if project_update.job_type == 'check' else False,
             'scm_full_checkout': True if project_update.job_type == 'run' else False,
-            'scm_revision_output': self.revision_path,
             'scm_revision': project_update.project.scm_revision,
             'roles_enabled': getattr(settings, 'AWX_ROLES_ENABLED', True) if project_update.job_type != 'check' else False
         })
@@ -1935,10 +1982,8 @@ class RunProjectUpdate(BaseTask):
         self.release_lock(instance)
         p = instance.project
         if instance.job_type == 'check' and status not in ('failed', 'canceled',):
-            fd = open(self.revision_path, 'r')
-            lines = fd.readlines()
-            if lines:
-                p.scm_revision = lines[0].strip()
+            if self.updated_revision:
+                p.scm_revision = self.updated_revision
             else:
                 logger.info("{} Could not find scm revision in check".format(instance.log_format))
             p.playbook_files = p.playbooks
