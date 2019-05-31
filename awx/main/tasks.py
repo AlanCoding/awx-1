@@ -41,6 +41,9 @@ from django.core.exceptions import ObjectDoesNotExist
 # Django-CRUM
 from crum import impersonate
 
+# GitPython
+from git import Repo
+
 # Runner
 import ansible_runner
 
