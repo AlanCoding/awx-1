@@ -20,6 +20,7 @@ from distutils.dir_util import copy_tree
 from distutils.version import LooseVersion as Version
 import yaml
 import fcntl
+from uuid import uuid4
 try:
     import psutil
 except Exception:
@@ -42,7 +43,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from crum import impersonate
 
 # GitPython
-from git import Repo
+import git
 
 # Runner
 import ansible_runner
@@ -760,9 +761,11 @@ class BaseTask(object):
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         if settings.AWX_CLEANUP_PATHS:
             self.cleanup_paths.append(path)
-        # Ansible Runner requires that this directory exists.
-        # Specifically, when using process isolation
-        os.mkdir(os.path.join(path, 'project'))
+        runner_project_folder = os.path.join(path, 'project')
+        if not os.path.exists(runner_project_folder):
+            # Ansible Runner requires that this directory exists.
+            # Specifically, when using process isolation
+            os.mkdir(runner_project_folder)
         return path
 
     def build_private_data_files(self, instance, private_data_dir):
@@ -1223,9 +1226,6 @@ class BaseTask(object):
                     module_args = ansible_runner.utils.args2cmdline(
                         params.get('module_args'),
                     )
-                else:
-                    # otherwise, it's a playbook, so copy the project dir
-                    copy_tree(cwd, os.path.join(private_data_dir, 'project'))
                 shutil.move(
                     params.pop('inventory'),
                     os.path.join(private_data_dir, 'inventory')
@@ -1495,15 +1495,10 @@ class RunJob(BaseTask):
         return args
 
     def build_cwd(self, job, private_data_dir):
-        cwd = job.project.get_project_path()
-        if not cwd:
-            root = settings.PROJECTS_ROOT
-            raise RuntimeError('project local_path %s cannot be found in %s' %
-                               (job.project.local_path, root))
-        return cwd
+        return private_data_dir
 
     def build_playbook_path_relative_to_cwd(self, job, private_data_dir):
-        return os.path.join(job.playbook)
+        return os.path.join('project', job.playbook)
 
     def build_extra_vars_file(self, job, private_data_dir):
         # Define special extra_vars for AWX, combine with job.extra_vars.
@@ -1566,8 +1561,15 @@ class RunJob(BaseTask):
                 )
                 job = self.update_model(job.pk, status='failed', job_explanation=msg)
                 raise RuntimeError(msg)
-            repo = Repo(job.project.get_project_path())
-            if repo.head.commit.hexsha != job.project.scm_revision:
+            project_path = job.project.get_project_path()
+            local_revision = None
+            if job.project.scm_type == 'git':
+                try:
+                    repo = git.Repo(project_path)
+                    local_revision = repo.head.commit.hexsha
+                except git.exc.NoSuchPathError:
+                    repo = None
+            if local_revision != job.project.scm_revision:
                 local_project_sync = job.project.create_project_update(
                     _eager_fields=dict(
                         launch_type="sync",
@@ -1591,6 +1593,22 @@ class RunJob(BaseTask):
                                                 job_explanation=('Previous Task Failed: {"job_type": "%s", "job_name": "%s", "job_id": "%s"}' %
                                                                  ('project_update', local_project_sync.name, local_project_sync.id)))
                         raise
+            # copy the project directory
+            runner_project_folder = os.path.join(private_data_dir, 'project')
+            if job.project.scm_type == 'git':
+                if repo is None:
+                    repo = git.Repo(project_path)
+                if not os.path.exists(runner_project_folder):
+                    os.mkdir(runner_project_folder)
+                if repo.head.is_detached:
+                    tmp_branch_name = 'awx_internal/{}'.format(uuid4())
+                    source_branch = repo.create_head(tmp_branch_name, repo.head.commit)
+                else:
+                    source_branch = repo.head.reference
+                repo.clone(runner_project_folder, branch=source_branch, depth=1, single_branch=True)
+            else:
+                copy_tree(project_path, runner_project_folder)
+
 
     def final_run_hook(self, job, status, private_data_dir, fact_modification_times, isolated_manager_instance=None):
         super(RunJob, self).final_run_hook(job, status, private_data_dir, fact_modification_times)
