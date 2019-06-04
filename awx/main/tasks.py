@@ -1495,10 +1495,10 @@ class RunJob(BaseTask):
         return args
 
     def build_cwd(self, job, private_data_dir):
-        return private_data_dir
+        return os.path.join(private_data_dir, 'project')
 
     def build_playbook_path_relative_to_cwd(self, job, private_data_dir):
-        return os.path.join('project', job.playbook)
+        return job.playbook
 
     def build_extra_vars_file(self, job, private_data_dir):
         # Define special extra_vars for AWX, combine with job.extra_vars.
