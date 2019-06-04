@@ -1644,7 +1644,7 @@ class RunProjectUpdate(BaseTask):
         return [settings.PROJECTS_ROOT]
 
     def __init__(self, *args, **kwargs):
-        super(RunProjectUpdate, self).__init__(*args, **kwargs):
+        super(RunProjectUpdate, self).__init__(*args, **kwargs)
         self.updated_revision = None
 
     def event_handler(self, event_data):
