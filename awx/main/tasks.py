@@ -1643,6 +1643,18 @@ class RunProjectUpdate(BaseTask):
     def proot_show_paths(self):
         return [settings.PROJECTS_ROOT]
 
+    def __init__(self, *args, **kwargs):
+        super(RunProjectUpdate, self).__init__(*args, **kwargs):
+        self.updated_revision = None
+
+    def event_handler(self, event_data):
+        super(RunProjectUpdate, self).event_handler(event_data)
+        returned_data = event_data.get('event_data', {}).get('res', {})
+        if returned_data.get('task_action', '') == 'set_fact':
+            returned_facts = returned_data.get('ansible_facts', {})
+            if 'scm_version' in returned_facts:
+                self.updated_revision = returned_facts['scm_version']
+
     def build_private_data(self, project_update, private_data_dir):
         '''
         Return SSH private key data needed for this project update.
@@ -1656,9 +1668,6 @@ class RunProjectUpdate(BaseTask):
             }
         }
         '''
-        handle, self.revision_path = tempfile.mkstemp(dir=settings.PROJECTS_ROOT)
-        if settings.AWX_CLEANUP_PATHS:
-            self.cleanup_paths.append(self.revision_path)
         private_data = {'credentials': {}}
         if project_update.credential:
             credential = project_update.credential
@@ -1774,7 +1783,6 @@ class RunProjectUpdate(BaseTask):
             'scm_clean': project_update.scm_clean,
             'scm_delete_on_update': project_update.scm_delete_on_update if project_update.job_type == 'check' else False,
             'scm_full_checkout': True if project_update.job_type == 'run' else False,
-            'scm_revision_output': self.revision_path,
             'scm_revision': project_update.project.scm_revision,
             'roles_enabled': getattr(settings, 'AWX_ROLES_ENABLED', True)
         })
@@ -1908,10 +1916,8 @@ class RunProjectUpdate(BaseTask):
         self.release_lock(instance)
         p = instance.project
         if instance.job_type == 'check' and status not in ('failed', 'canceled',):
-            fd = open(self.revision_path, 'r')
-            lines = fd.readlines()
-            if lines:
-                p.scm_revision = lines[0].strip()
+            if self.updated_revision:
+                p.scm_revision = self.updated_revision
             else:
                 logger.info("{} Could not find scm revision in check".format(instance.log_format))
             p.playbook_files = p.playbooks

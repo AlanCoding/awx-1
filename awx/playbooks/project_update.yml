@@ -12,14 +12,13 @@
 # scm_password: password (only for svn/insights)
 # scm_accept_hostkey: true/false (only for git, set automatically)
 # scm_revision: current revision in tower
-# scm_revision_output: where to store gathered revision (temporary file)
 # roles_enabled: Allow us to pull roles from a requirements.yml file
 # awx_version: Current running version of the awx or tower as a string
 # awx_license_type: "open" for AWX; else presume Tower
 
 - hosts: all
   gather_facts: false
-  tags: [ tree ]
+  tags: [ checkout ]
   tasks:
 
     - name: delete project directory before update
@@ -115,13 +114,6 @@
     - name: Repository Version
       debug: msg="Repository Version {{ scm_version }}"
       when: scm_version is defined
-
-    - name: Write Repository Version
-      copy:
-        dest: "{{ scm_revision_output }}"
-        content: "{{ scm_version }}"
-      when: scm_version is defined and scm_revision_output is defined
-      delegate_to: localhost
 
 - hosts: all
   gather_facts: false
