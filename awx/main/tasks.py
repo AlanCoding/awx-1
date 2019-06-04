@@ -1666,9 +1666,9 @@ class RunProjectUpdate(BaseTask):
 
     def event_handler(self, event_data):
         super(RunProjectUpdate, self).event_handler(event_data)
-        returned_data = event_data.get('event_data', {}).get('res', {})
+        returned_data = event_data.get('event_data', {})
         if returned_data.get('task_action', '') == 'set_fact':
-            returned_facts = returned_data.get('ansible_facts', {})
+            returned_facts = returned_data.get('res', {}).get('ansible_facts', {})
             if 'scm_version' in returned_facts:
                 self.updated_revision = returned_facts['scm_version']
 
