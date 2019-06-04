@@ -1549,6 +1549,9 @@ class RunJob(BaseTask):
             error = _('Job could not start because it does not have a valid inventory.')
             self.update_model(job.pk, status='failed', job_explanation=error)
             raise RuntimeError(error)
+        galaxy_install_path = None
+        repo = None
+        local_revision = None
         if job.project and job.project.scm_type:
             pu_ig = job.instance_group
             pu_en = job.execution_node
@@ -1562,14 +1565,24 @@ class RunJob(BaseTask):
                 job = self.update_model(job.pk, status='failed', job_explanation=msg)
                 raise RuntimeError(msg)
             project_path = job.project.get_project_path()
-            local_revision = None
             if job.project.scm_type == 'git':
                 try:
                     repo = git.Repo(project_path)
                     local_revision = repo.head.commit.hexsha
                 except git.exc.NoSuchPathError:
-                    repo = None
-            if local_revision != job.project.scm_revision:
+                    logger.debug('Performing fresh clone of {} on this instance.'.format(job.project))
+            needs_sync = bool(local_revision != job.project.scm_revision)
+            if not needs_sync:
+                # see if we need a sync because of presence of roles
+                galaxy_req_path = os.path.join(project_path, 'roles', 'requirements.yml')
+                if os.path.exists(galaxy_req_path):
+                    logger.debug('Running project sync for {} because of galaxy role requirements.'.format(job.log_format))
+                    needs_sync = True
+            if needs_sync:
+                # Save the roles from galaxy to a temporary directory to be moved later
+                # at this point, the project folder has not yet been coppied into the temporary directory
+                galaxy_install_path = tempfile.mkdtemp(prefix='tmp_roles_', dir=private_data_dir)
+                os.chmod(galaxy_install_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
                 local_project_sync = job.project.create_project_update(
                     _eager_fields=dict(
                         launch_type="sync",
@@ -1584,7 +1597,7 @@ class RunJob(BaseTask):
 
                 project_update_task = local_project_sync._get_task_class()
                 try:
-                    project_update_task().run(local_project_sync.id)
+                    project_update_task(roles_destination=galaxy_install_path).run(local_project_sync.id)
                     job = self.update_model(job.pk, scm_revision=job.project.scm_revision)
                 except Exception:
                     local_project_sync.refresh_from_db()
@@ -1593,21 +1606,24 @@ class RunJob(BaseTask):
                                                 job_explanation=('Previous Task Failed: {"job_type": "%s", "job_name": "%s", "job_id": "%s"}' %
                                                                  ('project_update', local_project_sync.name, local_project_sync.id)))
                         raise
-            # copy the project directory
-            runner_project_folder = os.path.join(private_data_dir, 'project')
-            if job.project.scm_type == 'git':
-                if repo is None:
-                    repo = git.Repo(project_path)
-                if not os.path.exists(runner_project_folder):
-                    os.mkdir(runner_project_folder)
-                if repo.head.is_detached:
-                    tmp_branch_name = 'awx_internal/{}'.format(uuid4())
-                    source_branch = repo.create_head(tmp_branch_name, repo.head.commit)
-                else:
-                    source_branch = repo.head.reference
-                repo.clone(runner_project_folder, branch=source_branch, depth=1, single_branch=True)
+        # copy the project directory
+        runner_project_folder = os.path.join(private_data_dir, 'project')
+        if job.project.scm_type == 'git':
+            if repo is None:
+                repo = git.Repo(project_path)
+            if not os.path.exists(runner_project_folder):
+                os.mkdir(runner_project_folder)
+            if repo.head.is_detached:
+                tmp_branch_name = 'awx_internal/{}'.format(uuid4())
+                source_branch = repo.create_head(tmp_branch_name, repo.head.commit)
             else:
-                copy_tree(project_path, runner_project_folder)
+                source_branch = repo.head.reference
+            repo.clone(runner_project_folder, branch=source_branch, depth=1, single_branch=True)
+        else:
+            copy_tree(project_path, runner_project_folder)
+        if galaxy_install_path:
+            galaxy_run_path = os.path.join(private_data_dir, 'project', 'roles')
+            copy_tree(galaxy_install_path, galaxy_run_path)
 
 
     def final_run_hook(self, job, status, private_data_dir, fact_modification_times, isolated_manager_instance=None):
@@ -1643,9 +1659,10 @@ class RunProjectUpdate(BaseTask):
     def proot_show_paths(self):
         return [settings.PROJECTS_ROOT]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, roles_destination=None, **kwargs):
         super(RunProjectUpdate, self).__init__(*args, **kwargs)
         self.updated_revision = None
+        self.roles_destination = roles_destination
 
     def event_handler(self, event_data):
         super(RunProjectUpdate, self).event_handler(event_data)
@@ -1784,8 +1801,10 @@ class RunProjectUpdate(BaseTask):
             'scm_delete_on_update': project_update.scm_delete_on_update if project_update.job_type == 'check' else False,
             'scm_full_checkout': True if project_update.job_type == 'run' else False,
             'scm_revision': project_update.project.scm_revision,
-            'roles_enabled': getattr(settings, 'AWX_ROLES_ENABLED', True)
+            'roles_enabled': getattr(settings, 'AWX_ROLES_ENABLED', True) if project_update.job_type != 'check' else False
         })
+        if self.roles_destination:
+            extra_vars['roles_destination'] = self.roles_destination
         self._write_extra_vars_file(private_data_dir, extra_vars)
 
     def build_cwd(self, project_update, private_data_dir):
@@ -2148,6 +2167,7 @@ class RunInventoryUpdate(BaseTask):
         if inventory_update.inventory_source:
             source_project = inventory_update.inventory_source.source_project
         if (inventory_update.source=='scm' and inventory_update.launch_type!='scm' and source_project):
+            # In project sync, pulling galaxy roles is not needed
             local_project_sync = source_project.create_project_update(
                 _eager_fields=dict(
                     launch_type="sync",
