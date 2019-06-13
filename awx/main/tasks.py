@@ -1590,21 +1590,15 @@ class RunJob(BaseTask):
             raise RuntimeError(error)
         galaxy_install_path = None
         git_repo = None
-        local_revision = None
         project_path = job.project.get_project_path(check_if_exists=False)
         if job.project.scm_type:
-            pu_ig = job.instance_group
-            pu_en = job.execution_node
-            if job.is_isolated() is True:
-                pu_ig = pu_ig.controller
-                pu_en = settings.CLUSTER_HOST_ID
             if job.project.status in ('error', 'failed'):
                 msg = _(
                     'The project revision for this job template is unknown due to a failed update.'
                 )
                 job = self.update_model(job.pk, status='failed', job_explanation=msg)
                 raise RuntimeError(msg)
-            project_path = job.project.get_project_path()
+            local_revision = None
             if job.project.scm_type == 'git':
                 try:
                     git_repo = git.Repo(project_path)
@@ -1619,6 +1613,11 @@ class RunJob(BaseTask):
                     logger.debug('Running project sync for {} because of galaxy role requirements.'.format(job.log_format))
                     needs_sync = True
             if needs_sync:
+                pu_ig = job.instance_group
+                pu_en = job.execution_node
+                if job.is_isolated() is True:
+                    pu_ig = pu_ig.controller
+                    pu_en = settings.CLUSTER_HOST_ID
                 local_project_sync = job.project.create_project_update(
                     _eager_fields=dict(
                         launch_type="sync",
@@ -1637,8 +1636,9 @@ class RunJob(BaseTask):
                 os.chmod(galaxy_install_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
                 project_update_task = local_project_sync._get_task_class()
                 try:
-                    project_update_task(roles_destination=galaxy_install_path).run(local_project_sync.id)
-                    job = self.update_model(job.pk, scm_revision=job.project.scm_revision)
+                    sync_task = project_update_task(roles_destination=galaxy_install_path)
+                    sync_task.run(local_project_sync.id)
+                    job = self.update_model(job.pk, scm_revision=sync_task.local_revision)
                 except Exception:
                     local_project_sync.refresh_from_db()
                     if local_project_sync.status != 'canceled':
@@ -1646,18 +1646,24 @@ class RunJob(BaseTask):
                                                 job_explanation=('Previous Task Failed: {"job_type": "%s", "job_name": "%s", "job_id": "%s"}' %
                                                                  ('project_update', local_project_sync.name, local_project_sync.id)))
                         raise
+            else:
+                job = self.update_model(job.pk, scm_revision=job.project.scm_revision)
         # copy the project directory
+        sync_task.local_revision
         runner_project_folder = os.path.join(private_data_dir, 'project')
         if job.project.scm_type == 'git':
             if git_repo is None:
                 git_repo = git.Repo(project_path)
             if not os.path.exists(runner_project_folder):
                 os.mkdir(runner_project_folder)
-            if git_repo.head.is_detached:
-                tmp_branch_name = 'awx_internal/{}'.format(uuid4())
-                source_branch = git_repo.create_head(tmp_branch_name, git_repo.head.commit)
-            else:
-                source_branch = git_repo.head.reference
+            tmp_branch_name = 'awx_internal/{}'.format(uuid4())
+            # always clone based on specific job revision
+            source_branch = git_repo.create_head(tmp_branch_name, job.scm_revision)
+            # if git_repo.head.is_detached:
+            #     tmp_branch_name = 'awx_internal/{}'.format(uuid4())
+            #     source_branch = git_repo.create_head(tmp_branch_name, git_repo.head.commit)
+            # else:
+            #     source_branch = git_repo.head.reference
             git_repo.clone(runner_project_folder, branch=source_branch, depth=1, single_branch=True)
         else:
             copy_tree(project_path, runner_project_folder)

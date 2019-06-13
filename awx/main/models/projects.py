@@ -317,7 +317,7 @@ class Project(UnifiedJobTemplate, ProjectOptions, ResourceMixin, CustomVirtualEn
     @classmethod
     def _get_unified_job_field_names(cls):
         return set(f.name for f in ProjectOptions._meta.fields) | set(
-            ['name', 'description', 'schedule']
+            ['name', 'description', 'schedule']  # TODO: consider adding job tags
         )
 
     def save(self, *args, **kwargs):
@@ -471,6 +471,12 @@ class ProjectUpdate(UnifiedJob, ProjectOptions, JobNotificationMixin, TaskManage
         choices=PROJECT_UPDATE_JOB_TYPE_CHOICES,
         default='check',
     )
+    # job_tags = models.CharField(
+    #     max_length=1024,
+    #     blank=True,
+    #     default='checkout',
+    #     help_text=_('The plays in the project_update playbook that this update runs.'),
+    # )
 
     def _get_parent_field_name(self):
         return 'project'
