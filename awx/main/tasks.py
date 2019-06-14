@@ -1638,7 +1638,7 @@ class RunJob(BaseTask):
                 try:
                     sync_task = project_update_task(roles_destination=galaxy_install_path)
                     sync_task.run(local_project_sync.id)
-                    job = self.update_model(job.pk, scm_revision=sync_task.local_revision)
+                    job = self.update_model(job.pk, scm_revision=sync_task.updated_revision)
                 except Exception:
                     local_project_sync.refresh_from_db()
                     if local_project_sync.status != 'canceled':
@@ -1649,7 +1649,6 @@ class RunJob(BaseTask):
             else:
                 job = self.update_model(job.pk, scm_revision=job.project.scm_revision)
         # copy the project directory
-        sync_task.local_revision
         runner_project_folder = os.path.join(private_data_dir, 'project')
         if job.project.scm_type == 'git':
             if git_repo is None:

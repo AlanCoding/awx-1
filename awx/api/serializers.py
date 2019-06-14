@@ -1338,7 +1338,7 @@ class ProjectSerializer(UnifiedJobTemplateSerializer, ProjectOptionsSerializer):
     class Meta:
         model = Project
         fields = ('*', 'organization', 'scm_update_on_launch',
-                  'scm_update_cache_timeout', 'scm_revision', 'custom_virtualenv',) + \
+                  'scm_update_cache_timeout', 'scm_revision', 'allow_override', 'custom_virtualenv',) + \
                  ('last_update_failed', 'last_updated')  # Backwards compatibility
 
     def get_related(self, obj):
@@ -2701,7 +2701,7 @@ class LabelsListMixin(object):
 class JobOptionsSerializer(LabelsListMixin, BaseSerializer):
 
     class Meta:
-        fields = ('*', 'job_type', 'inventory', 'project', 'playbook',
+        fields = ('*', 'job_type', 'inventory', 'project', 'playbook', 'scm_branch',
                   'forks', 'limit', 'verbosity', 'extra_vars', 'job_tags',
                   'force_handlers', 'skip_tags', 'start_at_task', 'timeout',
                   'use_fact_cache',)
@@ -2799,7 +2799,8 @@ class JobTemplateSerializer(JobTemplateMixin, UnifiedJobTemplateSerializer, JobO
 
     class Meta:
         model = JobTemplate
-        fields = ('*', 'host_config_key', 'ask_diff_mode_on_launch', 'ask_variables_on_launch', 'ask_limit_on_launch', 'ask_tags_on_launch',
+        fields = ('*', 'host_config_key', 'ask_scm_branch_on_launch', 'ask_diff_mode_on_launch', 'ask_variables_on_launch',
+                  'ask_limit_on_launch', 'ask_tags_on_launch',
                   'ask_skip_tags_on_launch', 'ask_job_type_on_launch', 'ask_verbosity_on_launch', 'ask_inventory_on_launch',
                   'ask_credential_on_launch', 'survey_enabled', 'become_enabled', 'diff_mode',
                   'allow_simultaneous', 'custom_virtualenv', 'job_slice_count')
@@ -3365,6 +3366,7 @@ class WorkflowJobCancelSerializer(WorkflowJobSerializer):
 
 
 class LaunchConfigurationBaseSerializer(BaseSerializer):
+    scm_branch = serializers.CharField(allow_blank=True, allow_null=True, required=False, default=None)
     job_type = serializers.ChoiceField(allow_blank=True, allow_null=True, required=False, default=None,
                                        choices=NEW_JOB_TYPE_CHOICES)
     job_tags = serializers.CharField(allow_blank=True, allow_null=True, required=False, default=None)
@@ -3377,7 +3379,7 @@ class LaunchConfigurationBaseSerializer(BaseSerializer):
 
     class Meta:
         fields = ('*', 'extra_data', 'inventory', # Saved launch-time config fields
-                  'job_type', 'job_tags', 'skip_tags', 'limit', 'skip_tags', 'diff_mode', 'verbosity')
+                  'scm_branch', 'job_type', 'job_tags', 'skip_tags', 'limit', 'skip_tags', 'diff_mode', 'verbosity')
 
     def get_related(self, obj):
         res = super(LaunchConfigurationBaseSerializer, self).get_related(obj)
@@ -3960,6 +3962,7 @@ class JobLaunchSerializer(BaseSerializer):
         required=False, write_only=True
     )
     credential_passwords = VerbatimField(required=False, write_only=True)
+    scm_branch = serializers.CharField(required=False, write_only=True, allow_blank=True)
     diff_mode = serializers.BooleanField(required=False, write_only=True)
     job_tags = serializers.CharField(required=False, write_only=True, allow_blank=True)
     job_type = serializers.ChoiceField(required=False, choices=NEW_JOB_TYPE_CHOICES, write_only=True)
@@ -3970,7 +3973,7 @@ class JobLaunchSerializer(BaseSerializer):
     class Meta:
         model = JobTemplate
         fields = ('can_start_without_user_input', 'passwords_needed_to_start',
-                  'extra_vars', 'inventory', 'limit', 'job_tags', 'skip_tags', 'job_type', 'verbosity', 'diff_mode',
+                  'extra_vars', 'inventory', 'scm_branch', 'limit', 'job_tags', 'skip_tags', 'job_type', 'verbosity', 'diff_mode',
                   'credentials', 'credential_passwords', 'ask_variables_on_launch', 'ask_tags_on_launch',
                   'ask_diff_mode_on_launch', 'ask_skip_tags_on_launch', 'ask_job_type_on_launch', 'ask_limit_on_launch',
                   'ask_verbosity_on_launch', 'ask_inventory_on_launch', 'ask_credential_on_launch',
