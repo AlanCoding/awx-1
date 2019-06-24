@@ -9,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('main', '0080_v360_replace_job_origin'),
+        ('main', '0081_v360_notify_on_start'),
     ]
 
     operations = [
