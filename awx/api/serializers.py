@@ -2752,9 +2752,14 @@ class JobOptionsSerializer(LabelsListMixin, BaseSerializer):
             playbook = attrs.get('playbook', self.instance and self.instance.playbook or '')
             if not project:
                 raise serializers.ValidationError({'project': _('This field is required.')})
-            if project and project.scm_type and playbook and force_text(playbook) not in project.playbook_files:
-                raise serializers.ValidationError({'playbook': _('Playbook not found for project.')})
-            if project and not project.scm_type and playbook and force_text(playbook) not in project.playbooks:
+            playbook_not_found = bool(
+                (
+                    project and project.scm_type and (not project.allow_override) and
+                    playbook and force_text(playbook) not in project.playbook_files
+                ) or
+                (project and not project.scm_type and playbook and force_text(playbook) not in project.playbooks)  # manual
+            )
+            if playbook_not_found:
                 raise serializers.ValidationError({'playbook': _('Playbook not found for project.')})
             if project and not playbook:
                 raise serializers.ValidationError({'playbook': _('Must select playbook for project.')})
