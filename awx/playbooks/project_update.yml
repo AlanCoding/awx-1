@@ -12,6 +12,7 @@
 # scm_password: password (only for svn/insights)
 # scm_accept_hostkey: true/false (only for git, set automatically)
 # scm_revision: current revision in tower
+# git_refspec: a refspec to fetch in addition to obtaining version
 # roles_enabled: Allow us to pull roles from a requirements.yml file
 # roles_destination: Path to save roles from galaxy to
 # awx_version: Current running version of the awx or tower as a string
@@ -35,6 +36,7 @@
           dest: "{{project_path|quote}}"
           repo: "{{scm_url}}"
           version: "{{scm_branch|quote}}"
+          refspec: "{{git_refspec|default(omit)}}"
           force: "{{scm_clean}}"
           accept_hostkey: "{{scm_accept_hostkey|default(omit)}}"
         register: git_result
