@@ -6,7 +6,7 @@ import awx.main.fields
 from django.db import migrations, models
 import django.db.models.deletion
 
-from awx.main.migrations._rbac import rebuild_role_parentage
+from awx.main.migrations._rbac import rebuild_role_parentage, migrate_jt_organization
 
 
 class Migration(migrations.Migration):
@@ -45,6 +45,7 @@ class Migration(migrations.Migration):
             name='read_role',
             field=awx.main.fields.ImplicitRoleField(editable=False, null='True', on_delete=django.db.models.deletion.CASCADE, parent_role=['organization.auditor_role', 'execute_role', 'admin_role'], related_name='+', to='main.Role'),
         ),
+        migrations.RunPython(migrate_jt_organization, migrations.RunPython.noop),
         # Now we have to re-compute the role parents and ancestors caching
         migrations.RunPython(rebuild_role_parentage, migrations.RunPython.noop),
     ]

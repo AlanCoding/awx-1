@@ -45,6 +45,25 @@ def delete_all_user_roles(apps, schema_editor):
         role.delete()
 
 
+def migrate_jt_organization(apps, schema_editor):
+    '''
+    Move organization from project to job template
+    '''
+    JobTemplate = apps.get_model('main', 'JobTemplate')
+    updated_ct = 0
+    for jt in JobTemplate.objects.iterator():
+        if not jt.project:
+            continue
+        project = jt.project
+        if not project.organization:
+            continue
+        jt.organization = project.organization
+        jt.save(update_fields=['organization'])
+        updated_ct += 1
+    logger.info('Migrated project to JT field for {} JTs'.format(updated_ct))
+    return
+
+
 def rebuild_role_hierarchy(apps, schema_editor):
     '''
     This should be called in any migration when ownerships are changed.
@@ -86,7 +105,6 @@ def rebuild_role_parentage(apps, schema_editor):
             continue
         model_tuple = (role.content_type_id, role.object_id)
         if model_tuple in seen_models:
-            logger.debug('Already updated roles for model of {}'.format(model_tuple))
             continue
         seen_models.add(model_tuple)
 
@@ -101,7 +119,11 @@ def rebuild_role_parentage(apps, schema_editor):
         updated = update_role_parentage_for_instance(content_object)
         if updated:
             model_ct += 1
-            logger.debug('Updated parents of {} roles of object {}'.format(updated, content_object))
+            logger.debug('Updated parents of {} roles of {}-{}'.format(
+                updated, content_object, content_object.pk))
+        else:
+            logger.debug('No changes to role parents of {}-{}'.format(
+                content_object, content_object.pk))
         updated_ct += updated
 
     if updated_ct:
