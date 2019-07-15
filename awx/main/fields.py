@@ -142,7 +142,9 @@ def resolve_role_field(obj, field):
 
     if len(field_components) == 1:
         role_cls = str(utils.get_current_apps().get_model('main', 'Role'))
-        if not str(type(obj)) == role_cls:
+        # use extremely generous duck typing to accomidate all possible forms
+        # of the model that may be used during various migrations
+        if obj._meta.model_name != 'role' or obj._meta.app_label != 'main':
             raise Exception(smart_text('{} refers to a {}, not a Role'.format(field, type(obj))))
         ret.append(obj.id)
     else:

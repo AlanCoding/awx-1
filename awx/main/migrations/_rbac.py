@@ -78,17 +78,17 @@ def rebuild_role_parentage(apps, schema_editor):
     '''
     seen_models = set()
     updated_ct = 0
-    print('entered method')
+    model_ct = 0
     Role = apps.get_model('main', "Role")
     for role in Role.objects.iterator():
         if not role.object_id:
-            logger.debug('Skipping singleton or orphaned role {}'.format(role))
-        if (role.content_type_id, role.object_id) in seen_models:
-            logger.debug('Already updated roles for model of {}'.format(role))
+            logger.debug('Skipping singleton or orphaned role {}'.format(role.pk))
             continue
-        seen_models.add((role.content_type_id, role.object_id))
-
-        print('role {}'.format(role))
+        model_tuple = (role.content_type_id, role.object_id)
+        if model_tuple in seen_models:
+            logger.debug('Already updated roles for model of {}'.format(model_tuple))
+            continue
+        seen_models.add(model_tuple)
 
         # The GenericForeignKey does not work right in migrations
         # with the usage as role.content_object
@@ -96,24 +96,14 @@ def rebuild_role_parentage(apps, schema_editor):
         ct = role.content_type
         app = ct.app_label
         ct_model = apps.get_model(app, ct.model)
-        try:
-            content_object = ct_model.objects.get(pk=role.object_id)
-        except ct_model.DoesNotExist:
-            logger.error('Role {} points to an object that does not exist'.format(role))
-            continue
+        content_object = ct_model.objects.get(pk=role.object_id)
 
         updated = update_role_parentage_for_instance(content_object)
         if updated:
+            model_ct += 1
             logger.debug('Updated parents of {} roles of object {}'.format(updated, content_object))
         updated_ct += updated
 
-
-        # field = content_object._meta.get_field(role.role_field)
-        # changed = update_role_parentage_for_role(role, field)
-        # if changed:
-        #     updated_parents_ct += 1
-        #     logger.debug('Modified parentage for role {}'.format(role))
-
     if updated_ct:
-        logger.info('Updated parentage for {} roles'.format(updated_ct))
-        rebuild_role_hierarchy()
+        logger.info('Updated parentage for {} roles of {} resources'.format(updated_ct, model_ct))
+        rebuild_role_hierarchy(apps, schema_editor)

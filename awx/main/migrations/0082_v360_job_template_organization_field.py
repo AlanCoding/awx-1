@@ -16,6 +16,8 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # backwards parents and ancestors caching
+        migrations.RunPython(migrations.RunPython.noop, rebuild_role_parentage),
         # add new organization field for JT
         migrations.AddField(
             model_name='job',
@@ -43,6 +45,6 @@ class Migration(migrations.Migration):
             name='read_role',
             field=awx.main.fields.ImplicitRoleField(editable=False, null='True', on_delete=django.db.models.deletion.CASCADE, parent_role=['organization.auditor_role', 'execute_role', 'admin_role'], related_name='+', to='main.Role'),
         ),
-        # Now we have to re-compute stuff
-        migrations.RunPython(rebuild_role_parentage, rebuild_role_parentage),
+        # Now we have to re-compute the role parents and ancestors caching
+        migrations.RunPython(rebuild_role_parentage, migrations.RunPython.noop),
     ]
