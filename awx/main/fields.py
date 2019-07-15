@@ -193,48 +193,35 @@ def is_implicit_parent(parent_role, child_role):
     return False
 
 
-def update_role_parentage_for_role(role, implicit_role_field):
-    '''
-    Updates the parents relationship and the implicit_parents JSON field of
-    the role object to reflect the declared parent_role parameter of the
-    implicit_role_field.
-
-    :param Role role: A role instance from the database
-    :param ImplicitRoleField implicit_role_field: A Django field object
-        corresponding to the role instance
-    '''
-    print('called update_role_parentage_for_role')
-    changed = False
-    original_parents = set(json.loads(role.implicit_parents))
-    new_parents = implicit_role_field._resolve_parent_roles(instance)
-    removals = original_parents - new_parents
-    if removals:
-        print('removing')
-        changed = True
-        role.parents.remove(*list(removals))
-    additions = new_parents - original_parents
-    if additions:
-        changed = True
-        role.parents.add(*list(additions))
-    new_parents_list = list(new_parents)
-    new_parents_list.sort()
-    new_parents_json = json.dumps(new_parents_list)
-    if role.implicit_parents != new_parents_json:
-        print('implicit_parents')
-        changed = True
-        role.implicit_parents = new_parents_json
-        role.save(update_fields=['implicit_parents'])
-    return changed
-
-
 def update_role_parentage_for_instance(instance):
     '''update_role_parentage_for_instance
     updates the parents listing for all the roles
     of a given instance if they have changed
     '''
+    changed_ct = 0
     for implicit_role_field in getattr(instance.__class__, '__implicit_role_fields'):
+        changed = False
         cur_role = getattr(instance, implicit_role_field.name)
-        update_role_parentage_for_role(cur_role, implicit_role_field)
+        original_parents = set(json.loads(cur_role.implicit_parents))
+        new_parents = implicit_role_field._resolve_parent_roles(instance)
+        removals = original_parents - new_parents
+        if removals:
+            changed = True
+            cur_role.parents.remove(*list(removals))
+        additions = new_parents - original_parents
+        if additions:
+            changed = True
+            cur_role.parents.add(*list(additions))
+        new_parents_list = list(new_parents)
+        new_parents_list.sort()
+        new_parents_json = json.dumps(new_parents_list)
+        if cur_role.implicit_parents != new_parents_json:
+            changed = True
+            cur_role.implicit_parents = new_parents_json
+            cur_role.save()
+        if changed:
+            changed_ct += 1
+    return changed_ct
 
 
 class ImplicitRoleDescriptor(ForwardManyToOneDescriptor):

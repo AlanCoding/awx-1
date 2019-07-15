@@ -1,7 +1,7 @@
 import logging
 from time import time
 
-from awx.main.fields import update_role_parentage_for_role
+from awx.main.fields import update_role_parentage_for_instance
 from awx.main.models.rbac import Role, batch_role_ancestor_rebuilding
 
 logger = logging.getLogger('rbac_migrations')
@@ -76,27 +76,44 @@ def rebuild_role_parentage(apps, schema_editor):
     This is like rebuild_role_hierarchy, but that method updates ancestors,
     whereas this method updates parents.
     '''
+    seen_models = set()
+    updated_ct = 0
     print('entered method')
     Role = apps.get_model('main', "Role")
-    updated_parents_ct = 0
     for role in Role.objects.iterator():
+        if not role.object_id:
+            logger.debug('Skipping singleton or orphaned role {}'.format(role))
+        if (role.content_type_id, role.object_id) in seen_models:
+            logger.debug('Already updated roles for model of {}'.format(role))
+            continue
+        seen_models.add((role.content_type_id, role.object_id))
+
         print('role {}'.format(role))
-        # The GenericForeignKey seems to like to deadlock if used as role.content_object
-        # so we get the model from the migration
+
+        # The GenericForeignKey does not work right in migrations
+        # with the usage as role.content_object
+        # so we do the lookup ourselves with current migration models
         ct = role.content_type
-        app = 'main'
-        if ct.lower() == 'user':
-            app = 'auth'
+        app = ct.app_label
         ct_model = apps.get_model(app, ct.model)
         try:
             content_object = ct_model.objects.get(pk=role.object_id)
         except ct_model.DoesNotExist:
+            logger.error('Role {} points to an object that does not exist'.format(role))
             continue
-        field = content_object._meta.get_field(role.role_field)
-        changed = update_role_parentage_for_role(role, field)
-        if changed:
-            updated_parents_ct += 1
-            logger.debug('Modified parentage for role {}'.format(role))
-    if updated_parents_ct:
-        logger.info('Updated parentage for {} roles'.format(updated_parents_ct))
-    rebuild_role_hierarchy()
+
+        updated = update_role_parentage_for_instance(content_object)
+        if updated:
+            logger.debug('Updated parents of {} roles of object {}'.format(updated, content_object))
+        updated_ct += updated
+
+
+        # field = content_object._meta.get_field(role.role_field)
+        # changed = update_role_parentage_for_role(role, field)
+        # if changed:
+        #     updated_parents_ct += 1
+        #     logger.debug('Modified parentage for role {}'.format(role))
+
+    if updated_ct:
+        logger.info('Updated parentage for {} roles'.format(updated_ct))
+        rebuild_role_hierarchy()
