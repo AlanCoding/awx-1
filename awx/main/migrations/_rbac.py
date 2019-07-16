@@ -119,11 +119,9 @@ def rebuild_role_parentage(apps, schema_editor):
         updated = update_role_parentage_for_instance(content_object)
         if updated:
             model_ct += 1
-            logger.debug('Updated parents of {} roles of {}-{}'.format(
-                updated, content_object, content_object.pk))
+            logger.debug('Updated parents of {} roles of {}'.format(updated, content_object))
         else:
-            logger.debug('No changes to role parents of {}-{}'.format(
-                content_object, content_object.pk))
+            logger.debug('No changes to role parents of {}'.format(content_object))
         updated_ct += updated
 
     if updated_ct:

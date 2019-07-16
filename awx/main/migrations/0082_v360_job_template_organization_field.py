@@ -46,6 +46,7 @@ class Migration(migrations.Migration):
             field=awx.main.fields.ImplicitRoleField(editable=False, null='True', on_delete=django.db.models.deletion.CASCADE, parent_role=['organization.auditor_role', 'execute_role', 'admin_role'], related_name='+', to='main.Role'),
         ),
         migrations.RunPython(migrate_jt_organization, migrations.RunPython.noop),
-        # Now we have to re-compute the role parents and ancestors caching
+        # Re-compute the role parents and ancestors caching
+        # this may be a no-op because field post_save hooks from migrate_jt_organization
         migrations.RunPython(rebuild_role_parentage, migrations.RunPython.noop),
     ]
