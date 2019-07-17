@@ -1668,30 +1668,27 @@ class JobAccess(BaseAccess):
 
         # Check if JT execute access (and related prompts) is sufficient
         failure_msg = _(' You do not have permission to related resources.')
+        prompts_access = False
         if obj.job_template is not None:
             if config is None:
-                prompts_access = False
                 if self.save_messages:
                     self.messages['detail'] = _('Job was launched with unknown prompted fields.')
             elif not config.has_user_prompts(obj.job_template):
                 prompts_access = True
             elif obj.created_by_id != self.user.pk and vars_are_encrypted(config.extra_data):
-                prompts_access = False
                 if self.save_messages:
                     self.messages['detail'] = _('Job was launched with secret prompts provided by another user.')
             else:
-                if not JobLaunchConfigAccess(self.user).can_add({'reference_obj': config}):
-                    prompts_access = False
-                    if self.save_messages:
-                        self.messages['detail'] = _('Job was launched with prompted fields which you do not have access to.')
                 if config.has_unprompted(obj.job_template):
-                    prompts_access = False
                     if self.save_messages:
                         self.messages['detail'] = _('Job template no longer accepts the prompts provided for this job.')
-            if prompts_access:
-                jt_access = self.user in obj.job_template.execute_role
-                if prompts_access and jt_access:
-                    return True
+                elif not JobLaunchConfigAccess(self.user).can_add({'reference_obj': config}):
+                    if self.save_messages:
+                        self.messages['detail'] = _('Job was launched with prompted fields which you do not have access to.')
+                else:
+                    prompts_access = True
+            if prompts_access and self.user in obj.job_template.execute_role:
+                return True
         else:
             if self.save_messages:
                 self.messages['detail'] = _('Job has been orphaned from its job template.')

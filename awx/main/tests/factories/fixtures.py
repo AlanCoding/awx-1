@@ -159,7 +159,7 @@ def mk_job_template(name, job_type='run',
         extra_vars = json.dumps(extra_vars)
 
     jt = JobTemplate(name=name, job_type=job_type, extra_vars=extra_vars,
-                     playbook='helloworld.yml')
+                     playbook='helloworld.yml', organization=organization)
 
     jt.inventory = inventory
     if jt.inventory is None:
@@ -216,7 +216,7 @@ def mk_workflow_job_template(name, extra_vars='', spec=None, organization=None, 
 
 
 def mk_workflow_job_template_node(workflow_job_template=None,
-                                  unified_job_template=None, 
+                                  unified_job_template=None,
                                   success_nodes=None,
                                   failure_nodes=None,
                                   always_nodes=None,
@@ -231,11 +231,11 @@ def mk_workflow_job_template_node(workflow_job_template=None,
     return workflow_node
 
 
-def mk_workflow_job_node(unified_job_template=None, 
+def mk_workflow_job_node(unified_job_template=None,
                          success_nodes=None,
                          failure_nodes=None,
                          always_nodes=None,
-                         workflow_job=None, 
+                         workflow_job=None,
                          job=None,
                          persisted=True):
     workflow_node = WorkflowJobNode(unified_job_template=unified_job_template,
