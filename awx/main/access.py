@@ -1564,9 +1564,9 @@ class JobTemplateAccess(NotificationAttachMixin, BaseAccess):
     @check_superuser
     def can_attach(self, obj, sub_obj, relationship, data, skip_sub_obj_read_check=False):
         if relationship == "instance_groups":
-            if not obj.project.organization:
+            if not obj.organization:
                 return False
-            return self.user.can_access(type(sub_obj), "read", sub_obj) and self.user in obj.project.organization.admin_role
+            return self.user.can_access(type(sub_obj), "read", sub_obj) and self.user in obj.organization.admin_role
         if relationship == 'credentials' and isinstance(sub_obj, Credential):
             return self.user in obj.admin_role and self.user in sub_obj.use_role
         return super(JobTemplateAccess, self).can_attach(
@@ -1617,22 +1617,14 @@ class JobAccess(BaseAccess):
 
         return qs.filter(
             Q(job_template__in=JobTemplate.accessible_objects(self.user, 'read_role')) |
-            Q(inventory__organization__in=org_access_qs) |
-            Q(project__organization__in=org_access_qs)).distinct()
-
-    def related_orgs(self, obj):
-        orgs = []
-        if obj.inventory and obj.inventory.organization:
-            orgs.append(obj.inventory.organization)
-        if obj.project and obj.project.organization and obj.project.organization not in orgs:
-            orgs.append(obj.project.organization)
-        return orgs
+            Q(organization__in=org_access_qs)).distinct()
 
     def org_access(self, obj, role_types=['admin_role']):
-        orgs = self.related_orgs(obj)
-        for org in orgs:
+        if self.user.is_superuser:
+            return True
+        if obj.organization:
             for role_type in role_types:
-                role = getattr(org, role_type)
+                role = getattr(obj.organization, role_type)
                 if self.user in role:
                     return True
         return False
@@ -1652,7 +1644,9 @@ class JobAccess(BaseAccess):
 
     @check_superuser
     def can_delete(self, obj):
-        return self.org_access(obj)
+        if not obj.organization:
+            return False
+        return self.user in obj.organization.admin_role
 
     def can_start(self, obj, validate_license=True):
         if validate_license:
@@ -1673,9 +1667,12 @@ class JobAccess(BaseAccess):
             config = None
 
         # Check if JT execute access (and related prompts) is sufficient
+        failure_msg = _(' You do not have permission to related resources.')
         if obj.job_template is not None:
             if config is None:
                 prompts_access = False
+                if self.save_messages:
+                    self.messages['detail'] = _('Job was launched with unknown prompted fields.')
             elif not config.has_user_prompts(obj.job_template):
                 prompts_access = True
             elif obj.created_by_id != self.user.pk and vars_are_encrypted(config.extra_data):
@@ -1683,34 +1680,23 @@ class JobAccess(BaseAccess):
                 if self.save_messages:
                     self.messages['detail'] = _('Job was launched with secret prompts provided by another user.')
             else:
-                prompts_access = (
-                    JobLaunchConfigAccess(self.user).can_add({'reference_obj': config}) and
-                    not config.has_unprompted(obj.job_template)
-                )
-            jt_access = self.user in obj.job_template.execute_role
-            if prompts_access and jt_access:
-                return True
-            elif not jt_access:
-                return False
+                if not JobLaunchConfigAccess(self.user).can_add({'reference_obj': config}):
+                    prompts_access = False
+                    if self.save_messages:
+                        self.messages['detail'] = _('Job was launched with prompted fields which you do not have access to.')
+                if config.has_unprompted(obj.job_template):
+                    prompts_access = False
+                    if self.save_messages:
+                        self.messages['detail'] = _('Job template no longer accepts the prompts provided for this job.')
+            if prompts_access:
+                jt_access = self.user in obj.job_template.execute_role
+                if prompts_access and jt_access:
+                    return True
+        else:
+            if self.save_messages:
+                self.messages['detail'] = _('Job has been orphaned from its job template.')
 
-        org_access = bool(obj.inventory) and self.user in obj.inventory.organization.inventory_admin_role
-        project_access = obj.project is None or self.user in obj.project.admin_role
-        credential_access = all([self.user in cred.use_role for cred in obj.credentials.all()])
-
-        # job can be relaunched if user could make an equivalent JT
-        ret = org_access and credential_access and project_access
-        if not ret and self.save_messages and not self.messages:
-            if not obj.job_template:
-                pretext = _('Job has been orphaned from its job template.')
-            elif config is None:
-                pretext = _('Job was launched with unknown prompted fields.')
-            else:
-                pretext = _('Job was launched with prompted fields.')
-            if credential_access:
-                self.messages['detail'] = '{} {}'.format(pretext, _(' Organization level permissions required.'))
-            else:
-                self.messages['detail'] = '{} {}'.format(pretext, _(' You do not have permission to related resources.'))
-        return ret
+        return False
 
     def get_method_capability(self, method, obj, parent_obj):
         if method == 'start':
