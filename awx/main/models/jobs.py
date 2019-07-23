@@ -908,7 +908,7 @@ class LaunchTimeConfigBase(BaseModel):
         '''
         Hides fields marked as passwords in survey.
         '''
-        if self.survey_passwords:
+        if hasattr(self, 'survey_passwords') and self.survey_passwords:
             extra_vars = parse_yaml_or_json(self.extra_vars).copy()
             for key, value in self.survey_passwords.items():
                 if key in extra_vars:
@@ -942,6 +942,15 @@ class LaunchTimeConfigBase(BaseModel):
             return None
 
 
+for field_name in JobTemplate.get_ask_mapping().keys():
+    if field_name == 'extra_vars':
+        continue
+    try:
+        LaunchTimeConfigBase._meta.get_field(field_name)
+    except FieldDoesNotExist:
+        setattr(LaunchTimeConfigBase, field_name, NullablePromptPsuedoField(field_name))
+
+
 class LaunchTimeConfig(LaunchTimeConfigBase):
     '''
     Common model for all objects that save details of a saved launch config
@@ -973,15 +982,6 @@ class LaunchTimeConfig(LaunchTimeConfigBase):
     @extra_vars.setter
     def extra_vars(self, extra_vars):
         self.extra_data = extra_vars
-
-
-for field_name in JobTemplate.get_ask_mapping().keys():
-    if field_name == 'extra_vars':
-        continue
-    try:
-        LaunchTimeConfig._meta.get_field(field_name)
-    except FieldDoesNotExist:
-        setattr(LaunchTimeConfig, field_name, NullablePromptPsuedoField(field_name))
 
 
 class JobLaunchConfig(LaunchTimeConfig):

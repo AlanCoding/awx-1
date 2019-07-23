@@ -287,7 +287,7 @@ class WorkflowJobNode(WorkflowNodeBase):
         return data
 
 
-class WorkflowJobOptions(BaseModel):
+class WorkflowJobOptions(LaunchTimeConfigBase):
     class Meta:
         abstract = True
 
@@ -361,6 +361,7 @@ class WorkflowJobTemplate(UnifiedJobTemplate, WorkflowJobOptions, SurveyJobTempl
         on_delete=models.SET_NULL,
         related_name='workflows',
     )
+    # declared here for help_text
     inventory = models.ForeignKey(
         'Inventory',
         related_name='%(class)ss',
@@ -371,6 +372,10 @@ class WorkflowJobTemplate(UnifiedJobTemplate, WorkflowJobOptions, SurveyJobTempl
         help_text=_('Inventory applied to all job templates in workflow that prompt for inventory.'),
     )
     ask_inventory_on_launch = AskForField(
+        blank=True,
+        default=False,
+    )
+    ask_limit_on_launch = AskForField(
         blank=True,
         default=False,
     )
@@ -500,7 +505,7 @@ class WorkflowJobTemplate(UnifiedJobTemplate, WorkflowJobOptions, SurveyJobTempl
         return WorkflowJob.objects.filter(workflow_job_template=self)
 
 
-class WorkflowJob(UnifiedJob, WorkflowJobOptions, SurveyJobMixin, JobNotificationMixin, LaunchTimeConfigBase):
+class WorkflowJob(UnifiedJob, WorkflowJobOptions, SurveyJobMixin, JobNotificationMixin):
     class Meta:
         app_label = 'main'
         ordering = ('id',)

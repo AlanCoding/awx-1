@@ -3135,10 +3135,15 @@ class WorkflowJobTemplateLaunch(RetrieveAPIView):
                 extra_vars.setdefault(v, u'')
             if extra_vars:
                 data['extra_vars'] = extra_vars
-            if obj.ask_inventory_on_launch:
-                data['inventory'] = obj.inventory_id
-            else:
-                data.pop('inventory', None)
+            modified_ask_mapping = models.WorkflowJobTemplate.get_ask_mapping()
+            modified_ask_mapping.pop('extra_vars')
+            for field_name, ask_field_name in obj.get_ask_mapping().items():
+                if not getattr(obj, ask_field_name):
+                    data.pop(field_name, None)
+                elif field == 'inventory':
+                    data[field] = getattrd(obj, "%s.%s" % (field, 'id'), None)
+                else:
+                    data[field] = getattr(obj, field)
         return data
 
     def post(self, request, *args, **kwargs):
