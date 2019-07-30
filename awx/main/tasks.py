@@ -1747,6 +1747,7 @@ class RunProjectUpdate(BaseTask):
     def __init__(self, *args, job_private_data_dir=None, **kwargs):
         super(RunProjectUpdate, self).__init__(*args, **kwargs)
         self.playbook_new_revision = None
+        self.original_branch = None
         self.job_private_data_dir = job_private_data_dir
 
     def event_handler(self, event_data):
@@ -2045,29 +2046,10 @@ class RunProjectUpdate(BaseTask):
             except Exception:
                 # this could have failed due to dirty tree, but difficult to predict all cases
                 logger.exception('Failed to restore project repo to prior state after {}'.format(instance.log_format))
-        # TODO: find the effective revision and save to scm_revision
         self.release_lock(instance)
         p = instance.project
         if self.playbook_new_revision:
             instance.scm_revision = self.playbook_new_revision
-            # If branch of the update differs from project, then its revision will differ
-            if instance.scm_branch != p.scm_branch and p.scm_type == 'git':
-                project_path = p.get_project_path(check_if_exists=False)
-                git_repo = git.Repo(project_path)
-                try:
-                    commit = git_repo.commit(instance.scm_branch)
-                    instance.scm_revision = commit.hexsha  # obtain 40 char long-form of SHA1
-                    logger.debug('Evaluated {} to be a valid commit for {}'.format(instance.scm_branch, instance.log_format))
-                except (ValueError, BadGitName):
-                    # not a commit, see if it is a ref
-                    try:
-                        user_branch = getattr(git_repo.remotes.origin.refs, instance.scm_branch)
-                        instance.scm_revision = user_branch.commit.hexsha  # head of ref
-                        logger.debug('Evaluated {} to be a valid ref for {}'.format(instance.scm_branch, instance.log_format))
-                    except (git.exc.NoSuchPathError, AttributeError) as exc:
-                        raise RuntimeError('Could not find specified version {}, error: {}'.format(
-                            instance.scm_branch, exc
-                        ))
             instance.save(update_fields=['scm_revision'])
         if instance.job_type == 'check' and status not in ('failed', 'canceled',):
             if self.playbook_new_revision:
