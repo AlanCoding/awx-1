@@ -2029,8 +2029,22 @@ class RunProjectUpdate(BaseTask):
         if not os.path.exists(settings.PROJECTS_ROOT):
             os.mkdir(settings.PROJECTS_ROOT)
         self.acquire_lock(instance)
+        self.original_branch = None
+        if instance.scm_type == 'git' and instance.job_type == 'run' and instance.project:
+            project_path = instance.project.get_project_path(check_if_exists=False)
+            if os.path.exists(project_path):
+                git_repo = git.Repo(project_path)
+                self.original_branch = git_repo.active_branch
 
     def post_run_hook(self, instance, status):
+        if self.original_branch:
+            # for git project syncs, non-default branches can be problems
+            # restore to branch the repo was on before this run
+            try:
+                self.original_branch.checkout()
+            except Exception:
+                # this could have failed due to dirty tree, but difficult to predict all cases
+                logger.exception('Failed to restore project repo to prior state after {}'.format(instance.log_format))
         # TODO: find the effective revision and save to scm_revision
         self.release_lock(instance)
         p = instance.project
