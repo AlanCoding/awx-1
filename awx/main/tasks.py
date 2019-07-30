@@ -73,7 +73,7 @@ from awx.main.utils import (get_ssh_version, update_scm_url,
                             ignore_inventory_computed_fields,
                             ignore_inventory_group_removal, extract_ansible_vars, schedule_task_manager,
                             get_awx_version)
-from awx.main.utils.common import _get_ansible_version, get_custom_venv_choices
+from awx.main.utils.common import get_ansible_version, _get_ansible_version, get_custom_venv_choices
 from awx.main.utils.safe_yaml import safe_dump, sanitize_jinja
 from awx.main.utils.reload import stop_local_services
 from awx.main.utils.pglock import advisory_lock
@@ -1883,6 +1883,15 @@ class RunProjectUpdate(BaseTask):
             scm_branch = project_update.project.scm_revision
         elif not scm_branch:
             scm_branch = {'hg': 'tip'}.get(project_update.scm_type, 'HEAD')
+        if project_update.job_type == 'check':
+            roles_enabled = False
+            collections_enabled = False
+        else:
+            roles_enabled = getattr(settings, 'AWX_ROLES_ENABLED', True)
+            collections_enabled = getattr(settings, 'AWX_COLLECTIONS_ENABLED', True)
+            # collections were introduced in Ansible version 2.8
+            if Version(get_ansible_version()) <= Version('2.8'):
+                collections_enabled = False
         extra_vars.update({
             'project_path': project_update.get_project_path(check_if_exists=False),
             'insights_url': settings.INSIGHTS_URL_BASE,
@@ -1894,8 +1903,8 @@ class RunProjectUpdate(BaseTask):
             'scm_clean': project_update.scm_clean,
             'scm_delete_on_update': project_update.scm_delete_on_update if project_update.job_type == 'check' else False,
             'scm_full_checkout': True if project_update.job_type == 'run' else False,
-            'roles_enabled': getattr(settings, 'AWX_ROLES_ENABLED', True) if project_update.job_type != 'check' else False,
-            'collections_enabled': getattr(settings, 'AWX_COLLECTIONS_ENABLED', True) if project_update.job_type != 'check' else False,
+            'roles_enabled': roles_enabled,
+            'collections_enabled': collections_enabled,
         })
         if project_update.job_type != 'check' and self.job_private_data_dir:
             extra_vars['collections_destination'] = os.path.join(self.job_private_data_dir, 'requirements_collections')
