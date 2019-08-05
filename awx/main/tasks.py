@@ -1699,7 +1699,11 @@ class RunJob(BaseTask):
             source_branch = git_repo.create_head(tmp_branch_name, job.scm_revision)
             # git clone must take file:// syntax for source repo or else options like depth will be ignored
             source_as_uri = Path(project_path).as_uri()
-            git.Repo.clone_from(source_as_uri, runner_project_folder, branch=source_branch, depth=1, single_branch=True)
+            git.Repo.clone_from(
+                source_as_uri, runner_project_folder, branch=source_branch,
+                depth=1, single_branch=True,  # shallow, do not copy full history
+                recursive=True  # include submodules
+            )
             # force option is necessary because remote refs are not counted, although no information is lost
             git_repo.delete_head(tmp_branch_name, force=True)
         else:
