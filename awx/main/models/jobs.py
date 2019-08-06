@@ -868,6 +868,7 @@ class LaunchTimeConfigBase(BaseModel):
         null=True,
         default=None,
         on_delete=models.SET_NULL,
+        help_text=_('Inventory applied as a prompt, assuming job template prompts for inventory')
     )
     # All standard fields are stored in this dictionary field
     # This is a solution to the nullable CharField problem, specific to prompting

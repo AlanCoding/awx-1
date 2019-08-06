@@ -18,7 +18,7 @@ from awx.main.models.notifications import (
     NotificationTemplate,
     JobNotificationMixin
 )
-from awx.main.models.base import BaseModel, CreatedModifiedModel, VarsDictProperty
+from awx.main.models.base import CreatedModifiedModel, VarsDictProperty
 from awx.main.models.rbac import (
     ROLE_SINGLETON_SYSTEM_ADMINISTRATOR,
     ROLE_SINGLETON_SYSTEM_AUDITOR
@@ -360,16 +360,6 @@ class WorkflowJobTemplate(UnifiedJobTemplate, WorkflowJobOptions, SurveyJobTempl
         null=True,
         on_delete=models.SET_NULL,
         related_name='workflows',
-    )
-    # declared here for help_text
-    inventory = models.ForeignKey(
-        'Inventory',
-        related_name='%(class)ss',
-        blank=True,
-        null=True,
-        default=None,
-        on_delete=models.SET_NULL,
-        help_text=_('Inventory applied to all job templates in workflow that prompt for inventory.'),
     )
     ask_inventory_on_launch = AskForField(
         blank=True,
