@@ -599,6 +599,10 @@ AWX_REBUILD_SMART_MEMBERSHIP = False
 # By default, allow arbitrary Jinja templating in extra_vars defined on a Job Template
 ALLOW_JINJA_IN_EXTRA_VARS = 'template'
 
+# What type of git project folder copy to use
+# choices: shallow, deep, everything
+AWX_JOB_PROJECT_COPY_METHOD = 'shallow'
+
 # Enable dynamically pulling roles from a requirement.yml file
 # when updating SCM projects
 # Note: This setting may be overridden by database settings.

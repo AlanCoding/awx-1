@@ -22,7 +22,7 @@ A new shallow copy is made for every job run.
 Jobs are free to make changes to the project folder and make use of those
 changes while it is still running.
 
-#### Use Cases That No Long Work
+#### Deprecated Use Cases
 
 With the introduction of this feature, the function of `scm_clean` is watered
 down. It will still be possible to enable this function, and it will be
@@ -32,10 +32,23 @@ Two notable cases that lose support are documented here.
 1) Setting `scm_clean` to `true` will no longer persist changes between job runs.
 
 That means that jobs that rely on content which is not committed to source
-control may fail now.
+control may fail now. You can restore some of the old functionality by
+making the setting `AWX_JOB_PROJECT_COPY_METHOD` equal to "everything".
+This will run jobs with a full copy of the project. This will still not
+allow jobs to affect other jobs because the directory copy is ephemeral.
+It will allow manually edited project source trees to affect jobs, as well
+as modifications made pre-migration.
+
+Some newer functionality will not work with this "everything" copy method.
+Changing refspec values can cause unexpected failures.
+Isolation between runs using different branches will also be incomplete
+such that job branch checkouts can bleed over into other jobs.
 
 2) Because it is a shallow copy, this folder will not contain the full
 git history for git project types.
+
+You may copy the full git history on each job run by making the
+setting `AWX_JOB_PROJECT_COPY_METHOD` equal to "deep".
 
 ### Project Revision Concerns
 

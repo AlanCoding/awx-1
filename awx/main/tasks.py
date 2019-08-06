@@ -1698,7 +1698,7 @@ class RunJob(BaseTask):
 
         # copy the project directory
         runner_project_folder = os.path.join(private_data_dir, 'project')
-        if job.project.scm_type == 'git':
+        if job.project.scm_type == 'git' and settings.AWX_JOB_PROJECT_COPY_METHOD in ('shallow', 'deep'):
             git_repo = git.Repo(project_path)
             if not os.path.exists(runner_project_folder):
                 os.mkdir(runner_project_folder)
@@ -1709,11 +1709,12 @@ class RunJob(BaseTask):
             source_branch = git_repo.create_head(tmp_branch_name, job.scm_revision)
             # git clone must take file:// syntax for source repo or else options like depth will be ignored
             source_as_uri = Path(project_path).as_uri()
+            copy_options = dict(recursive=True)  # include submodules
+            if settings.AWX_JOB_PROJECT_COPY_METHOD == 'shallow':  # do not copy full history
+                copy_options['depth'] = 1
+                copy_options['single_branch'] = True
             git.Repo.clone_from(
-                source_as_uri, runner_project_folder, branch=source_branch,
-                depth=1, single_branch=True,  # shallow, do not copy full history
-                recursive=True  # include submodules
-            )
+                source_as_uri, runner_project_folder, branch=source_branch, **copy_options)
             # force option is necessary because remote refs are not counted, although no information is lost
             git_repo.delete_head(tmp_branch_name, force=True)
         else:
@@ -2064,7 +2065,7 @@ class RunProjectUpdate(BaseTask):
                 self.original_branch = git_repo.active_branch
 
     def post_run_hook(self, instance, status):
-        if self.original_branch:
+        if self.original_branch and settings.AWX_JOB_PROJECT_COPY_METHOD != 'everything':
             # for git project syncs, non-default branches can be problems
             # restore to branch the repo was on before this run
             try:
