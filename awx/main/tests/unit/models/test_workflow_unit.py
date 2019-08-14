@@ -236,4 +236,4 @@ class TestWorkflowJobNodeJobKWARGS:
 
 
 def test_get_ask_mapping_integrity():
-    assert list(WorkflowJobTemplate.get_ask_mapping().keys()) == ['extra_vars', 'inventory', 'limit']
+    assert list(WorkflowJobTemplate.get_ask_mapping().keys()) == ['extra_vars', 'inventory', 'limit', 'scm_branch']

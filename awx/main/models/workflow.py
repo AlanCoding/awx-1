@@ -369,6 +369,10 @@ class WorkflowJobTemplate(UnifiedJobTemplate, WorkflowJobOptions, SurveyJobTempl
         blank=True,
         default=False,
     )
+    ask_scm_branch_on_launch = AskForField(
+        blank=True,
+        default=False,
+    )
     admin_role = ImplicitRoleField(parent_role=[
         'singleton:' + ROLE_SINGLETON_SYSTEM_ADMINISTRATOR,
         'organization.workflow_admin_role'

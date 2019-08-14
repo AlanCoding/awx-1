@@ -21,4 +21,9 @@ class Migration(migrations.Migration):
             name='ask_limit_on_launch',
             field=awx.main.fields.AskForField(blank=True, default=False),
         ),
+        migrations.AddField(
+            model_name='workflowjobtemplate',
+            name='ask_scm_branch_on_launch',
+            field=awx.main.fields.AskForField(blank=True, default=False),
+        ),
     ]
