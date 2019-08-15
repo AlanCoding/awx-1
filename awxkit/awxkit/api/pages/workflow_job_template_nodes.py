@@ -15,7 +15,7 @@ class WorkflowJobTemplateNode(HasCreate, base.Base):
         payload = PseudoNamespace(workflow_job_template=workflow_job_template.id,
                                   unified_job_template=unified_job_template.id)
 
-        optional_fields = ('diff_mode', 'extra_data', 'limit', 'job_tags', 'job_type', 'skip_tags', 'verbosity',
+        optional_fields = ('diff_mode', 'extra_data', 'limit', 'scm_branch', 'job_tags', 'job_type', 'skip_tags', 'verbosity',
                            'extra_data')
 
         update_payload(payload, optional_fields, kwargs)

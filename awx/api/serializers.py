@@ -3340,17 +3340,13 @@ class WorkflowJobTemplateSerializer(JobTemplateMixin, LabelsListMixin, UnifiedJo
 
     def validate(self, attrs):
         attrs = super(WorkflowJobTemplateSerializer, self).validate(attrs)
+        print('making mock objs')
 
-        # process char_prompts
+        # process char_prompts, these are not direct fields on the model
         mock_obj = self.Meta.model()
-        field_names = set(field.name for field in mock_obj._meta.fields)
-        if self.instance:
-            for field in self.instance._meta.fields:
-                setattr(mock_obj, field.name, getattr(self.instance, field.name))
-
-        for field_name, value in list(attrs.items()):
-            setattr(mock_obj, field_name, value)
-            if field_name not in field_names:
+        for field_name in ('scm_branch', 'limit'):
+            if field_name in attrs:
+                setattr(mock_obj, field_name, attrs[field_name])
                 attrs.pop(field_name)
 
         # Model `.save` needs the container dict, not the psuedo fields
