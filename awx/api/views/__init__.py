@@ -3129,7 +3129,6 @@ class WorkflowJobTemplateLabelList(JobTemplateLabelList):
 
 class WorkflowJobTemplateLaunch(RetrieveAPIView):
 
-
     model = models.WorkflowJobTemplate
     obj_permission_type = 'start'
     serializer_class = serializers.WorkflowJobLaunchSerializer

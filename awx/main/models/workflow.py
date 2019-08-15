@@ -196,11 +196,14 @@ class WorkflowJobNode(WorkflowNodeBase):
     def prompts_dict(self, *args, **kwargs):
         r = super(WorkflowJobNode, self).prompts_dict(*args, **kwargs)
         # Explanation - WFJT extra_vars still break pattern, so they are not
-        # put through prompts processing, but inventory is only accepted
+        # put through prompts processing, but inventory and others are only accepted
         # if JT prompts for it, so it goes through this mechanism
-        if self.workflow_job and self.workflow_job.inventory_id:
-            # workflow job inventory takes precedence
-            r['inventory'] = self.workflow_job.inventory
+        if self.workflow_job:
+            if self.workflow_job.inventory_id:
+                # workflow job inventory takes precedence
+                r['inventory'] = self.workflow_job.inventory
+            if self.workflow_job.char_prompts:
+                r.update(self.workflow_job.char_prompts)
         return r
 
     def get_job_kwargs(self):
@@ -307,9 +310,11 @@ class WorkflowJobOptions(LaunchTimeConfigBase):
 
     @classmethod
     def _get_unified_job_field_names(cls):
-        return set(f.name for f in WorkflowJobOptions._meta.fields) | set(
-            ['name', 'description', 'schedule', 'survey_passwords', 'labels', 'inventory', 'limit', 'scm_branch']
+        r = set(f.name for f in WorkflowJobOptions._meta.fields) | set(
+            ['name', 'description', 'survey_passwords', 'labels', 'limit', 'scm_branch']
         )
+        r.remove('char_prompts')  # needed due to copying launch config to launch config
+        return r
 
     def _create_workflow_nodes(self, old_node_list, user=None):
         node_links = {}

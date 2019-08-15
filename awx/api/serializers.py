@@ -3340,7 +3340,6 @@ class WorkflowJobTemplateSerializer(JobTemplateMixin, LabelsListMixin, UnifiedJo
 
     def validate(self, attrs):
         attrs = super(WorkflowJobTemplateSerializer, self).validate(attrs)
-        print('making mock objs')
 
         # process char_prompts, these are not direct fields on the model
         mock_obj = self.Meta.model()
@@ -4217,6 +4216,7 @@ class WorkflowJobLaunchSerializer(BaseSerializer):
         template.inventory = WFJT_inventory
         template.limit = WFJT_limit
         template.scm_branch = WFJT_scm_branch
+
         return accepted
 
 

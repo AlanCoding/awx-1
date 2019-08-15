@@ -39,7 +39,7 @@ from awx.main.models.notifications import (
     NotificationTemplate,
     JobNotificationMixin,
 )
-from awx.main.utils import parse_yaml_or_json, getattr_dne
+from awx.main.utils import parse_yaml_or_json, getattr_dne, NullablePromptPsuedoField
 from awx.main.fields import ImplicitRoleField, JSONField, AskForField
 from awx.main.models.mixins import (
     ResourceMixin,
@@ -271,7 +271,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
     @classmethod
     def _get_unified_job_field_names(cls):
         return set(f.name for f in JobOptions._meta.fields) | set(
-            ['name', 'description', 'schedule', 'survey_passwords', 'labels', 'credentials',
+            ['name', 'description', 'survey_passwords', 'labels', 'credentials',
              'job_slice_number', 'job_slice_count']
         )
 
@@ -827,25 +827,6 @@ class Job(UnifiedJob, JobOptions, SurveyJobMixin, JobNotificationMixin, TaskMana
                     'Facts cleared for inventory {} host {}'.format(
                         smart_str(host.inventory.name), smart_str(host.name)))
                 host.save()
-
-
-# Add on aliases for the non-related-model fields
-class NullablePromptPsuedoField(object):
-    """
-    Interface for psuedo-property stored in `char_prompts` dict
-    Used in LaunchTimeConfig and submodels
-    """
-    def __init__(self, field_name):
-        self.field_name = field_name
-
-    def __get__(self, instance, type=None):
-        return instance.char_prompts.get(self.field_name, None)
-
-    def __set__(self, instance, value):
-        if value in (None, {}):
-            instance.char_prompts.pop(self.field_name, None)
-        else:
-            instance.char_prompts[self.field_name] = value
 
 
 class LaunchTimeConfigBase(BaseModel):
