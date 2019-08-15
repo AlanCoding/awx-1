@@ -92,10 +92,9 @@ export default ['NotificationsList', 'i18n', function(NotificationsList, i18n) {
                 limit: {
                     label: i18n._('Limit'),
                     type: 'text',
-                    lookupMessage: i18n._("This limit is applied to all job template nodes that prompt for limit."),
                     column: 1,
                     awPopOver: "<p>" + i18n._("Select a limit for the workflow. This limit is applied to all job template nodes that prompt for a limit.") + "</p>",
-                    dataTitle: i18n._('Inventory'),
+                    dataTitle: i18n._('Limit'),
                     dataPlacement: 'right',
                     dataContainer: "body",
                     subCheckbox: {
@@ -107,7 +106,6 @@ export default ['NotificationsList', 'i18n', function(NotificationsList, i18n) {
                 scm_branch: {
                     label: i18n._('SCM Branch'),
                     type: 'text',
-                    lookupMessage: i18n._("This branch, tag, or commit reference is applied to all job template nodes that prompt for branch."),
                     column: 1,
                     awPopOver: "<p>" + i18n._("Select a branch for the workflow. This branch is applied to all job template nodes that prompt for a branch.") + "</p>",
                     dataTitle: i18n._('SCM Branch'),
