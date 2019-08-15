@@ -308,8 +308,7 @@ class WorkflowJobOptions(LaunchTimeConfigBase):
     @classmethod
     def _get_unified_job_field_names(cls):
         return set(f.name for f in WorkflowJobOptions._meta.fields) | set(
-            # NOTE: if other prompts are added to WFJT, put fields in WJOptions, remove inventory
-            ['name', 'description', 'schedule', 'survey_passwords', 'labels', 'inventory']
+            ['name', 'description', 'schedule', 'survey_passwords', 'labels', 'inventory', 'limit', 'scm_branch']
         )
 
     def _create_workflow_nodes(self, old_node_list, user=None):
