@@ -297,9 +297,9 @@ class TestWorkflowJobTemplatePrompts:
     def test_apply_workflow_job_prompts(self, workflow_job_template, wfjt_prompts, prompts_data, inventory):
         # null or empty fields used
         workflow_job = workflow_job_template.create_unified_job()
-        assert workflow_job.limit == None
-        assert workflow_job.inventory == None
-        assert workflow_job.scm_branch == None
+        assert workflow_job.limit is None
+        assert workflow_job.inventory is None
+        assert workflow_job.scm_branch is None
 
         # fields from prompts used
         workflow_job = workflow_job_template.create_unified_job(**prompts_data)
