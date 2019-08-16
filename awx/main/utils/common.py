@@ -495,12 +495,18 @@ def copy_model_by_class(obj1, Class2, fields, kwargs):
             create_kwargs[id_field_name] = value
         elif isinstance(descriptor, CharPromptDescriptor):
             # difficult case of copying one launch config to another launch config
+            new_val = None
             if field_name in kwargs:
+                new_val = kwargs[field_name]
+            elif hasattr(obj1, 'char_prompts'):
+                if field_name in obj1.char_prompts:
+                    new_val = obj1.char_prompts[field_name]
+            elif hasattr(obj1, field_name):
+                # extremely rare case where a template spawns a launch config - sliced jobs
+                new_val = getattr(obj1, field_name)
+            if new_val is not None:
                 create_kwargs.setdefault('char_prompts', {})
-                create_kwargs['char_prompts'][field_name] = kwargs[field_name]
-            elif field_name in obj1.char_prompts:
-                create_kwargs.setdefault('char_prompts', {})
-                create_kwargs['char_prompts'][field_name] = obj1.char_prompts[field_name]
+                create_kwargs['char_prompts'][field_name] = new_val
         elif isinstance(descriptor, ManyToManyDescriptor):
             continue  # not coppied in this method
         elif field_name in kwargs:
