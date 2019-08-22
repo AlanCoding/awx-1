@@ -43,12 +43,6 @@ class TestWorkflowJobTemplateSerializerGetRelated():
 @mock.patch('awx.api.serializers.BaseSerializer.get_related', lambda x,y: {})
 class TestWorkflowNodeBaseSerializerGetRelated():
     @pytest.fixture
-    def job_template(self, job_template_factory):
-        jt = job_template_factory(name="blah", persisted=False).job_template
-        jt.pk = 1
-        return jt
-
-    @pytest.fixture
     def workflow_job_template_node_related(self, job_template):
         return WorkflowJobTemplateNode(pk=1, unified_job_template=job_template)
 
@@ -77,12 +71,6 @@ class TestWorkflowJobTemplateNodeSerializerGetRelated():
         wfjt = workflow_job_template_factory("bliggity", persisted=False).workflow_job_template
         wfjt.pk = 1
         return wfjt
-
-    @pytest.fixture
-    def job_template(self, job_template_factory):
-        jt = job_template_factory(name="blah", persisted=False).job_template
-        jt.pk = 1
-        return jt
 
     @pytest.fixture
     def workflow_job_template_node_related(self, workflow_job_template_node, workflow_job_template):

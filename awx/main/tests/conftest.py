@@ -5,15 +5,7 @@ from unittest import mock
 from contextlib import contextmanager
 
 from awx.main.models import Credential
-from awx.main.tests.factories import (
-    create_organization,
-    create_job_template,
-    create_instance,
-    create_instance_group,
-    create_notification_template,
-    create_survey_spec,
-    create_workflow_job_template,
-)
+from awx.main.tests.factories import create_survey_spec, create_workflow_job_template
 
 from django.core.cache import cache
 
@@ -35,54 +27,8 @@ def pytest_unconfigure(config):
 
 
 @pytest.fixture
-def mock_access():
-    @contextmanager
-    def access_given_class(TowerClass):
-        try:
-            mock_instance = mock.MagicMock(__name__='foobar')
-            MockAccess = mock.MagicMock(return_value=mock_instance)
-            the_patch = mock.patch.dict('awx.main.access.access_registry',
-                                        {TowerClass: MockAccess}, clear=False)
-            the_patch.__enter__()
-            yield mock_instance
-        finally:
-            the_patch.__exit__()
-    return access_given_class
-
-
-@pytest.fixture
-def job_template_factory():
-    return create_job_template
-
-
-@pytest.fixture
-def organization_factory():
-    return create_organization
-
-
-@pytest.fixture
-def notification_template_factory():
-    return create_notification_template
-
-
-@pytest.fixture
 def survey_spec_factory():
     return create_survey_spec
-
-
-@pytest.fixture
-def instance_factory():
-    return create_instance
-
-
-@pytest.fixture
-def instance_group_factory():
-    return create_instance_group
-
-
-@pytest.fixture
-def default_instance_group(instance_factory, instance_group_factory):
-    return create_instance_group("tower", instances=[create_instance("hostA")])
 
 
 @pytest.fixture
@@ -98,18 +44,8 @@ def job_template_with_survey_passwords_factory(job_template_factory):
 
 
 @pytest.fixture
-def job_with_secret_key_unit(job_with_secret_key_factory):
-    return job_with_secret_key_factory(persisted=False)
-
-
-@pytest.fixture
 def workflow_job_template_factory():
     return create_workflow_job_template
-
-
-@pytest.fixture
-def get_ssh_version(mocker):
-    return mocker.patch('awx.main.tasks.get_ssh_version', return_value='OpenSSH_6.9p1, LibreSSL 2.1.8')
 
 
 @pytest.fixture

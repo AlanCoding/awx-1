@@ -50,6 +50,15 @@ from awx.main.models.events import (
 from awx.main.models.workflow import WorkflowJobTemplate
 from awx.main.models.ad_hoc_commands import AdHocCommand
 from awx.main.models.oauth import OAuth2Application as Application
+from awx.main.tests.factories import (
+    create_organization,
+    create_job_template,
+    create_instance,
+    create_instance_group,
+    create_notification_template,
+    create_workflow_job_template,
+)
+
 
 __SWAGGER_REQUESTS__ = {}
 
@@ -57,6 +66,22 @@ __SWAGGER_REQUESTS__ = {}
 @pytest.fixture(scope="session")
 def swagger_autogen(requests=__SWAGGER_REQUESTS__):
     return requests
+
+
+@pytest.fixture
+def mock_access():
+@contextmanager
+def access_given_class(TowerClass):
+    try:
+        mock_instance = mock.MagicMock(__name__='foobar')
+        MockAccess = mock.MagicMock(return_value=mock_instance)
+        the_patch = mock.patch.dict('awx.main.access.access_registry',
+                                    {TowerClass: MockAccess}, clear=False)
+        the_patch.__enter__()
+        yield mock_instance
+    finally:
+        the_patch.__exit__()
+return access_given_class
 
 
 @pytest.fixture
@@ -102,25 +127,6 @@ def team(organization):
 
 
 @pytest.fixture
-def team_member(user, team):
-    ret = user('team-member', False)
-    team.member_role.members.add(ret)
-    return ret
-
-
-@pytest.fixture(scope="session", autouse=True)
-def project_playbooks():
-    '''
-    Return playbook_files as playbooks for manual projects when testing.
-    '''
-    class PlaybooksMock(mock.PropertyMock):
-        def __get__(self, obj, obj_type):
-            return obj.playbook_files
-    mocked = mock.patch.object(Project, 'playbooks', new_callable=PlaybooksMock)
-    mocked.start()
-
-
-@pytest.fixture
 @mock.patch.object(Project, "update", lambda self, **kwargs: None)
 def project(instance, organization):
     prj = Project.objects.create(name="test-proj",
@@ -145,52 +151,6 @@ def manual_project(instance, organization):
                                  local_path='_92__test_proj'
                                  )
     return prj
-
-
-@pytest.fixture
-def project_factory(organization):
-    def factory(name):
-        try:
-            prj = Project.objects.get(name=name)
-        except Project.DoesNotExist:
-            prj = Project.objects.create(name=name,
-                                         description="description for " + name,
-                                         organization=organization
-                                         )
-        return prj
-    return factory
-
-
-@pytest.fixture
-def job_factory(job_template, admin):
-    def factory(job_template=job_template, initial_state='new', created_by=admin):
-        return job_template.create_unified_job(_eager_fields={
-            'status': initial_state, 'created_by': created_by})
-    return factory
-
-
-@pytest.fixture
-def team_factory(organization):
-    def factory(name):
-        try:
-            t = Team.objects.get(name=name)
-        except Team.DoesNotExist:
-            t = Team.objects.create(name=name,
-                                    description="description for " + name,
-                                    organization=organization)
-        return t
-    return factory
-
-
-@pytest.fixture
-def user_project(user):
-    owner = user('owner')
-    return Project.objects.create(name="test-user-project", created_by=owner, description="test-user-project-desc")
-
-
-@pytest.fixture
-def insights_project():
-    return Project.objects.create(name="test-insights-project", scm_type="insights")
 
 
 @pytest.fixture
@@ -282,12 +242,6 @@ def credentialtype_external():
 
 
 @pytest.fixture
-def credential(credentialtype_aws):
-    return Credential.objects.create(credential_type=credentialtype_aws, name='test-cred',
-                                     inputs={'username': 'something', 'password': 'secret'})
-
-
-@pytest.fixture
 def net_credential(credentialtype_net):
     return Credential.objects.create(credential_type=credentialtype_net, name='test-cred',
                                      inputs={'username': 'something', 'password': 'secret'})
@@ -372,6 +326,35 @@ def inventory_factory(organization):
             inv = Inventory.objects.create(name=name, organization=org)
         return inv
     return factory
+
+
+@pytest.fixture
+def job_template_factory():
+    return create_job_template
+
+
+@pytest.fixture
+def organization_factory():
+    return create_organization
+
+
+@pytest.fixture
+def notification_template_factory():
+    return create_notification_template
+
+@pytest.fixture
+def instance_factory():
+    return create_instance
+
+
+@pytest.fixture
+def instance_group_factory():
+    return create_instance_group
+
+
+@pytest.fixture
+def default_instance_group(instance_factory, instance_group_factory):
+    return create_instance_group("tower", instances=[create_instance("hostA")])
 
 
 @pytest.fixture
@@ -735,11 +718,6 @@ def get_db_prep_save(self, value, connection, **kwargs):
         value = dumps(value)
 
     return value
-
-
-@pytest.fixture
-def monkeypatch_jsonbfield_get_db_prep_save(mocker):
-    JSONBField.get_db_prep_save = get_db_prep_save
 
 
 @pytest.fixture

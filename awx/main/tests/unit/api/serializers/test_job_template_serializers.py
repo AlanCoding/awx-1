@@ -10,7 +10,6 @@ from awx.api.views import JobTemplateDetail
 from awx.main.models import (
     Role,
     User,
-    Job,
     JobTemplate,
 )
 from rest_framework.test import APIRequestFactory
@@ -30,16 +29,6 @@ def job_template(mocker):
     mock_jt.host_config_key = '9283920492'
     mock_jt.validation_errors = mock_JT_resource_data
     return mock_jt
-
-
-@pytest.fixture
-def job(mocker, job_template):
-    return mocker.MagicMock(pk=5, job_template=job_template)
-
-
-@pytest.fixture
-def jobs(mocker):
-    return [Job(id=x, name='job-%d' % x) for x in range(0, 25)]
 
 
 @mock.patch('awx.api.serializers.UnifiedJobTemplateSerializer.get_related', lambda x,y: {})

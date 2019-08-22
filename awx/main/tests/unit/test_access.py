@@ -21,6 +21,7 @@ from awx.main.models import (
     Project,
     Role,
     Organization,
+    JobTemplate
 )
 
 
@@ -130,25 +131,11 @@ def test_encrypted_vars_detection():
 
 
 @pytest.fixture
-def job_template_with_ids(job_template_factory):
-    # Create non-persisted objects with IDs to send to job_template_factory
-    ssh_type = CredentialType(kind='ssh')
-    credential = Credential(id=1, pk=1, name='testcred', credential_type=ssh_type)
-
-    net_type = CredentialType(kind='net')
-    net_cred = Credential(id=2, pk=2, name='testnetcred', credential_type=net_type)
-
-    cloud_type = CredentialType(kind='aws')
-    cloud_cred = Credential(id=3, pk=3, name='testcloudcred', credential_type=cloud_type)
-
+def job_template_with_ids(mocker):
     inv = Inventory(id=11, pk=11, name='testinv')
     proj = Project(id=14, pk=14, name='testproj')
 
-    jt_objects = job_template_factory(
-        'testJT', project=proj, inventory=inv, credential=credential,
-        cloud_credential=cloud_cred, network_credential=net_cred,
-        persisted=False)
-    return jt_objects.job_template
+    return JobTemplate(name='testJT', project=proj, inventory=inv, id=14, pk=14)
 
 
 def test_superuser(mocker):
@@ -171,7 +158,10 @@ def test_jt_existing_values_are_nonsensitive(job_template_with_ids, user_unit):
     """Assure that permission checks are not required if submitted data is
     identical to what the job template already has."""
 
-    data = model_to_dict(job_template_with_ids, exclude=['unifiedjobtemplate_ptr'])
+    data = model_to_dict(
+        job_template_with_ids,
+        exclude=['unifiedjobtemplate_ptr'] + [f.name for f in JobTemplate._meta.many_to_many]
+    )
     access = JobTemplateAccess(user_unit)
 
     assert access.changes_are_non_sensitive(job_template_with_ids, data)

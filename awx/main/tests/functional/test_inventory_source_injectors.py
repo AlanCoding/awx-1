@@ -105,7 +105,6 @@ def credential_kind(source):
     return source.replace('ec2', 'aws')
 
 
-@pytest.fixture
 def fake_credential_factory(source):
     ct = CredentialType.defaults[credential_kind(source)]()
     ct.save()

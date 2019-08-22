@@ -734,14 +734,6 @@ class TestJobCredentials(TestJobExecution):
         with mock.patch.object(UnifiedJob, 'credentials', credentials_mock):
             yield job
 
-    @pytest.fixture
-    def update_model_wrapper(self, job):
-        def fn(pk, **kwargs):
-            for k, v in kwargs.items():
-                setattr(job, k, v)
-            return job
-        return fn
-
     parametrize = {
         'test_ssh_passwords': [
             dict(field='password', password_name='ssh_password', expected_flag='--ask-pass'),

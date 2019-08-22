@@ -119,13 +119,6 @@ class TestIsolatedManagementTask:
         inst.save()
         return inst
 
-    @pytest.fixture
-    def old_version(self, control_group):
-        ig = InstanceGroup.objects.create(name='thepentagon', controller=control_group)
-        inst = ig.instances.create(hostname='isolated-old', capacity=103)
-        inst.save()
-        return inst
-
     def test_takes_action(self, control_instance, needs_updating):
         original_isolated_instance = needs_updating.instances.all().first()
         with mock.patch('awx.main.tasks.settings', MockSettings()):

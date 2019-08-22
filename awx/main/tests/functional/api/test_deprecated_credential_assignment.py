@@ -7,14 +7,6 @@ from awx.api.versioning import reverse
 
 
 @pytest.fixture
-def ec2_source(inventory, project):
-    with mock.patch('awx.main.models.unified_jobs.UnifiedJobTemplate.update'):
-        return inventory.inventory_sources.create(
-            name='some_source', update_on_project_update=True, source='ec2',
-            source_project=project, scm_last_revision=project.scm_revision)
-
-
-@pytest.fixture
 def job_template(job_template, project, inventory):
     job_template.playbook = 'helloworld.yml'
     job_template.project = project

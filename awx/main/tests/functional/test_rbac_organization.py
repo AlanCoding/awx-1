@@ -4,6 +4,7 @@ import pytest
 from awx.main.access import (
     BaseAccess,
     OrganizationAccess,
+    TeamAccess
 )
 
 
@@ -48,3 +49,8 @@ def test_org_resource_role(ext_auth, organization, rando, org_admin):
         assert access.can_attach(organization, rando, 'member_role.members') == ext_auth
         organization.member_role.members.add(rando)
         assert access.can_unattach(organization, rando, 'member_role.members') == ext_auth
+
+
+@pytest.mark.django_db
+def test_org_admin_can_manage_teams(org_admin, team):
+    assert TeamAccess(org_admin).can_change(team, {'name': 'new name'})
