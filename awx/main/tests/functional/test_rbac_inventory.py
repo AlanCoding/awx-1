@@ -4,12 +4,16 @@ from awx.main.models import (
     Host,
     CustomInventoryScript,
     Schedule,
+    Inventory,
+    InventorySource,
+    InventoryUpdate
 )
 from awx.main.access import (
     InventoryAccess,
     InventorySourceAccess,
     HostAccess,
     InventoryUpdateAccess,
+    UnifiedJobAccess,
     CustomInventoryScriptAccess,
     ScheduleAccess,
 )
@@ -109,6 +113,17 @@ def test_access_auditor(organization, inventory, user):
 def test_inventory_update_org_admin(inventory_update, org_admin):
     access = InventoryUpdateAccess(org_admin)
     assert access.can_delete(inventory_update)
+
+
+@pytest.mark.django_db
+def test_inventory_update_read_access(organization, rando):
+    inv = Inventory.objects.create(name='foo', organization=organization)
+    inv_src = InventorySource.objects.create(inventory=inv, name='foo2')
+    inventory_update = InventoryUpdate.objects.create(inventory_source=inv_src)
+
+    inv.read_role.members.add(rando)
+    assert InventoryUpdateAccess(rando).can_read(inventory_update)
+    assert UnifiedJobAccess(rando).can_read(inventory_update)
 
 
 @pytest.mark.parametrize("role_field,allowed", [

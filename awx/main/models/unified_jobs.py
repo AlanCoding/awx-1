@@ -188,8 +188,7 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, Notificatio
 
     @classmethod
     def _submodels_with_roles(cls):
-        ujt_classes = [c for c in cls.__subclasses__()
-                       if c._meta.model_name not in ['inventorysource', 'systemjobtemplate']]
+        ujt_classes = [c for c in cls.__subclasses__() if c._meta.model_name != 'systemjobtemplate']
         ct_dict = ContentType.objects.get_for_models(*ujt_classes)
         return [ct.id for ct in ct_dict.values()]
 

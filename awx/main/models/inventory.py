@@ -1453,6 +1453,9 @@ class InventorySource(UnifiedJobTemplate, InventorySourceOptions, CustomVirtualE
         app_label = 'main'
         ordering = ('inventory', 'name')
 
+    # only used for filtering
+    read_role = ImplicitRoleField(parent_role=['inventory.read_role'])
+
     inventory = models.ForeignKey(
         'Inventory',
         related_name='inventory_sources',

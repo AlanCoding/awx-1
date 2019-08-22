@@ -2423,7 +2423,6 @@ class UnifiedJobAccess(BaseAccess):
             Q(admin_role__members=self.user) | Q(auditor_role__members=self.user))
         qs = self.model.objects.filter(
             Q(unified_job_template_id__in=UnifiedJobTemplate.accessible_pk_qs(self.user, 'read_role')) |
-            Q(inventoryupdate__inventory_source__inventory__id__in=inv_pk_qs) |
             Q(adhoccommand__inventory__id__in=inv_pk_qs) |
             Q(job__inventory__organization__in=org_auditor_qs) |
             Q(job__project__organization__in=org_auditor_qs)
