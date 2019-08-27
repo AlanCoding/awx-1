@@ -82,7 +82,7 @@ status:
 '''
 
 
-from .plugins.module_utils.ansible_tower import TowerModule, tower_auth_config, tower_check_mode
+from ..module_utils.ansible_tower import TowerModule, tower_auth_config, tower_check_mode
 from ansible.module_utils.six.moves import cStringIO as StringIO
 
 
