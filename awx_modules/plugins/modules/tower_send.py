@@ -76,7 +76,7 @@ import os
 import sys
 
 from ansible.module_utils.six.moves import StringIO
-from ansible_collections.awx.awx.plugins.module_utils.ansible_tower import TowerModule, tower_auth_config, HAS_TOWER_CLI
+from .plugins.module_utils.ansible_tower import TowerModule, tower_auth_config, HAS_TOWER_CLI
 
 from tempfile import mkstemp
 

@@ -93,7 +93,7 @@ EXAMPLES = '''
 
 import os
 
-from ansible_collections.awx.awx.plugins.module_utils.ansible_tower import TowerModule, tower_auth_config, tower_check_mode
+from .plugins.module_utils.ansible_tower import TowerModule, tower_auth_config, tower_check_mode
 
 try:
     import tower_cli

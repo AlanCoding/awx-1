@@ -109,7 +109,7 @@ assets:
     sample: [ {}, {} ]
 '''
 
-from ansible_collections.awx.awx.plugins.module_utils.ansible_tower import TowerModule, tower_auth_config, HAS_TOWER_CLI
+from .plugins.module_utils.ansible_tower import TowerModule, tower_auth_config, HAS_TOWER_CLI
 
 try:
     from tower_cli.cli.transfer.receive import Receiver

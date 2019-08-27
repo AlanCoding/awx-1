@@ -94,7 +94,7 @@ RETURN = ''' # '''
 
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.awx.awx.plugins.module_utils.ansible_tower import (
+from .plugins.module_utils.ansible_tower import (
     TowerModule,
     tower_auth_config,
     tower_check_mode
