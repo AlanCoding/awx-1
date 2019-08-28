@@ -1886,7 +1886,7 @@ class RunProjectUpdate(BaseTask):
         # If private galaxy URL is non-blank, that means this feature is enabled
         if settings.PRIMARY_GALAXY_URL:
             # set up the fallback server, which is the normal Ansible Galaxy
-            env['ANSIBLE_GALAXY_SERVER_GALAXY_URL'] = 'https://galaxy.ansible.com'
+            env['ANSIBLE_GALAXY_SERVER_GALAXY_URL'] = settings.PUBLIC_GALAXY_URL
             for key in ('url', 'username', 'password', 'token'):
                 setting_name = 'PRIMARY_GALAXY_{}'.format(key.upper())
                 value = getattr(settings, setting_name)
