@@ -18,7 +18,7 @@ COMPOSE_TAG ?= $(GIT_BRANCH)
 COMPOSE_HOST ?= $(shell hostname)
 
 VENV_BASE ?= /venv
-MODULES_VENV ?= /awx_devel/awx_modules/test_venv
+MODULES_VENV ?= /awx_devel/awx_modules_test_venv
 SCL_PREFIX ?=
 CELERY_SCHEDULE_FILE ?= /var/lib/awx/beat.db
 
@@ -379,21 +379,21 @@ test:
 	PYTHONDONTWRITEBYTECODE=1 py.test -p no:cacheprovider -n auto $(TEST_DIRS)
 	cd awxkit && $(VENV_BASE)/awx/bin/tox -re py2,py3
 	cd /awx_devel
-	prepare_modules_test
+	prepare_modules_venv
 	modules_test
 	awx-manage check_migrations --dry-run --check  -n 'vNNN_missing_migration_file'
 
-prepare_modules_test:
+prepare_modules_venv:
 	rm -rf $(MODULES_VENV)
 	mkdir $(MODULES_VENV)
 	ln -s /usr/lib/python2.7/site-packages/ansible $(MODULES_VENV)/ansible
-	pip install --target=$(MODULES_VENV) git+https://github.com/ansible/tower-cli.git
+	$(VENV_BASE)/awx/bin/pip install --target=$(MODULES_VENV) git+https://github.com/ansible/tower-cli.git
 
 test_modules:
 	@if [ "$(VENV_BASE)" ]; then \
 		. $(VENV_BASE)/awx/bin/activate; \
 	fi; \
-	PYTHONPATH=$(MODULES_VENV):$PYTHONPATH py.test awx/main/tests/functional/modules/test_config.py
+	PYTHONPATH=$(MODULES_VENV):/awx_devel/awx_modules:$PYTHONPATH py.test awx_modules/test/awx
 
 test_unit:
 	@if [ "$(VENV_BASE)" ]; then \

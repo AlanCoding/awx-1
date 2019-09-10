@@ -17,13 +17,6 @@ from awx.main.tests.functional.conftest import _request
 
 @pytest.mark.django_db
 def test_param_specification(admin_user):
-    root_path = os.path.abspath(os.path.join(
-        __file__,
-        os.pardir, os.pardir, os.pardir, os.pardir, os.pardir, os.pardir,
-        'awx_modules'
-    ))
-
-    sys.path.append(root_path)
 
     def new_request(self, method, url, **kwargs):
         kwargs_copy = kwargs.copy()
