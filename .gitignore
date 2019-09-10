@@ -137,3 +137,4 @@ use_dev_supervisor.txt
 
 # Ansible module tests
 awx_modules_test_venv/
+awx-awx-*.tar.gz

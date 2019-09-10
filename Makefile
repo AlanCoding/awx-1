@@ -380,7 +380,7 @@ test:
 	cd awxkit && $(VENV_BASE)/awx/bin/tox -re py2,py3
 	cd /awx_devel
 	make prepare_modules_venv
-	make modules_test
+	make test_modules
 	awx-manage check_migrations --dry-run --check  -n 'vNNN_missing_migration_file'
 
 prepare_modules_venv:

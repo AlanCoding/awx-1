@@ -26,3 +26,16 @@ make test_modules
 ```
 
 Subsequently, you can run just `make test_modules`.
+
+## Building
+
+To build, you should not be in the AWX virtual environment.
+This should work on any machine that has a sufficiently recent version
+of Ansible installed.
+
+```
+cd awx_modules
+ansible-galaxy build
+```
+
+This will leave a tar file in the awx_modules directory.
