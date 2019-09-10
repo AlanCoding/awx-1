@@ -134,3 +134,6 @@ venv/*
 use_dev_supervisor.txt
 
 .idea/*
+
+# Ansible module tests
+awx_modules/test_venv/
