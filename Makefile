@@ -379,8 +379,8 @@ test:
 	PYTHONDONTWRITEBYTECODE=1 py.test -p no:cacheprovider -n auto $(TEST_DIRS)
 	cd awxkit && $(VENV_BASE)/awx/bin/tox -re py2,py3
 	cd /awx_devel
-	prepare_modules_venv
-	modules_test
+	make prepare_modules_venv
+	make modules_test
 	awx-manage check_migrations --dry-run --check  -n 'vNNN_missing_migration_file'
 
 prepare_modules_venv:

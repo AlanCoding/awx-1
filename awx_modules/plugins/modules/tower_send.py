@@ -138,7 +138,7 @@ def main():
             sys.stdout = captured_stdout = StringIO()
             try:
                 sender.send(files, prevent, password_management)
-            except TypeError as e:
+            except TypeError:
                 # Newer versions of TowerCLI require 4 parameters
                 sender.send(files, prevent, [], password_management)
 

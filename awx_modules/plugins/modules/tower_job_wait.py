@@ -125,7 +125,7 @@ def main():
         job_id = params.get('job_id')
         try:
             result = job.monitor(job_id, **params)
-        except exc.Timeout as excinfo:
+        except exc.Timeout:
             result = job.status(job_id)
             result['id'] = job_id
             json_output['msg'] = 'Timeout waiting for job to finish.'
