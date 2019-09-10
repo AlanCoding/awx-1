@@ -1,6 +1,7 @@
 import io
 import json
 import datetime
+import importlib
 from contextlib import redirect_stdout
 from unittest import mock
 
@@ -9,6 +10,7 @@ from requests.models import Response
 import pytest
 
 from awx.main.tests.functional.conftest import _request
+from awx.main.models import Organization, Project, Inventory, Credential, CredentialType
 
 
 def sanitize_dict(din):
@@ -33,7 +35,7 @@ def sanitize_dict(din):
 
 @pytest.fixture
 def run_module():
-    def rf(module_args, request_user):
+    def rf(module_name, module_args, request_user):
 
         def new_request(self, method, url, **kwargs):
             kwargs_copy = kwargs.copy()
@@ -60,15 +62,52 @@ def run_module():
             # https://github.com/ansible/tower-cli/pull/489/files
             with mock.patch('tower_cli.api.Session.request', new=new_request):
                 with redirect_stdout(stdout_buffer):
+                    # Requies specific PYTHONPATH, see docs
+                    resource_module = importlib.import_module('plugins.modules.{}'.format(module_name))
                     try:
-                        from plugins.modules import tower_organization
-                        tower_organization.main()
+                        resource_module.main()
                     except SystemExit:
-                        # A system exit is what we want for successful execution
-                        pass
+                        pass  # A system exit indicates successful execution
 
         module_stdout = stdout_buffer.getvalue().strip()
         result = json.loads(module_stdout)
         return result
 
     return rf
+
+
+@pytest.fixture
+def organization():
+    return Organization.objects.create(name='Default')
+
+
+@pytest.fixture
+def project(organization):
+    return Project.objects.create(
+        name="test-proj",
+        description="test-proj-desc",
+        organization=organization,
+        playbook_files=['helloworld.yml'],
+        local_path='_92__test_proj',
+        scm_revision='1234567890123456789012345678901234567890',
+        scm_url='localhost',
+        scm_type='git'
+    )
+
+
+@pytest.fixture
+def inventory(organization):
+    return Inventory.objects.create(
+        name='test-inv',
+        organization=organization
+    )
+
+
+@pytest.fixture
+def machine_credential(organization):
+    ssh_type = CredentialType.defaults['ssh']()
+    ssh_type.save()
+    return Credential.objects.create(
+        credential_type=ssh_type, name='machine-cred',
+        inputs={'username': 'test_user', 'password': 'pas4word'}
+    )
