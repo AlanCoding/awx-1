@@ -6,26 +6,34 @@ in Ansible playbooks.
 The previous home for these modules was in https://github.com/ansible/ansible
 inside the folder `lib/ansible/modules/web_infrastructure/ansible_tower`.
 
-## Tests
+## Running
 
-Tests to verify compatibility with the most recent AWX code are being
-built in `awx_modules/test/awx`. These tests require that all of the
-following are available in the python environment:
+To use these modules, the "old" tower-cli needs to be installed
+in the virtual environment where the modules run.
+You can install it from either:
 
- - AWX
- - Ansible
- - tower-cli
+ - https://github.com/ansible/tower-cli/
+ - https://pypi.org/project/ansible-tower-cli/
 
-This requires a non-obvious configuration, and a special install location
-is used for it. In the AWX development container, you can run the
-targets:
+To use these modules in AWX, you should create a custom virtual environment
+to install the requirement into. NOTE: you will also probably still need
+to set the job template extra_vars to include `ansible_python_interpreter`
+to be the python in that virtual environment.
+
+## Running Tests
+
+Tests to verify compatibility with the most recent AWX code exist
+in `awx_modules/test/awx`. These tests require that python packages
+are available for all of `awx`, `ansible`, `tower_cli`, and the modules
+themselves.
+
+The target `make prepare_modules_venv` will prepare some requirements
+in the `awx_modules_test_venv` folder so that `make test_modules` can
+be ran to actually run the tests. A single test can be ran via:
 
 ```
-make prepare_modules_venv
-make test_modules
+make test_modules MODULE_TEST_DIRS=awx_modules/test/awx/test_organization.py
 ```
-
-Subsequently, you can run just `make test_modules`.
 
 ## Building
 
@@ -39,3 +47,6 @@ ansible-galaxy build
 ```
 
 This will leave a tar file in the awx_modules directory.
+
+This process may be amended in the future to template components of `galaxy.yml`
+from values (such as version) taken from AWX.
