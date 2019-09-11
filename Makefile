@@ -389,11 +389,13 @@ prepare_modules_venv:
 	ln -s /usr/lib/python2.7/site-packages/ansible $(MODULES_VENV)/ansible
 	$(VENV_BASE)/awx/bin/pip install --target=$(MODULES_VENV) git+https://github.com/ansible/tower-cli.git
 
+MODULES_TEST_DIRS ?= awx_modules/test/awx
+
 test_modules:
 	@if [ "$(VENV_BASE)" ]; then \
 		. $(VENV_BASE)/awx/bin/activate; \
 	fi; \
-	PYTHONPATH=$(MODULES_VENV):/awx_devel/awx_modules:$PYTHONPATH py.test awx_modules/test/awx
+	PYTHONPATH=$(MODULES_VENV):/awx_devel/awx_modules:$PYTHONPATH py.test $(MODULES_TEST_DIRS)
 
 test_unit:
 	@if [ "$(VENV_BASE)" ]; then \

@@ -35,7 +35,7 @@ def sanitize_dict(din):
 
 @pytest.fixture
 def run_module():
-    def rf(module_name, module_args, request_user):
+    def rf(module_name, module_params, request_user):
 
         def new_request(self, method, url, **kwargs):
             kwargs_copy = kwargs.copy()
@@ -56,14 +56,22 @@ def run_module():
             return resp
 
         stdout_buffer = io.StringIO()
-        # https://github.com/ansible/ansible/blob/8d167bdaef8469e0998996317023d3906a293485/lib/ansible/module_utils/basic.py#L498
-        with mock.patch('ansible.module_utils.basic._load_params') as mock_params:
-            mock_params.return_value = module_args
-            # https://github.com/ansible/tower-cli/pull/489/files
+        # Requies specific PYTHONPATH, see docs
+        # Note that a proper Ansiballz explosion of the modules will have an import path like:
+        # ansible_collections.awx.awx.plugins.modules.{}
+        # We should consider supporting that in the future
+        resource_module = importlib.import_module('plugins.modules.{}'.format(module_name))
+
+        # Ansible params can be passed as an invocation argument or over stdin
+        # this short circuits within the AnsibleModule interface
+        def mock_load_params(self):
+            self.params = module_params
+
+        with mock.patch.object(resource_module.TowerModule, '_load_params', new=mock_load_params):
+            # Call the test utility (like a mock server) instead of issuing HTTP requests
             with mock.patch('tower_cli.api.Session.request', new=new_request):
+                # Ansible modules return data to the mothership over stdout
                 with redirect_stdout(stdout_buffer):
-                    # Requies specific PYTHONPATH, see docs
-                    resource_module = importlib.import_module('plugins.modules.{}'.format(module_name))
                     try:
                         resource_module.main()
                     except SystemExit:
