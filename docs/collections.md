@@ -59,7 +59,7 @@ Ansible core default settings will download collections from the public
 Galaxy server at `https://galaxy.ansible.com`. For details on
 how Galaxy servers are configured in Ansible in general see:
 
-https://docs.ansible.com/ansible/devel/dev_guide/collections_tech_preview.html
+https://docs.ansible.com/ansible/devel/user_guide/collections_using.html
 (if "devel" link goes stale in the future, it is for Ansible 2.9)
 
 You can set a different server to be the primary Galaxy server to download
