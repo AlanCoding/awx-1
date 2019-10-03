@@ -397,6 +397,19 @@ flake8_collection:
 
 test_collection_all: prepare_collection_venv test_collection flake8_collection
 
+test_collection_sanity:
+	mkdir -p sanity
+	mkdir -p sanity/ansible_collections
+	mkdir -p sanity/ansible_collections/awx
+	cp -Ra awx_collection sanity/ansible_collections/awx/awx  # symlinks do not work
+	cd sanity/ansible_collections/awx/awx && ansible-playbook -i localhost, make_imports_absolute.yml
+	# for i in sanity/ansible_collections/awx/awx/plugins/modules/*.py; do  # hack because sanity tests do not fully work
+	# 	# sed -i 's/from ..module_utils.ansible_tower/from ansible_collections.awx.awx.module_utils.ansible_tower/g' $i;
+	# 	echo "$$i";
+	# done;
+	# for i in sanity/ansible_collections/awx/awx/plugins/modules/*.py; do echo "$$i"; done;
+	cd sanity/ansible_collections/awx/awx && ansible-test sanity --test validate-modules
+
 build_collection:
 	ansible-playbook -i localhost, awx_collection/template_galaxy.yml -e collection_package=$(COLLECTION_PACKAGE) -e namespace_name=$(COLLECTION_NAMESPACE) -e package_version=$(VERSION)
 	ansible-galaxy collection build awx_collection --output-path=awx_collection
