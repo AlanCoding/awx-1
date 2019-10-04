@@ -627,6 +627,7 @@ PRIMARY_GALAXY_URL = ''
 PRIMARY_GALAXY_USERNAME = ''
 PRIMARY_GALAXY_TOKEN = ''
 PRIMARY_GALAXY_PASSWORD = ''
+PRIMARY_GALAXY_AUTH_URL = ''
 # Public Galaxy URL, not configurable outside of file-based settings
 PUBLIC_GALAXY_URL = 'https://galaxy.ansible.com'
 

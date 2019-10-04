@@ -497,6 +497,20 @@ register(
 )
 
 register(
+    'PRIMARY_GALAXY_AUTH_URL',
+    field_class=fields.CharField,
+    max_length=2000,
+    encrypted=True,
+    required=False,
+    allow_blank=True,
+    label=_('Primary Galaxy Server Token'),
+    help_text=_('For using a galaxy server at higher precedence than the public Ansible Galaxy. '
+                'The token_endpoint of a Keycloak server.'),
+    category=_('Jobs'),
+    category_slug='jobs'
+)
+
+register(
     'STDOUT_MAX_BYTES_DISPLAY',
     field_class=fields.IntegerField,
     min_value=0,

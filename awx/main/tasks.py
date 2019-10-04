@@ -1883,11 +1883,12 @@ class RunProjectUpdate(BaseTask):
         env['TMP'] = settings.AWX_PROOT_BASE_PATH
         env['PROJECT_UPDATE_ID'] = str(project_update.pk)
         env['ANSIBLE_CALLBACK_PLUGINS'] = self.get_path_to('..', 'plugins', 'callback')
+        env['ANSIBLE_GALAXY_IGNORE'] = True
         # If private galaxy URL is non-blank, that means this feature is enabled
         if settings.PRIMARY_GALAXY_URL:
             # set up the fallback server, which is the normal Ansible Galaxy
             env['ANSIBLE_GALAXY_SERVER_GALAXY_URL'] = settings.PUBLIC_GALAXY_URL
-            for key in ('url', 'username', 'password', 'token'):
+            for key in ('url', 'username', 'password', 'token', 'auth_url'):
                 setting_name = 'PRIMARY_GALAXY_{}'.format(key.upper())
                 value = getattr(settings, setting_name)
                 if value:
