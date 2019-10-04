@@ -2346,8 +2346,10 @@ class RunInventoryUpdate(BaseTask):
 
             project_update_task = local_project_sync._get_task_class()
             try:
-                project_update_task().run(local_project_sync.id)
-                inventory_update.inventory_source.scm_last_revision = local_project_sync.project.scm_revision
+                sync_task = project_update_task(job_private_data_dir=private_data_dir)
+                sync_task.run(local_project_sync.id)
+                local_project_sync.refresh_from_db()
+                inventory_update.inventory_source.scm_last_revision = local_project_sync.scm_revision
                 inventory_update.inventory_source.save(update_fields=['scm_last_revision'])
             except Exception:
                 inventory_update = self.update_model(
