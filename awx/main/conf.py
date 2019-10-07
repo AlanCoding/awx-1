@@ -501,7 +501,7 @@ register(
     field_class=fields.CharField,
     required=False,
     allow_blank=True,
-    label=_('Primary Galaxy Server Token'),
+    label=_('Primary Galaxy Authentication URL'),
     help_text=_('For using a galaxy server at higher precedence than the public Ansible Galaxy. '
                 'The token_endpoint of a Keycloak server.'),
     category=_('Jobs'),
