@@ -52,7 +52,7 @@ import ansible_runner
 
 # AWX
 from awx import __version__ as awx_application_version
-from awx.main.constants import CLOUD_PROVIDERS, PRIVILEGE_ESCALATION_METHODS, STANDARD_INVENTORY_UPDATE_ENV
+from awx.main.constants import CLOUD_PROVIDERS, PRIVILEGE_ESCALATION_METHODS, STANDARD_INVENTORY_UPDATE_ENV, GALAXY_SERVER_FIELDS
 from awx.main.access import access_registry
 from awx.main.models import (
     Schedule, TowerScheduleState, Instance, InstanceGroup,
@@ -1889,12 +1889,12 @@ class RunProjectUpdate(BaseTask):
         # If private galaxy URL is non-blank, that means this feature is enabled
         if settings.PRIMARY_GALAXY_URL:
             galaxy_servers = [{'id': 'primary_galaxy'}] + galaxy_servers
-            for key in ('url', 'username', 'password', 'token', 'auth_url'):
+            for key in GALAXY_SERVER_FIELDS:
                 value = getattr(settings, 'PRIMARY_GALAXY_{}'.format(key.upper()))
                 if value:
                     galaxy_servers[0][key] = value
         for server in galaxy_servers:
-            for key in ('url', 'username', 'password', 'token', 'auth_url'):
+            for key in GALAXY_SERVER_FIELDS:
                 if not server.get(key):
                     continue
                 env_key = ('ANSIBLE_GALAXY_SERVER_{}_{}'.format(server.get('id', 'unnamed'), key)).upper()
