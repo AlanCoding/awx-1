@@ -86,8 +86,8 @@ export default ['i18n', function(i18n) {
                 reset: 'PRIMARY_GALAXY_TOKEN',
             },
             PRIMARY_GALAXY_AUTH_URL: {
-                type: 'TEXT',
-                reset: 'PRIMARY_GALAXY_TOKEN',
+                type: 'text',
+                reset: 'PRIMARY_GALAXY_AUTH_URL',
             },
             AWX_TASK_ENV: {
                 type: 'textarea',
