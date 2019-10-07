@@ -499,8 +499,6 @@ register(
 register(
     'PRIMARY_GALAXY_AUTH_URL',
     field_class=fields.CharField,
-    max_length=2000,
-    encrypted=True,
     required=False,
     allow_blank=True,
     label=_('Primary Galaxy Server Token'),
