@@ -1,0 +1,4 @@
+# example inventory file
+plugin: awx.awx.tower
+inventory_id: Default++foo_inventory
+host: https://foo.invalid

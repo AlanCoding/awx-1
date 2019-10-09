@@ -2,7 +2,7 @@ import io
 import json
 import datetime
 import importlib
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, contextmanager
 from unittest import mock
 
 from requests.models import Response
@@ -33,28 +33,49 @@ def sanitize_dict(din):
         return str(din)  # translation proxies often not string but stringlike
 
 
+def new_request(self, method, url, **kwargs):
+    kwargs_copy = kwargs.copy()
+    if 'data' in kwargs:
+        kwargs_copy['data'] = json.loads(kwargs['data'])
+
+    # make request
+    rf = _request(method.lower())
+    if new_request.user is None:
+        raise RuntimeError('This methods request_user needs to be mocked in later context.')
+    django_response = rf(url, user=new_request.user, expect=None, **kwargs_copy)
+
+    # requests library response object is different from the Django response, but they are the same concept
+    # this converts the Django response object into a requests response object for consumption
+    resp = Response()
+    py_data = django_response.data
+    sanitize_dict(py_data)
+    resp._content = bytes(json.dumps(django_response.data), encoding='utf8')
+    resp.status_code = django_response.status_code
+    return resp
+
+
+new_request.user = None  # expect this to be mocked
+
+def ab_context():
+    with A() as a, B() as b:
+        yield (a, b)
+
+
 @pytest.fixture
-def run_module():
-    def rf(module_name, module_params, request_user):
+def mock_request():
+    @contextmanager
+    def _mock_request(user):
+        # attach the user to the mock request method for use in the request
+        with mock.patch.object(new_request, 'user', new=user):
+            # Call the test utility (like a mock server) instead of issuing HTTP requests
+            with mock.patch('tower_cli.api.Session.request', new=new_request):
+                yield
+    return _mock_request
 
-        def new_request(self, method, url, **kwargs):
-            kwargs_copy = kwargs.copy()
-            if 'data' in kwargs:
-                kwargs_copy['data'] = json.loads(kwargs['data'])
 
-            # make request
-            rf = _request(method.lower())
-            django_response = rf(url, user=request_user, expect=None, **kwargs_copy)
-
-            # requests library response object is different from the Django response, but they are the same concept
-            # this converts the Django response object into a requests response object for consumption
-            resp = Response()
-            py_data = django_response.data
-            sanitize_dict(py_data)
-            resp._content = bytes(json.dumps(django_response.data), encoding='utf8')
-            resp.status_code = django_response.status_code
-            return resp
-
+@pytest.fixture
+def run_module(mock_request):
+    def rf(module_name, module_params, user):
         stdout_buffer = io.StringIO()
         # Requies specific PYTHONPATH, see docs
         # Note that a proper Ansiballz explosion of the modules will have an import path like:
@@ -67,9 +88,8 @@ def run_module():
         def mock_load_params(self):
             self.params = module_params
 
-        with mock.patch.object(resource_module.TowerModule, '_load_params', new=mock_load_params):
-            # Call the test utility (like a mock server) instead of issuing HTTP requests
-            with mock.patch('tower_cli.api.Session.request', new=new_request):
+        with mock_request(user):
+            with mock.patch.object(resource_module.TowerModule, '_load_params', new=mock_load_params):
                 # Ansible modules return data to the mothership over stdout
                 with redirect_stdout(stdout_buffer):
                     try:

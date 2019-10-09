@@ -116,7 +116,7 @@ except ImportError:
 
 
 class InventoryModule(BaseInventoryPlugin):
-    NAME = 'tower'
+    NAME = 'awx.awx.tower'
     # Stays backward compatible with tower inventory script.
     # If the user supplies '@tower_inventory' as path, the plugin will read from environment variables.
     no_config_file_supplied = False
