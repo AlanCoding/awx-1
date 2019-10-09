@@ -30,18 +30,25 @@ plugin_path = os.path.join(
 #     plugin = inventory_loader.get('awx.awx.tower')
 #     return plugin
 
+# @pytest.fixture
+# def mk_module():
+#     InventoryModule = importlib.import_module('plugins.inventory.tower').InventoryModule
+#     module = InventoryModule()
+#     with mock.patch.object(module, '_read_config_data'):
+#         with mock.patch.object(module, 'get_option'):
+#             return module
+
 
 @pytest.mark.django_db
 def test_load_inventory(mock_request, admin_user):
-    print('plugin path')
-    print(plugin_path)
     InventoryModule = importlib.import_module('plugins.inventory.tower').InventoryModule
     module = InventoryModule()
-    module._load_name = 'awx.awx.tower'  # have to set for whatever reason
-    org = Organization.objects.create(name='Default')
-    Inventory.objects.create(organization=org, name='foo_inventory')
-    with mock_request(admin_user):
-        module.parse(mock.MagicMock(), DataLoader(), inventory_path, cache=False)
+    with mock.patch.object(module, '_read_config_data'):
+        with mock.patch.object(module, 'get_option'):
+            org = Organization.objects.create(name='Default')
+            Inventory.objects.create(organization=org, name='foo_inventory')
+            with mock_request(admin_user):
+                module.parse(mock.MagicMock(), DataLoader(), inventory_path, cache=False)
 
 # @pytest.mark.django_db
 # def test_load_inventory(run_module, admin_user, project, inventory):
