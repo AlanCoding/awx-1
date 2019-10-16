@@ -362,25 +362,17 @@ class RoleMixin(object):
         ['job_templates', 'job_template'],
         ['workflow_job_templates', 'workflow_job_template'],
     ]
-    roles = {}  # this is calculated once
+    possible_roles = set()  # this is calculated once
 
     def add_arguments(self, parser):
         from .options import pk_or_name
 
-        if not RoleMixin.roles:
-            for resource, flag in self.has_roles:
-                options = self.page.__class__(
-                    self.page.endpoint.replace(self.resource, resource),
-                    self.page.connection
-                ).options()
-                RoleMixin.roles[flag] = [
-                    role.replace('_role', '')
-                    for role in options.json.get('object_roles', [])
-                ]
-
-        possible_roles = set()
-        for v in RoleMixin.roles.values():
-            possible_roles.update(v)
+        if not RoleMixin.possible_roles:
+            options = self.page.__class__(
+                self.page.endpoint.replace(self.resource, 'roles'),
+                self.page.connection
+            ).options()
+            RoleMixin.possible_roles = set(options['GET']['role_field']['choices'])
 
         resource_group = parser.choices[self.action].add_mutually_exclusive_group(
             required=True
@@ -394,7 +386,7 @@ class RoleMixin(object):
                 self.resource, self.action
             )
         )
-        for _type in RoleMixin.roles.keys():
+        for _type in [resource for resource, flag in self.has_roles]:
             if _type == 'team' and self.resource == 'team':
                 # don't add a team to a team
                 continue
@@ -424,7 +416,7 @@ class RoleMixin(object):
                 help='The ID (or name) of the target {}'.format(_type),
             )
         parser.choices[self.action].add_argument(
-            '--role', type=str, choices=possible_roles, required=True,
+            '--role', type=str, choices=self.possible_roles, required=True,
             help='The name of the role to {}'.format(self.action)
         )
 
@@ -432,8 +424,16 @@ class RoleMixin(object):
         for resource, flag in self.has_roles:
             if flag in kwargs:
                 role = kwargs['role']
-                if role not in RoleMixin.roles[flag]:
-                    options = ', '.join(RoleMixin.roles[flag])
+                options = self.page.__class__(
+                    self.page.endpoint.replace(self.resource, resource),
+                    self.page.connection
+                ).options()
+                resource_object_roles = [
+                    role.replace('_role', '')
+                    for role in options.json.get('object_roles', [])
+                ]
+                if role not in resource_object_roles:
+                    options = ', '.join(resource_object_roles)
                     raise ValueError(
                         "invalid choice: '{}' must be one of {}".format(
                             role, options

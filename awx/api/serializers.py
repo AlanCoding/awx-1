@@ -2292,7 +2292,7 @@ class RoleSerializer(BaseSerializer):
 
     class Meta:
         model = Role
-        fields = ('*', '-created', '-modified')
+        fields = ('*', 'role_field', '-created', '-modified')
         read_only_fields = ('id', 'role_field', 'description', 'name')
 
     def to_representation(self, obj):

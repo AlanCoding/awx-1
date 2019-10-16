@@ -142,7 +142,13 @@ class Role(models.Model):
         ]
         ordering = ("content_type", "object_id")
 
-    role_field = models.TextField(null=False)
+    role_field = models.CharField(
+        max_length=max(len(name) for name in role_names.keys()),
+        choices=[name for name in role_names.keys()],
+        editable=False,
+        blank=False,
+        help_text=_('The internal name that denotes the type of permission being granted.')
+    )
     singleton_name = models.TextField(null=True, default=None, db_index=True, unique=True)
     parents = models.ManyToManyField('Role', related_name='children')
     implicit_parents = models.TextField(null=False, default='[]')
