@@ -8,6 +8,17 @@ inside the folder `lib/ansible/modules/web_infrastructure/ansible_tower`
 as well as other folders for the inventory plugin, module utils, and
 doc fragment.
 
+## Release and Upgrade Notes
+
+The release 7.0.0 of the `awx.awx` collection is intended to be identical
+to the content prior to the migration, aside from changes necessary to
+have it function as a collection.
+
+The following notes are changes that may require changes to playbooks.
+
+ - Specifying `inputs` or `injectors` as strings in the
+   `tower_credential_type` module is no longer supported. Provide as dictionaries instead.
+
 ## Running
 
 To use this collection, the "old" tower-cli needs to be installed
@@ -34,7 +45,7 @@ in the `awx_collection_test_venv` folder so that `make test_collection` can
 be ran to actually run the tests. A single test can be ran via:
 
 ```
-make test_collection MODULE_TEST_DIRS=awx_collection/test/awx/test_organization.py
+make test_collection COLLECTION_TEST_DIRS=awx_collection/test/awx/test_organization.py
 ```
 
 ## Building
