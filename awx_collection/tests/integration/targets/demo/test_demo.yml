@@ -1,5 +1,14 @@
 - hosts: localhost
   gather_facts: no
   tasks:
-  - name: See if we knew vaulted_host
-    debug: msg="Found vaulted_host from vaulted.inventory"
+  - tower_organization:
+      name: demo
+
+  - tower_inventory:
+      name: demo
+      organization: demo
+
+  - tower_host:
+      name: demo
+      variables: "ansible_connection: local"
+      inventory: demo
