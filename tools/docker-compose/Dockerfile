@@ -12,6 +12,7 @@ RUN dnf -y update && \
   dnf config-manager --set-enabled PowerTools && \
   dnf -y install acl \
   ansible \
+  ansible-test \
   bubblewrap \
   curl \
   gcc \
