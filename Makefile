@@ -405,6 +405,13 @@ test_collection_sanity:
 	cd sanity/ansible_collections/awx/awx && git init && git add . # requires both this file structure and a git repo, so there you go
 	cd sanity/ansible_collections/awx/awx && ansible-test sanity --test validate-modules
 
+test_collection_integration:
+	rm -rf sanity
+	mkdir -p sanity/ansible_collections/awx
+	cp -Ra awx_collection sanity/ansible_collections/awx/awx
+	cd sanity/ansible_collections/awx/awx && git init && git add .
+	cd sanity/ansible_collections/awx/awx && ansible-test integration demo
+
 build_collection:
 	ansible-playbook -i localhost, awx_collection/template_galaxy.yml -e collection_package=$(COLLECTION_PACKAGE) -e collection_namespace=$(COLLECTION_NAMESPACE) -e collection_version=$(VERSION)
 	ansible-galaxy collection build awx_collection --output-path=awx_collection
