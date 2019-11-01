@@ -67,6 +67,20 @@ pip install -e .
 PYTHONPATH=awx_collection:$PYTHONPATH py.test awx_collection/test/awx/
 ```
 
+### Integration
+
+The old integration tests are kept passing, but not being expanded on.
+A master copy is hosted at: https://github.com/ansible/test-playbooks/tree/master/tower_modules
+
+A new set of integration tests as a monolithic demo is available as
+"demo" in the `tests/integration/targets` folder. This is intended to
+server a dual-purpose as a tl;dr summary of how to use the modules.
+
+This can be ran through `ansible-test`, which requires additional overhead.
+Firstly, you need a valid tower-cli config file in your user directory,
+accomplish by `tower-cli login <username>`.
+Then run `make test_collection_integration`.
+
 ## Building
 
 The build target `make build_collection` will template out a `galaxy.yml` file
