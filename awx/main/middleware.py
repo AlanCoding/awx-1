@@ -32,16 +32,37 @@ analytics_logger = logging.getLogger('awx.analytics.activity_stream')
 perf_logger = logging.getLogger('awx.analytics.performance')
 
 
+TIMINGS = []
+
+
+def alan(f):
+    def f2(self, *args):
+        name = self.__class__.__name__
+        TIMINGS.append(
+            ('{}_1'.format(name), time.time())
+        )
+        r = f(self, *args)
+        TIMINGS.append(
+            ('{}_2'.format(name), time.time())
+        )
+        return r
+    return f2
+
+
 class TimingMiddleware(threading.local, MiddlewareMixin):
 
     dest = '/var/log/tower/profile'
 
+    @alan
     def process_request(self, request):
+        for i in range(len(TIMINGS)):
+            TIMINGS.pop()
         self.start_time = time.time()
         if settings.AWX_REQUEST_PROFILE:
             self.prof = cProfile.Profile()
             self.prof.enable()
 
+    @alan
     def process_response(self, request, response):
         if not hasattr(self, 'start_time'):  # some tools may not invoke process_request
             return response
@@ -52,6 +73,13 @@ class TimingMiddleware(threading.local, MiddlewareMixin):
             cprofile_file = self.save_profile_file(request)
             response['cprofile_file'] = cprofile_file
         perf_logger.info('api response times', extra=dict(python_objects=dict(request=request, response=response)))
+        alan_logger = logging.getLogger('alan')
+        alan_logger.warn(' '.join([
+            '{}-{}'.format(k, v) for k, v in TIMINGS
+        ]))
+        logger.warn(' '.join([
+            '{}-{}'.format(k, v) for k, v in TIMINGS
+        ]))
         return response
 
     def save_profile_file(self, request):
@@ -72,6 +100,7 @@ class ActivityStreamMiddleware(threading.local, MiddlewareMixin):
         self.instance_ids = []
         super().__init__(get_response)
 
+    @alan
     def process_request(self, request):
         if hasattr(request, 'user') and request.user.is_authenticated:
             user = request.user
@@ -83,6 +112,7 @@ class ActivityStreamMiddleware(threading.local, MiddlewareMixin):
         self.instance_ids = []
         post_save.connect(set_actor, sender=ActivityStream, dispatch_uid=self.disp_uid, weak=False)
 
+    @alan
     def process_response(self, request, response):
         drf_request = getattr(request, 'drf_request', None)
         drf_user = getattr(drf_request, 'user', None)
@@ -126,6 +156,7 @@ class SessionTimeoutMiddleware(MiddlewareMixin):
     to the value of SESSION_COOKIE_AGE on every request if there is a valid session.
     """
 
+    @alan
     def process_response(self, request, response):
         should_skip = 'HTTP_X_WS_SESSION_QUIET' in request.META
         # Something went wrong, such as upgrade-in-progress page
@@ -198,6 +229,11 @@ class URLModificationMiddleware(MiddlewareMixin):
                                                  url_units[4])
         return '/'.join(url_units)
 
+    @alan
+    def process_response(self, request, response):
+        return response
+
+    @alan
     def process_request(self, request):
         if hasattr(request, 'environ') and 'REQUEST_URI' in request.environ:
             old_path = urllib.parse.urlsplit(request.environ['REQUEST_URI']).path
@@ -212,6 +248,7 @@ class URLModificationMiddleware(MiddlewareMixin):
 
 class MigrationRanCheckMiddleware(MiddlewareMixin):
 
+    @alan
     def process_request(self, request):
         if migration_in_progress_check_or_relase():
             if getattr(resolve(request.path), 'url_name', '') == 'migrations_notran':

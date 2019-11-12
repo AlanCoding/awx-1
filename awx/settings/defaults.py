@@ -1094,8 +1094,20 @@ LOGGING = {
             'backupCount': 5,
             'formatter':'simple',
         },
+        'alan': {
+            'level': 'DEBUG',
+            'class':'logging.handlers.RotatingFileHandler',
+            'filename': '/awx_devel/awx/alan.log',
+            'maxBytes': 1024 * 1024 * 5, # 5 MB
+            'backupCount': 5,
+            'formatter':'simple',
+        },
     },
     'loggers': {
+        'alan': {
+            'level': 'DEBUG',
+            'handlers': ['alan']
+        },
         'django': {
             'handlers': ['console'],
         },
