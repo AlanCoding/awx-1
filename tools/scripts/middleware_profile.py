@@ -74,6 +74,8 @@ for line in lines:
         if key not in sums:
             sums[key] = 0.0
         sums[key] += value
+        if key == 'MigrationRanCheckMiddleware_request':
+            print('  {}'.format(value))
 
 
 averages = {}
@@ -84,4 +86,6 @@ for key, value in sums.items():
 
 print(json.dumps(averages, indent=2))
 
+print('')
+print('Data points {}'.format(num_points))
 
