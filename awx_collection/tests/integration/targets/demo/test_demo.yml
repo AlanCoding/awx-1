@@ -20,17 +20,17 @@
       scm_url: https://github.com/AlanCoding/awx.git
       scm_branch: verify_issue
 
-  # - awx.awx.tower_credential_type:
-  #     name: single_env_var
-  #     kind: cloud
-  #     inputs:
-  #       fields:
-  #         - id: env_value
-  #           label: Value to set this environment variable to
-  #           default: foo
-  #     injectors:
-  #       env:
-  #         TEST_ENV_VAR: !unsafe "{{ env_value }}"
+  - awx.awx.tower_credential_type:
+      name: single_env_var
+      kind: cloud
+      inputs:
+        fields:
+          - id: env_value
+            label: Value to set this environment variable to
+            default: foo
+      injectors:
+        env:
+          TEST_ENV_VAR: !unsafe "{{ env_value }}"
 
   - awx.awx.tower_credential:
       name: demo_vault
@@ -62,7 +62,7 @@
 
   - awx.awx.tower_job_wait:
       job_id: "{{ job.id }}"
-      timeout: 60
     register: job_output
 
-  - debug: var=job_output
+  - assert:
+      that: "job_output.status == 'successful'"
