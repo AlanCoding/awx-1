@@ -14,3 +14,6 @@
 
   - debug:
       msg: "Debug encrypted var: {{ the_secret }}"
+
+  - debug:
+      msg: "This uses unicode 開発用サーバ"

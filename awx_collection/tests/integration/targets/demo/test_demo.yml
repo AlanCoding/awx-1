@@ -18,7 +18,7 @@
       organization: demo
       scm_type: git
       scm_url: https://github.com/AlanCoding/awx.git
-      scm_branch: collection_integration
+      scm_branch: verify_issue
 
   # - awx.awx.tower_credential_type:
   #     name: single_env_var
@@ -55,3 +55,14 @@
       credentials:
         - demo_vault
         - demo_custom
+
+  - awx.awx.tower_job_launch:
+      job_template: demo
+    register: job
+
+  - awx.awx.tower_job_wait:
+      job_id: "{{ job.id }}"
+      timeout: 60
+    register: job_output
+
+  - debug: var=job_output
