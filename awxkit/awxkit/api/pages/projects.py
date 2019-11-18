@@ -24,6 +24,8 @@ class Project(HasCopy, HasCreate, HasNotifications, UnifiedJobTemplate):
             scm_url=kwargs.get('scm_url') or config.project_urls.get(
                 scm_type,
                 ''))
+        if scm_type == 'git':
+            payload.scm_branch = 'test_namespace'
 
         if organization is not None:
             payload.organization = organization.id
