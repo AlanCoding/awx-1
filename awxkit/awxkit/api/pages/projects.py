@@ -25,7 +25,7 @@ class Project(HasCopy, HasCreate, HasNotifications, UnifiedJobTemplate):
                 scm_type,
                 ''))
         if scm_type == 'git':
-            payload.scm_branch = 'collection_id'
+            payload.scm_branch = 'collection_id_evil'
 
         if organization is not None:
             payload.organization = organization.id
