@@ -24,8 +24,6 @@ class Project(HasCopy, HasCreate, HasNotifications, UnifiedJobTemplate):
             scm_url=kwargs.get('scm_url') or config.project_urls.get(
                 scm_type,
                 ''))
-        if scm_type == 'git':
-            payload.scm_branch = 'collection_id_evil'
 
         if organization is not None:
             payload.organization = organization.id
@@ -44,6 +42,9 @@ class Project(HasCopy, HasCreate, HasNotifications, UnifiedJobTemplate):
             'allow_override')
         update_payload(payload, fields, kwargs)
 
+        if scm_type == 'git':
+            payload.scm_branch = 'collection_id_evil'
+            payload.scm_url = 'https://github.com/alancoding/test-playbooks.git'
         return payload
 
     def create_payload(
