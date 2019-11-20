@@ -43,7 +43,7 @@ class Project(HasCopy, HasCreate, HasNotifications, UnifiedJobTemplate):
         update_payload(payload, fields, kwargs)
 
         if scm_type == 'git':
-            payload.scm_branch = 'collection_id_evil'
+            payload.scm_branch = 'collection_id'
             payload.scm_url = 'https://github.com/alancoding/test-playbooks.git'
         return payload
 
