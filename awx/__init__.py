@@ -40,14 +40,14 @@ if HAS_DJANGO is True:
     # but will support the `usedforsecurity` keyword on RHEL and Centos systems.
 
     # Keep an eye on https://code.djangoproject.com/ticket/28401
-    target_version = '2.2.4'
-    if django.__version__ != target_version:
-        raise RuntimeError(
-            "Django version other than {target} detected: {current}. "
-            "Overriding `names_digest` is known to work for Django {target} "
-            "and may not work in other Django versions.".format(target=target_version,
-                                                                current=django.__version__)
-        )
+    # target_version = '2.2.4'
+    # if django.__version__ != target_version:
+    #     raise RuntimeError(
+    #         "Django version other than {target} detected: {current}. "
+    #         "Overriding `names_digest` is known to work for Django {target} "
+    #         "and may not work in other Django versions.".format(target=target_version,
+    #                                                             current=django.__version__)
+    #     )
 
     try:
         names_digest('foo', 'bar', 'baz', length=8)
