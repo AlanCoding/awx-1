@@ -67,6 +67,10 @@ main() {
 
   if [ "$1" = "upgrade" ]; then
       pip_compile="${pip_compile} --upgrade"
+  elif [ "$1" = "ascension" ]; then
+      sed -i 's/\(==\|>=\).*//' requirements.in
+      sed -i 's/\(==\|>=\).*//' requirements_ansible.in
+      pip_compile="${pip_compile} --upgrade"
   fi
 
   cp -vf requirements.txt requirements_ansible.txt "${_tmp}"
