@@ -15,6 +15,8 @@ This script will:
 
 You can also upgrade (`pip-compile --upgrade`) the dependencies by running `./updater.sh upgrade`.
 
+You can upgrade the primary dependencies in the `*.in` files by running `./updater.sh ascension`. Those lines marked with a comment starting with `# FIX` will not be upgraded by this method. Fixed items should be things known to be break on upgrade, and have a separate work-item associated with them in order to upgrade or replace dependencies.
+
 ## Licenses and Source Files
 
 If any library has a change to its license with the upgrade, then the license for that library
