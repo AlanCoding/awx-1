@@ -7,7 +7,6 @@ boto==2.47.0
 channels==1.1.8.1  # FIX: Last before backwards-incompatible channels 2 upgrade
 celery==4.3.0
 daphne==1.4.2   # FIX: see prior note about channels upgrade
-twisted[tls]>=17.1   # from daphne, see https://github.com/django/daphne/pull/257
 Django==2.2.4
 django-auth-ldap==1.7.0
 django-cors-headers==2.4.0
