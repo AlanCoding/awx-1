@@ -89,8 +89,11 @@ main() {
   cp -vf requirements_ansible_py3.txt "${requirements_ansible}"
   cp -vf requirements.txt "${requirements}"
 
-  ./parser.py restore requirements.in
-  ./parser.py restore requirements_ansible.in
+  if [ "$1" = "ascension" ]; then
+      cd /awx_devel/requirements
+      ./parser.py restore requirements.in
+      ./parser.py restore requirements_ansible.in
+  fi
 
   _cleanup
 }
