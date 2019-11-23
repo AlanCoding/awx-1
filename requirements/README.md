@@ -4,7 +4,7 @@ Run `./updater.sh` command from inside `./requirements` directory of the awx rep
 
 Make sure you have `patch, awk, python3, python2, python3-venv, python2-virtualenv, pip2, pip3` installed.
 
-If you are using the development container image, you need to run `dnf install libpq-devel libcurl-devel`. These packages are only installed temporarily in the Dockerfile.
+If you are using the development container image, you need to run `dnf install libpq-devel libcurl-devel`. These packages are only installed temporarily in the Dockerfile. In other cases, you may need `dnf -y install gcc redhat-rpm-config python3-devel`.
 
 This script will:
 
