@@ -68,8 +68,10 @@ main() {
   if [ "$1" = "upgrade" ]; then
       pip_compile="${pip_compile} --upgrade"
   elif [ "$1" = "ascension" ]; then
-      sed -i 's/\(==\|>=\).*//' requirements.in
-      sed -i 's/\(==\|>=\).*//' requirements_ansible.in
+      ./parser.py strip requirements.in
+      ./parser.py strip requirements_ansible.in
+      # sed -i 's/\(==\|>=\).*//' requirements.in
+      # sed -i 's/\(==\|>=\).*//' requirements_ansible.in
       pip_compile="${pip_compile} --upgrade"
   fi
 
@@ -86,6 +88,9 @@ main() {
 
   cp -vf requirements_ansible_py3.txt "${requirements_ansible}"
   cp -vf requirements.txt "${requirements}"
+
+  ./parser.py restore requirements.in
+  ./parser.py restore requirements_ansible.in
 
   _cleanup
 }
