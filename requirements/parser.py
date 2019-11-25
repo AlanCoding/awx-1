@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 
 import argparse
+import re
+
+
+# example string
+# asgi-amqp==1.1.3  # FIX: does not support channels 2
+line_matcher = re.compile(
+    r'^(?P<package>[a-zA-Z0-9-_]+)'
+    r'(?P<specifier>==|>=|<=|>|<)'
+    r'(?P<version>[0-9.]+)'
+    r'\s*(#\s*(?P<comment>.*))?'
+)
 
 
 def strip(filename):
@@ -9,23 +20,26 @@ def strip(filename):
 
     new_text = []
     for line in lines:
-        cmp = None
-        for potential in ('==', '<=', '>='):
-            if potential in line:
-                cmp = potential
-        if cmp:
-            package, remainder = line.split(cmp)
-            comment = ''
-            if '#' in line:
-                version, comment = remainder.split('#')
-                if comment.strip().startswith('FIX'):
-                    new_text.append(line)
-                else:
-                    new_text.append(package + '  #' + comment)
-            else:
-                new_text.append(package)
-        else:
+        matches = line_matcher.search(line)
+        if matches is None and not line or line.startswith('#'):
+            continue
+        package = matches.group('package')
+        specifier = matches.group('specifier')
+        version = matches.group('version')
+        comment = matches.group('comment')
+
+        if comment and comment.strip().startswith('FIX'):
             new_text.append(line)
+        else:
+            # if the input was already greater-than, then no need to unpin
+            if '>' in specifier:
+                constraint = package + specifier
+            else:
+                constraint = package
+            if comment:
+                new_text.append(constraint + '  #' + comment)
+            else:
+                new_text.append(constraint)
 
     with open(filename, 'w') as f:
         f.write('\n'.join(new_text))
