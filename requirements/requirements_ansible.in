@@ -52,8 +52,8 @@ netaddr==0.7.19
 ovirt-engine-sdk-python==4.3.3  # minimum set inside Ansible facts module requirements
 pycurl==7.43.0.3  # higher versions will not install without SSL backend specified
 # AWX usage
-psutil==5.6.5  # same as AWX requirement
-setuptools==42.0.0
+psutil==5.6.6  # same as AWX requirement
+setuptools==42.0.1
 pip==19.3.1
 # VMware
 pyvmomi==6.7.3
