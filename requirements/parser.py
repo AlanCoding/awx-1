@@ -93,10 +93,12 @@ def restore(filename):
             print('Parse error on line :\n{}'.format(line))
             raise
 
-        new_line = (
-            package + specifier +
-            version_map[package.lower().replace('_', '-')]
-        )
+        try:
+            version = version_map[package.lower().replace('_', '-')]
+        except KeyError:
+            version = version_map[package.lower()]
+
+        new_line = package + specifier + version
         if comment:
             new_line += '  # ' + comment
 
