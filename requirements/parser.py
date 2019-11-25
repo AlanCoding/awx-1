@@ -7,9 +7,12 @@ import re
 # example string
 # asgi-amqp==1.1.3  # FIX: does not support channels 2
 line_matcher = re.compile(
-    r'^(?P<package>[a-zA-Z0-9-_]+)'
-    r'(?P<specifier>==|>=|<=|>|<)'
-    r'(?P<version>[0-9.]+)'
+    r'^(?P<package>[a-zA-Z0-9-_.\[\]]+)'
+    # collectively the specifier and version are optional, case of unpined
+    r'('
+        r'(?P<specifier>==|>=|<=|>|<)'  # noqa
+        r'(?P<version>[0-9.]+)'
+    r')?'
     r'\s*(#\s*(?P<comment>.*))?'
 )
 
@@ -22,11 +25,15 @@ def strip(filename):
     for line in lines:
         matches = line_matcher.search(line)
         if matches is None and not line or line.startswith('#'):
+            new_text.append(line)
             continue
-        package = matches.group('package')
-        specifier = matches.group('specifier')
-        version = matches.group('version')
-        comment = matches.group('comment')
+        try:
+            package = matches.group('package')
+            specifier = matches.group('specifier')
+            comment = matches.group('comment')
+        except Exception:
+            print('Parse error on line :\n{}'.format(line))
+            raise
 
         if comment and comment.strip().startswith('FIX'):
             new_text.append(line)
@@ -54,13 +61,16 @@ def restore(filename):
 
     version_map = {}
     for line in known.split('\n'):
-        if '==' not in line:
+        matches = line_matcher.search(line)
+        if matches is None and not line or line.startswith('#'):
             continue
-        package, remainder = line.split('==')
-        if ' ' in remainder:
-            version, _ = remainder.split(' ', 1)
-        else:
-            version = remainder
+        try:
+            package = matches.group('package')
+            version = matches.group('version')
+        except Exception:
+            print('Parse error on line :\n{}'.format(line))
+            raise
+
         version_map[package] = version
 
     with open(filename, 'r') as f:
@@ -68,31 +78,27 @@ def restore(filename):
 
     new_text = []
     for line in lines:
-        cmp = None
-        for potential in ('==', '<=', '>='):
-            if potential in line:
-                cmp = potential
-        if cmp and cmp in line:
-            package, remainder = line.split(cmp, 1)
-            if '#' in remainder:
-                version, stuff = remainder.split('#')
-            else:
-                stuff = ''
-        elif '  #' in line:
-            package, stuff = line.split('  #')
-        elif '#' in line or not line:
+        matches = line_matcher.search(line)
+        if matches is None and not line or line.startswith('#'):
             new_text.append(line)
             continue
-        else:
-            package = line
-            stuff = ''
+        try:
+            package = matches.group('package')
+            specifier = '=='
+            old_specifier = matches.group('specifier')
+            if old_specifier:
+                specifier = old_specifier
+            comment = matches.group('comment')
+        except Exception:
+            print('Parse error on line :\n{}'.format(line))
+            raise
 
         new_line = (
-            package + '==' +
+            package + specifier +
             version_map[package.lower().replace('_', '-')]
         )
-        if stuff:
-            new_line += '  #' + stuff
+        if comment:
+            new_line += '  # ' + comment
 
         new_text.append(new_line)
 
