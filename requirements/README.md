@@ -57,3 +57,27 @@ pip download <pypi library name> -d docs/licenses/ --no-binary :all: --no-deps
 ```
 
 Make sure to delete the old tarball if it is an upgrade.
+
+## Upgrade Blockers
+
+### Django
+
+For any upgrade of Django, it must be confirmed that
+we don't regress on FIPS support before merging.
+
+See internal integration test knowledge base article `how_to_test_FIPS`
+for instructions.
+
+If operating in a FIPS environment, `hashlib.md5()` will raise a `ValueError`,
+but will support the `usedforsecurity` keyword on RHEL and Centos systems.
+
+Keep an eye on https://code.djangoproject.com/ticket/28401
+
+## Library Notes
+
+### celery
+
+This is only used for the beat feature (running periodic tasks).
+This could be replaced, see: https://github.com/ansible/awx/pull/2530
+
+
