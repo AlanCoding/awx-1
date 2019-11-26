@@ -20,7 +20,7 @@ You can also upgrade (`pip-compile --upgrade`) the dependencies by running `./up
 This might be needed if you require a fix from a library which is not explicitly
 listed under `requirements.in`.
 
-If you are using the development container image, you need to run `dnf install libpq-devel libcurl-devel`.
+If you are using the development container image, you need to run `dnf -y install libpq-devel libcurl-devel`.
 These packages are removed in the Dockerfile.
 
 ### Upgrading Primary Dependencies
