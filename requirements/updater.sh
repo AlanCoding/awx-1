@@ -67,12 +67,6 @@ main() {
 
   if [ "$1" = "upgrade" ]; then
       pip_compile="${pip_compile} --upgrade"
-  elif [ "$1" = "ascension" ]; then
-      ./parser.py strip requirements.in
-      ./parser.py strip requirements_ansible.in
-      # sed -i 's/\(==\|>=\).*//' requirements.in
-      # sed -i 's/\(==\|>=\).*//' requirements_ansible.in
-      pip_compile="${pip_compile} --upgrade"
   fi
 
   cp -vf requirements.txt requirements_ansible.txt "${_tmp}"
@@ -88,12 +82,6 @@ main() {
 
   cp -vf requirements_ansible_py3.txt "${requirements_ansible}"
   cp -vf requirements.txt "${requirements}"
-
-  if [ "$1" = "ascension" ]; then
-      cd /awx_devel/requirements
-      ./parser.py restore requirements.in
-      ./parser.py restore requirements_ansible.in
-  fi
 
   _cleanup
 }
