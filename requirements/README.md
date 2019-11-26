@@ -50,7 +50,7 @@ pip download <pypi library name> -d docs/licenses/ --no-binary :all: --no-deps
 
 Make sure to delete the old tarball if it is an upgrade.
 
-## Upgrade Blockers
+## UPGRADE BLOCKERs
 
 Anything pinned in `*.in` files involves additional manual work in
 order to upgrade. Some information related to that work is outlined here.
