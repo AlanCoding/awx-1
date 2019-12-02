@@ -1,5 +1,5 @@
 ansible-runner
-ansiconv==1.0.0  # not updated since 2013, consider replacing instead of upgrading
+ansiconv==1.0.0  # UPGRADE BLOCKER: from 2013, consider replacing instead of upgrading
 asgi-amqp>=1.1.4  # see library notes, related to channels 2
 azure-keyvault==1.1.0  # see UPGRADE BLOCKERs
 boto  # replacement candidate https://github.com/ansible/awx/issues/2115
