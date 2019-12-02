@@ -24,12 +24,13 @@ except ImportError: # pragma: no cover
 import hashlib
 
 try:
-    import django
-    from django.db.backends.base import schema
-    from django.db.backends.utils import names_digest
+    import django  # noqa: F401
     HAS_DJANGO = True
 except ImportError:
     HAS_DJANGO = False
+else:
+    from django.db.backends.base import schema
+    from django.db.backends.utils import names_digest
 
 
 if HAS_DJANGO is True:
