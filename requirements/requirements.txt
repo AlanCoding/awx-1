@@ -2,7 +2,7 @@ adal==1.2.2               # via msrestazure
 amqp==2.5.2               # via kombu
 ansible-runner==1.4.4
 ansiconv==1.0.0
-asgi-amqp==1.1.3
+asgi-amqp==1.1.4
 asgiref==1.1.2            # via asgi-amqp, channels, daphne
 attrs==19.3.0             # via automat, jsonschema, twisted
 autobahn==19.11.1         # via daphne
