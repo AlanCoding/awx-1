@@ -138,3 +138,8 @@ This could be replaced, see: https://github.com/ansible/awx/pull/2530
 
 This can be removed when a solution for the external log queuing is ready.
 https://github.com/ansible/awx/pull/5092
+
+### asgi-amqp
+
+This library is not compatible with channels 2 and is not expected
+to become so. This drives other pins in the requirements file.
