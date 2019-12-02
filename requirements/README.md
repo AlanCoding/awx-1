@@ -15,6 +15,16 @@ then run the script:
 
 `./updater.sh`
 
+#### Upgrading Unpinned Dependency
+
+If you require a new version of a dependency that does not have a pinned version
+for a fix or feature, pin a minimum version and run `./updater.sh`. For example,
+replace the line `asgi-amqp` with `asgi-amqp>=1.1.4`, and consider leaving a
+note.
+
+Then next time that a general upgrade is performed, the minimum version specifiers
+can be removed, because `*.txt` files are upgraded to latest.
+
 ### Upgrading Dependencies
 
 You can upgrade (`pip-compile --upgrade`) the dependencies by running
