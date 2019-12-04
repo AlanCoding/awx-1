@@ -136,6 +136,275 @@ class Inventory(HasCopy, HasCreate, HasInstanceGroups, HasVariables, base.Base):
                 return True
         poll_until(_wait, interval=1, timeout=60)
 
+    def _assert_content_same(self, inventory2,
+                             allow_superset=False, assert_everything=False,
+                             use_instance_id=False):
+        def get_host_id_mapping(inventory_obj):
+            """Hosts have an identifier separate from their name
+            the identifier is not known in the script data sent to Ansible
+            so we have to get that from the API here, and use it to
+            build a mapping from host names to ID
+            """
+            page = 1
+            host_list = []
+            while page:
+                this_page = inventory_obj.get_related('hosts', page=page, page_size=200)
+                host_list += this_page.results
+                page_string = this_page.next
+                if page_string:
+                    page = int(page_string.split('=')[1].split('&')[0])
+                else:
+                    page = None
+
+            name_to_id = {}
+            for h in host_list:
+                if use_instance_id and h.instance_id:
+                    this_host_id = h.instance_id
+                else:
+                    # if instance_id wasn't filled in, the name is the id
+                    this_host_id = h.name
+                name_to_id[h.name] = this_host_id
+            return name_to_id
+
+        # Ask it to return towervars and unenabled hosts too
+        json_data1 = self.get_related('script', hostvars=1, all=1).json
+        json_data2 = inventory2.get_related('script', hostvars=1, all=1).json
+
+        name_to_id1 = get_host_id_mapping(self)
+        name_to_id2 = get_host_id_mapping(inventory2)
+        host_id_set1 = set(name_to_id1.values())
+        host_id_set2 = set(name_to_id2.values())
+
+        errors = ''
+
+        # Check 1: host list
+        shared_hosts = host_id_set1 & host_id_set2  # shared host ids
+        try:
+            if allow_superset:
+                assert host_id_set2 == shared_hosts
+            else:
+                assert host_id_set2 == host_id_set1
+        except AssertionError as e:
+            errors = '\n'.join([
+                errors,
+                '',
+                'Check 1: hosts',
+                ' Hosts did not line up between this and that',
+                str(e)
+            ])
+
+        # Check 2: group list
+        exclude_gn = set(['_meta', 'all', 'ungrouped'])
+        groups1 = set(
+            group_name for group_name in json_data1.keys() if group_name not in exclude_gn
+        )
+        groups2 = set(
+            group_name for group_name in json_data2.keys() if group_name not in exclude_gn
+        )
+        shared_groups = groups1 & groups2
+        try:
+            if allow_superset:
+                assert groups2 == shared_groups
+            else:
+                assert groups2 == groups1
+        except AssertionError as e:
+            errors = '\n'.join([
+                errors,
+                '',
+                'Check 2: group list',
+                ' Groups did not line up between this and that',
+                str(e)
+            ])
+        # Check 2b: group-host conflicts
+        name_conflicts = (set(name_to_id1.keys()) | set(name_to_id2.keys())) & shared_groups
+        if name_conflicts:
+            errors += '\n'.join([
+                '',
+                'Check 2b: group name and host name conflict for {}'.format(name_conflicts)
+            ])
+
+        # Check 3: memberships
+
+        def get_host_memberships(script_data, name_to_id):
+            memberships = set()
+            for group_name, group_data in script_data.items():
+                if group_name in exclude_gn:
+                    # this would be redundant with the host list comparision
+                    continue
+                if 'hosts' not in group_data:
+                    continue
+                if group_name not in shared_groups:
+                    continue
+                for host in group_data['hosts']:
+                    host_id = name_to_id[host]
+                    if host_id not in shared_hosts:
+                        continue
+                    memberships.add((group_name, host_id))
+            return memberships
+
+        memberships1 = get_host_memberships(json_data1, name_to_id1)
+        memberships2 = get_host_memberships(json_data2, name_to_id2)
+        shared_memberships = memberships1 & memberships2
+
+        try:
+            if allow_superset:
+                assert memberships2 == shared_memberships
+            else:
+                assert memberships2 == memberships1
+        except AssertionError as e:
+            errors = '\n'.join([
+                errors,
+                '',
+                'Check 3: memberships',
+                ' Host memberships did not line up between this and that',
+                str(e)
+            ])
+
+        def get_group_memberships(script_data):
+            memberships = set()
+            for group_name, group_data in script_data.items():
+                if group_name in exclude_gn:
+                    continue
+                if 'children' not in group_data:
+                    continue
+                if group_name not in shared_groups:
+                    continue
+                for child_name in group_data['children']:
+                    if child_name not in shared_groups:
+                        continue
+                    memberships.add((group_name, child_name))
+            return memberships
+
+        group_memberships1 = get_group_memberships(json_data1)
+        group_memberships2 = get_group_memberships(json_data2)
+        shared_group_memberships = group_memberships1 & group_memberships2
+
+        try:
+            if allow_superset:
+                assert group_memberships2 == shared_group_memberships
+            else:
+                assert group_memberships2 == group_memberships1
+        except AssertionError as e:
+            errors = '\n'.join([
+                errors,
+                '',
+                'Check 3b: memberships',
+                ' Group memberships did not line up between this and that',
+                str(e)
+            ])
+
+        # Check 4: groupvars
+        for group_name in shared_groups:
+            if group_name in name_conflicts:
+                # this is a misconfigured state, not coherent in comparision
+                continue
+            try:
+                gvars1 = json_data1[group_name].get('vars', {})
+                gvars2 = json_data2[group_name].get('vars', {})
+                if allow_superset:
+                    gvars1_red = gvars1.copy()
+                    for key in gvars1:
+                        if key not in gvars2:
+                            gvars1_red.pop(key)
+                    assert gvars2 == gvars1_red
+                else:
+                    assert gvars2 == gvars1
+            except AssertionError as e:
+                errors = '\n'.join([
+                    errors,
+                    '',
+                    'Check 4: groupvars',
+                    u'Group vars of {} were not equal between this and that'.format(group_name),
+                    str(e)
+                ])
+                if not assert_everything:
+                    break
+        if not shared_groups and groups2:
+            errors = '\n'.join([errors, '', 'Check 4: groupvars skipped because groups not aligned'])
+        # Check 5: hostvars
+
+        def get_host_name_from_id(name_to_id, host_id):
+            for host_name, host_id_p in name_to_id.items():
+                if host_id == host_id_p:
+                    return host_name
+            else:
+                raise AssertionError('Could not find shared host id {} out of:\n{}'.format(
+                    host_id, json.dumps(name_to_id, indent=2)
+                ))
+
+        for host_id in shared_hosts:
+            if host_id in shared_groups:
+                # this is a misconfigured state, not coherent in comparision
+                continue
+            try:
+                host_name_1 = get_host_name_from_id(name_to_id1, host_id)
+                host_name_2 = get_host_name_from_id(name_to_id2, host_id)
+                d1 = json_data1['_meta']['hostvars'][host_name_1]
+                d2 = json_data2['_meta']['hostvars'][host_name_2]
+                for key in set(d1.keys()) & set(d2.keys()):
+                    if isinstance(d1[key], dict):
+                        # we traverse into subdicts to simply the error message
+                        sub_dict1 = d1.pop(key)
+                        sub_dict2 = d2.pop(key)
+                        # put in these placeholders to indicate larger omitted content
+                        d1[key] = '<dict-removed>'
+                        d2[key] = '<dict-removed>'
+                        try:
+                            # this does not really work
+                            # if allow_superset:
+                            #     sub_dict1_red = sub_dict1.copy()
+                            #     for key2 in sub_dict1:
+                            #         if key2 not in sub_dict2:
+                            #             sub_dict1_red.pop(key2)
+                            #     assert sub_dict2 == sub_dict1_red
+                            assert sub_dict2 == sub_dict1
+                        except AssertionError as e:
+                            errors = '\n'.join([
+                                errors,
+                                '',
+                                u'  Subdict at {} of hostvars for host {} not equal between this and that'.format(
+                                    key, (host_name_1, host_name_2)
+                                ),
+                                str(e)
+                            ])
+                if allow_superset:
+                    d1_red = d1.copy()
+                    for key in d1:
+                        if key not in d2:
+                            d1_red.pop(key)
+                    assert d2 == d1_red
+                else:
+                    assert d2 == d1
+            except AssertionError as e:
+                errors = '\n'.join([
+                    errors,
+                    '',
+                    'Check 5: hostvars',
+                    ' Hostvars for same host {} did not line up between this and that'.format(
+                        (host_name_1, host_name_2)),
+                    str(e)
+                ])
+                if not assert_everything:
+                    break
+        if not shared_hosts and name_to_id2:
+            errors = '\n'.join([errors, '', 'Check 5: hostvars skipped because hosts not aligned'])
+        if errors:
+            raise AssertionError(errors)
+
+    def assert_is_superset(self, inventory2, **kwargs):
+        """Given a second inventory, inventory2, this asserts that this
+        inventory contains all the hosts, groups, and relationships
+        that the second inventory has
+        """
+        self._assert_content_same(inventory2, allow_superset=True, **kwargs)
+
+    def assert_content_same(self, inventory2, **kwargs):
+        """Given a second inventory, inventory2, this method asserts that
+        the content of the second inventory is eactly equal to the content
+        of this inventory, considering host, groups, relationships, and vars
+        """
+        self._assert_content_same(inventory2, allow_superset=False, **kwargs)
+
     def update_inventory_sources(self, wait=False):
         response = self.related.update_inventory_sources.post()
         source_ids = [entry['inventory_source']
