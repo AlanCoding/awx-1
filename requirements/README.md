@@ -6,7 +6,7 @@ The `requirements.txt` and `requirements_ansible.txt` files are generated from `
 
 Commands should from inside `./requirements` directory of the awx repository.
 
-Make sure you have `patch, awk, python3, python2, python3-venv, python2-virtualenv, pip2, pip3` installed.
+Make sure you have `patch, awk, python3, python2, python3-venv, python2-virtualenv, pip2, pip3` installed. The development container image should have all these.
 
 ### Upgrading or Adding Select Libraries
 
@@ -30,10 +30,6 @@ can be removed, because `*.txt` files are upgraded to latest.
 You can upgrade (`pip-compile --upgrade`) the dependencies by running
 
 `./updater.sh upgrade`.
-
-If you are using the development container image, you need to run `dnf -y install libpq-devel libcurl-devel`.
-These packages are removed in the Dockerfile.
-Depending on the libraries involved, you may also need `dnf -y install gcc redhat-rpm-config python3-devel`.
 
 ## What The Script Does
 
