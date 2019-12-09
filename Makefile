@@ -176,6 +176,7 @@ requirements_ansible: virtualenv_ansible
 
 requirements_ansible_py3: virtualenv_ansible_py3
 	$(VENV_BASE)/ansible/bin/python --version
+	$(VENV_BASE)/ansible/bin/python -m pip --version
 	$(VENV_BASE)/ansible/bin/python -m pip show pip
 	$(VENV_BASE)/ansible/bin/pip show pip
 	$(VENV_BASE)/ansible/bin/python -m ensurepip
