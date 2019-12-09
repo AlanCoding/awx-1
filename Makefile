@@ -170,6 +170,8 @@ requirements_ansible: virtualenv_ansible
 	else \
 	    cat requirements/requirements_ansible.txt requirements/requirements_ansible_git.txt | $(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) --no-binary $(SRC_ONLY_PKGS) --ignore-installed -r /dev/stdin ; \
 	fi
+	$(VENV_BASE)/ansible/bin/python -m ensurepip
+	$(VENV_BASE)/ansible/bin/pip --version
 	$(VENV_BASE)/ansible/bin/pip uninstall --yes -r requirements/requirements_ansible_uninstall.txt
 
 requirements_ansible_py3: virtualenv_ansible_py3
