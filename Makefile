@@ -139,7 +139,8 @@ virtualenv_ansible:
 			virtualenv -p python --system-site-packages $(VENV_BASE)/ansible && \
 			$(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) six packaging appdirs && \
 			$(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) setuptools==42.0.1 && \
-			$(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) pip==19.3.1; \
+			$(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) pip==19.3.1 && \
+			$(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) wheel==0.33.6; \
 		fi; \
 	fi
 
@@ -149,7 +150,10 @@ virtualenv_ansible_py3:
 			mkdir $(VENV_BASE); \
 		fi; \
 		if [ ! -d "$(VENV_BASE)/ansible" ]; then \
-			$(PYTHON) -m venv --system-site-packages $(VENV_BASE)/ansible; \
+			$(PYTHON) -m venv --system-site-packages $(VENV_BASE)/ansible && \
+			$(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) setuptools==42.0.1 && \
+			$(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) pip==19.3.1 && \
+			$(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) wheel==0.33.6; \
 		fi; \
 	fi
 
