@@ -6,3 +6,4 @@ isort
 virtualenv
 m2r
 twine  # from python-daemon
+wheel==0.33.6
