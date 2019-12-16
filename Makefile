@@ -166,7 +166,7 @@ virtualenv_awx:
 
 requirements_ansible: virtualenv_ansible
 	if [[ "$(PIP_OPTIONS)" == *"--no-index"* ]]; then \
-	    cat requirements/requirements_ansible.txt requirements/requirements_ansible_local.txt | $(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) --ignore-installed --no-build-isolation -r /dev/stdin ; \
+	    cat requirements/requirements_ansible.txt requirements/requirements_ansible_local.txt | $(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) --ignore-installed -r /dev/stdin ; \
 	else \
 	    cat requirements/requirements_ansible.txt requirements/requirements_ansible_git.txt | $(VENV_BASE)/ansible/bin/pip install $(PIP_OPTIONS) --no-binary $(SRC_ONLY_PKGS) -r /dev/stdin ; \
 	fi
@@ -175,7 +175,7 @@ requirements_ansible: virtualenv_ansible
 
 requirements_ansible_py3: virtualenv_ansible_py3
 	if [[ "$(PIP_OPTIONS)" == *"--no-index"* ]]; then \
-	    cat requirements/requirements_ansible.txt requirements/requirements_ansible_local.txt | $(VENV_BASE)/ansible/bin/pip3 install $(PIP_OPTIONS) --ignore-installed --no-build-isolation -r /dev/stdin ; \
+	    cat requirements/requirements_ansible.txt requirements/requirements_ansible_local.txt | $(VENV_BASE)/ansible/bin/pip3 install $(PIP_OPTIONS) --ignore-installed -r /dev/stdin ; \
 	else \
 	    cat requirements/requirements_ansible.txt requirements/requirements_ansible_git.txt | $(VENV_BASE)/ansible/bin/pip3 install $(PIP_OPTIONS) --no-binary $(SRC_ONLY_PKGS) -r /dev/stdin ; \
 	fi
@@ -190,7 +190,7 @@ requirements_ansible_dev:
 # Install third-party requirements needed for AWX's environment.
 requirements_awx: virtualenv_awx
 	if [[ "$(PIP_OPTIONS)" == *"--no-index"* ]]; then \
-	    cat requirements/requirements.txt requirements/requirements_local.txt | $(VENV_BASE)/awx/bin/pip install $(PIP_OPTIONS) --ignore-installed --no-build-isolation -r /dev/stdin ; \
+	    cat requirements/requirements.txt requirements/requirements_local.txt | $(VENV_BASE)/awx/bin/pip install $(PIP_OPTIONS) --ignore-installed -r /dev/stdin ; \
 	else \
 	    cat requirements/requirements.txt requirements/requirements_git.txt | $(VENV_BASE)/awx/bin/pip install $(PIP_OPTIONS) --no-binary $(SRC_ONLY_PKGS) -r /dev/stdin ; \
 	fi
