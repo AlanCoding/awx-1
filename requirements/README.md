@@ -102,6 +102,15 @@ edited, just like the old migration was edited in the project:
 https://github.com/jazzband/django-oauth-toolkit/commit/96538876d0d7ea0319ba5286f9bde842a906e1c5
 The field can simply have the validator method `validate_uris` removed.
 
+### django-split-settings
+
+Version 2.0 drops Django 2 support, so upgrade should not be attempted
+until the upgrade to Django 3 happens.
+
+Version 2.0 also introduces poetry as a package manager, which has been
+known to cause issues. A previous solution was to install poetry in
+the target `virtualenv_awx`.
+
 ### azure-keyvault
 
 Upgrading to 4.0.0 causes error because imports changed.
