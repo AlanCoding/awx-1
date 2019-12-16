@@ -159,7 +159,8 @@ virtualenv_awx:
 		fi; \
 		if [ ! -d "$(VENV_BASE)/awx" ]; then \
 			virtualenv -p $(PYTHON) $(VENV_BASE)/awx; \
-			$(VENV_BASE)/awx/bin/pip install $(PIP_OPTIONS) pip==19.3.1 setuptools==41.6.0 wheel==0.33.6; \
+			$(VENV_BASE)/awx/bin/pip install $(PIP_OPTIONS) pip==19.3.1 setuptools==41.6.0 wheel==0.33.6 && \
+			$(VENV_BASE)/awx/bin/pip install $(PIP_OPTIONS) poetry==0.12.17 flit; \
 		fi; \
 	fi
 
