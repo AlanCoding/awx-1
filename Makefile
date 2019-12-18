@@ -157,8 +157,8 @@ virtualenv_ansible_py3:
 		fi; \
 	fi
 
-# poetry and flit are needed for offline install of certain packages
-# but are not declared in setup_requires due to complex reasons
+# flit is needed for offline install of certain packages, specifically ptyprocess
+# it is needed for setup, but not always recognized as a setup dependency
 # similar to pip, setuptools, and wheel, these are all needed here as a bootstrapping issues
 virtualenv_awx:
 	if [ "$(VENV_BASE)" ]; then \
