@@ -28,7 +28,7 @@ DEV_DOCKER_TAG_BASE ?= gcr.io/ansible-tower-engineering
 SRC_ONLY_PKGS ?= cffi,pycparser,psycopg2,twilio
 # These should be upgraded in the AWX and Ansible venv before attempting
 # to install the actual requirements
-VENV_BOOTSTRAP ?= pip==19.3.1 setuptools==41.6.0 wheel==0.33.6
+VENV_BOOTSTRAP ?= pip==19.3.1 setuptools==41.6.0
 
 # Determine appropriate shasum command
 UNAME_S := $(shell uname -s)
