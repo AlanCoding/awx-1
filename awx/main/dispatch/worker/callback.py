@@ -1,6 +1,7 @@
 import logging
 import time
 import traceback
+import os
 
 from django.conf import settings
 from django.db import DatabaseError, OperationalError, connection as django_connection
@@ -27,6 +28,14 @@ class CallbackBrokerWorker(BaseWorker):
     MAX_RETRIES = 2
 
     def perform_work(self, body):
+        # time.sleep(0.0015)
+        # time.sleep(0.005)
+        # time.sleep(0.01)
+        # time.sleep(0.02)
+        # time.sleep(0.04)
+        time.sleep(0.1)
+        # logger.info('Worker {} got data'.format(os.getppid()))
+        return
         try:
             event_map = {
                 'job_id': JobEvent,

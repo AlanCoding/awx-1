@@ -5,6 +5,7 @@ import os
 import logging
 import signal
 import sys
+import time
 from uuid import UUID
 from queue import Empty as QueueEmpty
 
@@ -14,8 +15,11 @@ from kombu.mixins import ConsumerMixin
 
 from awx.main.dispatch.pool import WorkerPool
 
+is_callback = False
+
 if 'run_callback_receiver' in sys.argv:
     logger = logging.getLogger('awx.main.commands.run_callback_receiver')
+    is_callback = True
 else:
     logger = logging.getLogger('awx.main.dispatch')
 
@@ -122,16 +126,26 @@ class BaseWorker(object):
     def work_loop(self, queue, finished, idx, *args):
         ppid = os.getppid()
         signal_handler = WorkerSignalHandler()
+        proc_ct = 0
         while not signal_handler.kill_now:
             # if the parent PID changes, this process has been orphaned
             # via e.g., segfault or sigkill, we should exit too
             if os.getppid() != ppid:
                 break
             try:
+                get_start = time.time()
                 body = queue.get(block=True, timeout=1)
+                logger.info('GET {}th pid={} idx={} in {:.6f}'.format(
+                    proc_ct,
+                    ppid, idx, time.time() - get_start
+                ))
                 if body == 'QUIT':
                     break
             except QueueEmpty:
+                logger.info('GET {}th pid={} idx={} in {:.6f} (empty)'.format(
+                    proc_ct,
+                    ppid, idx, time.time() - get_start
+                ))
                 continue
             except Exception as e:
                 logger.error("Exception on worker {}, restarting: ".format(idx) + str(e))
@@ -141,6 +155,7 @@ class BaseWorker(object):
                     # If the database connection has a hiccup during the prior message, close it
                     # so we can establish a new connection
                     conn.close_if_unusable_or_obsolete()
+                proc_ct += 1
                 self.perform_work(body, *args)
             finally:
                 if 'uuid' in body:

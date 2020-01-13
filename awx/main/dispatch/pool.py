@@ -3,6 +3,7 @@ import os
 import random
 import sys
 import traceback
+import time
 from uuid import uuid4
 
 import collections
@@ -85,13 +86,21 @@ class PoolWorker(object):
             if not body.get('uuid'):
                 body['uuid'] = str(uuid4())
             uuid = body['uuid']
-        logger.debug('delivered {} to worker[{}] qsize {}'.format(
-            uuid, self.pid, self.qsize
-        ))
+        # logger.debug('delivered {} to worker[{}] qsize {}'.format(
+        #     uuid, self.pid, self.qsize
+        # ))
         self.managed_tasks[uuid] = self.tracking_data(body)
+        start1 = time.time()
         self.queue.put(body, block=True, timeout=5)
         self.messages_sent += 1
+        start2 = time.time()
         self.calculate_managed_tasks()
+        logger.info('PUT {} worker[{}] took={:.6f} calc={:.6f} qsize={}'.format(
+            uuid[:5], self.pid,
+            start2 - start1,
+            time.time() - start2,
+            self.qsize
+        ))
 
     def quit(self):
         '''
@@ -284,7 +293,7 @@ class WorkerPool(object):
                 self.workers[queue_actual].put(body)
                 return queue_actual
             except QueueFull:
-                pass
+                logger.info('PUT full_queue {}'.format(self.workers[queue_actual].pid))
             except Exception:
                 tb = traceback.format_exc()
                 logger.warn("could not write to queue %s" % preferred_queue)

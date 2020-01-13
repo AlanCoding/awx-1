@@ -196,7 +196,7 @@ LOCAL_STDOUT_EXPIRE_TIME = 2592000
 JOB_EVENT_WORKERS = 4
 
 # The maximum size of the job event worker queue before requests are blocked
-JOB_EVENT_MAX_QUEUE_SIZE = 10000
+JOB_EVENT_MAX_QUEUE_SIZE = 800
 
 # Disallow sending session cookies over insecure connections
 SESSION_COOKIE_SECURE = True
