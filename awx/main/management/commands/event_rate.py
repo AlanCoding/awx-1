@@ -76,12 +76,12 @@ class Command(BaseCommand):
         for event in JobEvent.objects.iterator():
             i += 1
             if last is not None:
-                if (event.modified - last).microseconds > delta:
-                    delta = (event.modified - last).microseconds
-                # assert event.modified >= last, '{} - {}'.format((event.modified - last).microseconds, i)
+                if (event.modified - last).total_seconds() > delta:
+                    delta = (event.modified - last).total_seconds()
+                # assert event.modified >= last, '{} - {}'.format((event.modified - last).total_seconds(), i)
             last = event.modified
         print('maximum time (in seconds) that ordering of ids and modified times differs')
-        print(delta / 1000000.)
+        print(delta)
 
         print('')
         print('Searching job events for save delays')
@@ -195,9 +195,12 @@ class Command(BaseCommand):
         # for i, element in enumerate(considered[1:]):
         #     print((i, element))
         #     assert element >= considered[i]
-        delta = (considered[-1] - considered[0]).microseconds / 1000000.
+        delta = (considered[-1] - considered[0]).total_seconds()
         # print(delta)
-        r = len(considered) / delta
+        if delta > 0.:
+            r = len(considered) / delta
+        else:
+            r = r1
         # print('    {:.3f}  {:.3f}'.format(r1, r))
         return r
 
