@@ -3,8 +3,12 @@ set -ue
 
 requirements_in="$(readlink -f ./requirements.in)"
 requirements_ansible_in="$(readlink -f ./requirements_ansible.in)"
+requirements_setup_in="$(readlink -f ./requirements_setup_requires.in)"
+
 requirements="$(readlink -f ./requirements.txt)"
 requirements_ansible="$(readlink -f ./requirements_ansible.txt)"
+requirements_setup="$(readlink -f ./requirements_setup_requires.txt)"
+
 pip_compile="pip-compile --no-header --quiet -r --allow-unsafe"
 
 check_prerequisites() {
@@ -31,8 +35,7 @@ generate_requirements_v3() {
 
   install_deps
 
-  ${pip_compile} --output-file requirements.txt "${requirements_in}"
-  ${pip_compile} --output-file requirements_ansible_py3.txt "${requirements_ansible_in}"
+  ${pip_compile} --output-file "$2" "$1"
 }
 
 generate_requirements_v2() {
@@ -43,12 +46,12 @@ generate_requirements_v2() {
 
   install_deps
 
-  ${pip_compile} --output-file requirements_ansible.txt "${requirements_ansible_in}"
+  ${pip_compile} --output-file "$2" "$1"
 }
 
 generate_patch() {
-  a="requirements_ansible_py3.txt"
-  b="requirements_ansible.txt"
+  a="$2"
+  b="$1"
   replace='; python_version < "3" #'
 
   # most elegant/quick solution I could come up for now
@@ -72,15 +75,24 @@ main() {
   cp -vf requirements.txt requirements_ansible.txt "${_tmp}"
   cp -vf requirements_ansible.txt "${_tmp}/requirements_ansible_py3.txt"
 
+  echo "Working temporary directory ${_tmp}"
   cd "${_tmp}"
 
-  generate_requirements_v3
-  generate_requirements_v2
+  generate_requirements_v3 ${requirements_ansible_in} requirements.txt
+
+  generate_requirements_v3 ${requirements_ansible_in} requirements_ansible_py3.txt
+  generate_requirements_v2 ${requirements_ansible_in} requirements_ansible.txt
+
+  generate_requirements_v3 ${requirements_setup_in} requirements_setup_requires_py3.txt
+  generate_requirements_v2 ${requirements_setup_in} requirements_setup_requires.txt
 
   sed -i 's/^docutils.*//g' requirements.txt
-  generate_patch | patch -p4 requirements_ansible_py3.txt
+
+  generate_patch requirements_ansible.txt requirements_ansible_py3.txt | patch -p4 requirements_ansible_py3.txt
+  generate_patch requirements_setup_requires.txt requirements_setup_requires_py3.txt | patch -p4 requirements_setup_requires_py3.txt
 
   cp -vf requirements_ansible_py3.txt "${requirements_ansible}"
+  cp -vf requirements_setup_requires_py3.txt "${requirements_setup}"
   cp -vf requirements.txt "${requirements}"
 
   _cleanup
