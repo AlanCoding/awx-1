@@ -82,12 +82,14 @@ main() {
 
   cd "${_tmp}"
 
-  generate_requirements_v3 ${requirements_ansible_in} requirements.txt
+  generate_requirements_v3 ${requirements_in} requirements.txt
 
   generate_requirements_v3 ${requirements_ansible_in} requirements_ansible_py3.txt
   generate_requirements_v2 ${requirements_ansible_in} requirements_ansible.txt
 
   sed 's/^.*python_version.*//g' ${requirements_setup_in} > requirements_setup_py2.in
+  # flit will not install in python2 with not found error
+  sed -i 's/^.*flit.*//g' requirements_setup_py2.in
 
   generate_requirements_v3 ${requirements_setup_in} requirements_setup_requires_py3.txt
   generate_requirements_v2 requirements_setup_py2.in requirements_setup_requires.txt
