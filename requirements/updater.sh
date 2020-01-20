@@ -94,7 +94,7 @@ main() {
 
   sed -i 's/^docutils.*//g' requirements.txt
 
-  # generate_patch requirements_ansible.txt requirements_ansible_py3.txt | patch -p4 requirements_ansible_py3.txt
+  generate_patch requirements_ansible.txt requirements_ansible_py3.txt | patch -p4 requirements_ansible_py3.txt
   generate_patch requirements_setup_requires.txt requirements_setup_requires_py3.txt | patch -p4 requirements_setup_requires_py3.txt
 
   cp -vf requirements_ansible_py3.txt "${requirements_ansible}"
