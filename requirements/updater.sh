@@ -35,6 +35,8 @@ generate_requirements_v3() {
 
   install_deps
 
+  echo ""
+  echo "${pip_compile} --output-file $2 $1"
   ${pip_compile} --output-file "$2" "$1"
 }
 
@@ -46,6 +48,8 @@ generate_requirements_v2() {
 
   install_deps
 
+  echo ""
+  echo "${pip_compile} --output-file $2 $1"
   ${pip_compile} --output-file "$2" "$1"
 }
 
@@ -66,34 +70,36 @@ main() {
   check_prerequisites
 
   _tmp="$(mktemp -d --suffix .awx-requirements XXXX -p /tmp)"
-  trap _cleanup INT TERM EXIT
+  # trap _cleanup INT TERM EXIT
 
   if [ "$1" = "upgrade" ]; then
       pip_compile="${pip_compile} --upgrade"
   fi
 
-  cp -vf requirements.txt requirements_ansible.txt "${_tmp}"
-  cp -vf requirements_ansible.txt "${_tmp}/requirements_ansible_py3.txt"
+  # cp -vf requirements.txt requirements_ansible.txt "${_tmp}"
+  # cp -vf requirements_ansible.txt "${_tmp}/requirements_ansible_py3.txt"
+  cp -vf requirements_setup_requires.txt "${_tmp}/requirements_setup_requires_py3.txt"
 
-  echo "Working temporary directory ${_tmp}"
   cd "${_tmp}"
 
-  generate_requirements_v3 ${requirements_ansible_in} requirements.txt
+  # generate_requirements_v3 ${requirements_ansible_in} requirements.txt
+  # 
+  # generate_requirements_v3 ${requirements_ansible_in} requirements_ansible_py3.txt
+  # generate_requirements_v2 ${requirements_ansible_in} requirements_ansible.txt
 
-  generate_requirements_v3 ${requirements_ansible_in} requirements_ansible_py3.txt
-  generate_requirements_v2 ${requirements_ansible_in} requirements_ansible.txt
+  sed 's/^.*python_version.*//g' ${requirements_setup_in} > requirements_setup_py2.in
 
   generate_requirements_v3 ${requirements_setup_in} requirements_setup_requires_py3.txt
-  generate_requirements_v2 ${requirements_setup_in} requirements_setup_requires.txt
+  generate_requirements_v2 requirements_setup_py2.in requirements_setup_requires.txt
 
-  sed -i 's/^docutils.*//g' requirements.txt
+  # sed -i 's/^docutils.*//g' requirements.txt
 
-  generate_patch requirements_ansible.txt requirements_ansible_py3.txt | patch -p4 requirements_ansible_py3.txt
+  # generate_patch requirements_ansible.txt requirements_ansible_py3.txt | patch -p4 requirements_ansible_py3.txt
   generate_patch requirements_setup_requires.txt requirements_setup_requires_py3.txt | patch -p4 requirements_setup_requires_py3.txt
 
-  cp -vf requirements_ansible_py3.txt "${requirements_ansible}"
+  # cp -vf requirements_ansible_py3.txt "${requirements_ansible}"
   cp -vf requirements_setup_requires_py3.txt "${requirements_setup}"
-  cp -vf requirements.txt "${requirements}"
+  # cp -vf requirements.txt "${requirements}"
 
   _cleanup
 }
