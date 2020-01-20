@@ -1,6 +1,6 @@
 argcomplete==1.10.3
 attrs==19.3.0             # via jsonschema
-backports.functools-lru-cache==1.6.1
+backports.functools-lru-cache==1.6.1; python_version < "3" # via isort
 bleach==3.1.0             # via readme-renderer
 cachecontrol[filecache]==0.12.6  # via poetry
 cachy==0.2.0              # via poetry
@@ -17,20 +17,17 @@ futures==3.3.0; python_version < "3" # via isort
 glob2==0.6; python_version < "3" # via poetry
 html5lib==1.0.1           # via poetry
 idna==2.8                 # via requests
-importlib-metadata==1.4.0; python_version < "3" # via jsonschema
-incremental==17.5.0
+importlib-metadata==1.4.0  # via jsonschema
 isort==4.3.21
 jsonschema==3.2.0         # via poetry
 lockfile==0.12.2          # via cachecontrol
-lxml==4.4.2
 m2r==0.2.1
 mistune==0.8.4            # via m2r
-more-itertools==5.0.0
+more-itertools==5.0.0     # via zipp
 msgpack==0.6.2            # via cachecontrol
 pastel==0.1.1             # via cleo
 pathlib2==2.3.5; python_version < "3" # via importlib-metadata, poetry
 pbr==5.4.4
-pkgconfig==1.5.1
 pkginfo==1.5.0.1          # via poetry, twine
 poetry==0.12.17
 pycparser==2.19           # via cffi
@@ -43,20 +40,19 @@ readme-renderer==24.0     # via twine
 requests-toolbelt==0.8.0  # via poetry, twine
 requests==2.22.0          # via cachecontrol, poetry, requests-toolbelt, twine
 scandir==1.10.0; python_version < "3" # via pathlib2
-setuptools-scm==3.4.2
 shellingham==1.3.1        # via poetry
 six==1.14.0; python_version < "3" # via bleach, html5lib, jsonschema, more-itertools, pathlib2, pyrsistent, readme-renderer
 subprocess32==3.5.4; python_version < "3" # via poetry
 tomlkit==0.5.8            # via poetry
 tqdm==4.41.1              # via twine
-twine==1.15.0; python_version < "3" #
+twine==1.15.0
 typing==3.7.4.1; python_version < "3" # via poetry, tomlkit
 urllib3==1.25.7           # via requests
 vcversioner==2.16.0.0
 virtualenv==16.7.9
 webencodings==0.5.1       # via bleach, html5lib
 wheel==0.33.6
-zipp==1.0.0; python_version < "3" # via importlib-metadata
+zipp==1.0.0               # via importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:
 setuptools==41.6.0
