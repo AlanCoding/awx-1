@@ -10,7 +10,7 @@ chardet==3.0.4            # via requests
 cleo==0.6.8               # via poetry
 configparser==4.0.2; python_version < "3" # via importlib-metadata
 contextlib2==0.6.0.post1; python_version < "3" # via importlib-metadata
-docutils==0.16            # via m2r, readme-renderer
+docutils==0.16; python_version < "3" # via m2r, readme-renderer
 enum34==1.1.6; python_version < "3" # via tomlkit
 functools32==3.2.3.post2; python_version < "3" # via jsonschema, poetry, tomlkit
 futures==3.3.0; python_version < "3" # via isort
@@ -41,7 +41,7 @@ pyrsistent==0.14.11       # via jsonschema, poetry
 pytest-runner==5.2
 readme-renderer==24.0     # via twine
 requests-toolbelt==0.8.0  # via poetry, twine
-requests==2.22.0          # via cachecontrol, poetry, requests-toolbelt, twine
+requests==2.22.0; python_version < "3" # via cachecontrol, poetry, requests-toolbelt, twine
 scandir==1.10.0; python_version < "3" # via pathlib2
 setuptools-scm==3.4.2
 shellingham==1.3.1        # via poetry
@@ -50,6 +50,7 @@ subprocess32==3.5.4; python_version < "3" # via poetry
 tomlkit==0.5.8            # via poetry
 tqdm==4.41.1              # via twine
 twine==1.15.0; python_version < "3" #
+flit==2.2.0; python_version < "3" #
 typing==3.7.4.1; python_version < "3" # via poetry, tomlkit
 urllib3==1.25.7           # via requests
 vcversioner==2.16.0.0
