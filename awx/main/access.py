@@ -1465,10 +1465,6 @@ class JobTemplateAccess(NotificationAttachMixin, BaseAccess):
             if self.user not in inventory.use_role:
                 return False
 
-        organization = get_value(Organization, 'organization')
-        if (not organization) or (self.user not in organization.job_template_admin_role):
-            return False
-
         project = get_value(Project, 'project')
         # If the user has admin access to the project (as an org admin), should
         # be able to proceed without additional checks.
@@ -1666,13 +1662,13 @@ class JobAccess(BaseAccess):
                 if JobLaunchConfigAccess(self.user).can_add({'reference_obj': config}):
                     return True
 
-        # Standard permissions model (2)
+        # Standard permissions model without job template involved (2)
         if obj.organization and self.user in obj.organization.execute_role:
-            # Respect organization ownership of orphaned jobs
             return True
         elif not (obj.job_template or obj.organization):
-            if self.save_messages:
-                self.messages['detail'] = _('Job has been orphaned from its job template and organization.')
+            raise PermissionDenied(_('Job has been orphaned from its job template and organization.'))
+        elif obj.job_template and config is not None:
+            raise PermissionDenied(_('Job was launched with prompted fields you do not have access to.'))
 
         return False
 
