@@ -323,6 +323,14 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         else:
             return self.job_slice_count
 
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields', [])
+        if self.project.organization_id != self.organization_id:
+            self.organization_id = self.project.organization_id
+            update_fields.append('organization_id')
+        result = super(JobTemplate, self).save(*args, **kwargs)
+        return result
+
     def create_unified_job(self, **kwargs):
         prevent_slicing = kwargs.pop('_prevent_slicing', False)
         slice_ct = self.get_effective_slice_ct(kwargs)
