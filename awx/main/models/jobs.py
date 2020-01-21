@@ -329,7 +329,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         if self.project:
             proj_org_id = self.project.organization_id
         if proj_org_id != self.organization_id:
-            self.organization_id = self.project.organization_id
+            self.organization_id = proj_org_id
             update_fields.append('organization_id')
         result = super(JobTemplate, self).save(*args, **kwargs)
         return result
