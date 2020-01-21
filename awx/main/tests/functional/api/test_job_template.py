@@ -42,43 +42,6 @@ def test_create(post, project, machine_credential, inventory, alice, grant_proje
 
 
 @pytest.mark.django_db
-def test_creation_uniqueness_rules(post, project, inventory, admin_user):
-    orgA = Organization.objects.create(name='orga')
-    orgB = Organization.objects.create(name='orgb')
-    create_data = {
-        'name': 'this_unique_name',
-        'project': project.pk,
-        'inventory': inventory.pk,
-        'playbook': 'helloworld.yml',
-        'organization': orgA.pk
-    }
-    post(
-        url=reverse('api:job_template_list'),
-        data=create_data,
-        user=admin_user,
-        expect=201
-    )
-    r = post(
-        url=reverse('api:job_template_list'),
-        data=create_data,
-        user=admin_user,
-        expect=400
-    )
-    msg = str(r.data['__all__'][0])
-    assert "JobTemplate with this (" in msg
-    assert ") combination already exists" in msg
-
-    # can create JT with same name, only if it is in different org
-    create_data['organization'] = orgB.pk
-    post(
-        url=reverse('api:job_template_list'),
-        data=create_data,
-        user=admin_user,
-        expect=201
-    )
-
-
-@pytest.mark.django_db
 def test_extra_credential_creation(get, post, organization_factory, job_template_factory, credentialtype_aws):
     objs = organization_factory("org", superusers=['admin'])
     jt = job_template_factory("jt", organization=objs.organization,
@@ -577,6 +540,29 @@ def test_jt_organization_follows_project(post, patch, admin_user):
         expect=200
     )
     assert r.data['organization'] == project2.organization_id
+
+
+@pytest.mark.django_db
+def test_jt_organization_field_is_read_only(patch, admin_user):
+    org = Organization.objects.create(name='foo1')
+    project = Project.objects.create(
+        name='proj', organization=org, scm_type='git',
+        playbook_files=['helloworld.yml']
+    )
+    jt = JobTemplate.objects.create(
+        name='foo_jt',
+        ask_inventory_on_launch=True,
+        project=project, playbook='helloworld.yml'
+    )
+    org2 = Organization.objects.create(name='foo2')
+    r = patch(
+        url=jt.get_absolute_url(),
+        data={'organization': org2.id},
+        user=admin_user,
+        expect=200
+    )
+    assert r.data['organization'] == org.id
+    assert JobTemplate.objects.get(pk=jt.pk).organization == org
 
 
 @pytest.mark.django_db
