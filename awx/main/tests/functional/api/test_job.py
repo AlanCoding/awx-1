@@ -220,8 +220,7 @@ def test_block_unprocessed_events(delete, admin_user, mocker):
 def test_block_related_unprocessed_events(mocker, organization, project, delete, admin_user):
     job_template = JobTemplate.objects.create(
         project=project,
-        playbook='helloworld.yml',
-        organization=organization
+        playbook='helloworld.yml'
     )
     time_of_finish = parse("Thu Feb 23 14:17:24 2012 -0500")
     Job.objects.create(
@@ -230,7 +229,7 @@ def test_block_related_unprocessed_events(mocker, organization, project, delete,
         finished=time_of_finish,
         job_template=job_template,
         project=project,
-        organization=organization
+        organization=project.organization
     )
     view = RelatedJobsPreventDeleteMixin()
     time_of_request = time_of_finish + relativedelta(seconds=2)
