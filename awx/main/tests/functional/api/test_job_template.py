@@ -6,7 +6,7 @@ import pytest
 # AWX
 from awx.api.serializers import JobTemplateSerializer
 from awx.api.versioning import reverse
-from awx.main.models import Job, JobTemplate, CredentialType, WorkflowJobTemplate, Organization
+from awx.main.models import Job, JobTemplate, CredentialType, WorkflowJobTemplate, Organization, Project
 from awx.main.migrations import _save_password_keys as save_password_keys
 
 # Django
@@ -547,6 +547,37 @@ def test_job_template_unset_custom_virtualenv(get, patch, organization_factory,
     url = reverse('api:job_template_detail', kwargs={'pk': jt.id})
     resp = patch(url, {'custom_virtualenv': value}, user=objs.superusers.admin, expect=200)
     assert resp.data['custom_virtualenv'] is None
+
+
+@pytest.mark.django_db
+def test_jt_organization_follows_project(post, patch, admin_user):
+    org1 = Organization.objects.create(name='foo1')
+    org2 = Organization.objects.create(name='foo2')
+    project_common = dict(scm_type='git', playbook_files=['helloworld.yml'])
+    project1 = Project.objects.create(name='proj1', organization=org1, **project_common)
+    project2 = Project.objects.create(name='proj2', organization=org2, **project_common)
+    r = post(
+        url=reverse('api:job_template_list'),
+        data={
+            "name": "fooo",
+            "ask_inventory_on_launch": True,
+            "project": project1.pk,
+            "playbook": "helloworld.yml"
+        },
+        user=admin_user,
+        expect=201
+    )
+    data = r.data
+    assert data['organization'] == project1.organization_id
+    data['project'] = project2.id
+    jt = JobTemplate.objects.get(pk=data['id'])
+    r = patch(
+        url=jt.get_absolute_url(),
+        data=data,
+        user=admin_user,
+        expect=200
+    )
+    assert r.data['organization'] == project2.organization_id
 
 
 @pytest.mark.django_db
