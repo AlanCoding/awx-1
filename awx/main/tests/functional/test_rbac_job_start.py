@@ -121,6 +121,7 @@ class TestJobRelaunchAccess:
 
     def test_orphan_relaunch_via_organization(self, job_no_prompts, rando, organization):
         "JT for job has been deleted, relevant organization roles will allow management"
+        assert job_no_prompts.organization == organization
         organization.execute_role.members.add(rando)
         job_no_prompts.job_template.delete()
         job_no_prompts.job_template = None  # Django should do this for us, but it does not

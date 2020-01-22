@@ -325,14 +325,13 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
 
     def save(self, *args, **kwargs):
         update_fields = kwargs.get('update_fields', [])
-        proj_org_id = None
-        if self.project:
-            proj_org_id = self.project.organization_id
-        if proj_org_id != self.organization_id:
-            self.organization_id = proj_org_id
-            update_fields.append('organization_id')
-        result = super(JobTemplate, self).save(*args, **kwargs)
-        return result
+        # if project is deleted for some reason, then keep the old organization
+        # to retain ownership for organization admins
+        if self.project and self.project.organization_id != self.organization_id:
+            self.organization_id = self.project.organization_id
+            if 'organization' not in update_fields and 'organization_id' not in update_fields:
+                update_fields.append('organization_id')
+        return super(JobTemplate, self).save(*args, **kwargs)
 
     def create_unified_job(self, **kwargs):
         prevent_slicing = kwargs.pop('_prevent_slicing', False)
