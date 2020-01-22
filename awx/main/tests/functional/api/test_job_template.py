@@ -32,13 +32,17 @@ def test_create(post, project, machine_credential, inventory, alice, grant_proje
         inventory.use_role.members.add(alice)
     project.organization.job_template_admin_role.members.add(alice)
 
-    r = post(reverse('api:job_template_list'), {
-        'name': 'Some name',
-        'project': project.id,
-        'inventory': inventory.id,
-        'playbook': 'helloworld.yml'
-    }, alice)
-    assert r.status_code == expect
+    post(
+        url=reverse('api:job_template_list'),
+        data={
+            'name': 'Some name',
+            'project': project.id,
+            'inventory': inventory.id,
+            'playbook': 'helloworld.yml'
+        },
+        user=alice,
+        expect=expect
+    )
 
 
 @pytest.mark.django_db
@@ -124,14 +128,18 @@ def test_create_with_forks_exceeding_maximum_xfail(alice, post, project, invento
     project.use_role.members.add(alice)
     inventory.use_role.members.add(alice)
     settings.MAX_FORKS = 10
-    response = post(reverse('api:job_template_list'), {
-        'name': 'Some name',
-        'project': project.id,
-        'inventory': inventory.id,
-        'playbook': 'helloworld.yml',
-        'forks': 11,
-    }, alice)
-    assert response.status_code == 400
+    response = post(
+        url=reverse('api:job_template_list'),
+        data={
+            'name': 'Some name',
+            'project': project.id,
+            'inventory': inventory.id,
+            'playbook': 'helloworld.yml',
+            'forks': 11,
+        },
+        user=alice,
+        expect=400
+    )
     assert 'Maximum number of forks (10) exceeded' in str(response.data)
 
 
