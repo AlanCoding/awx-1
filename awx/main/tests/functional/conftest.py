@@ -598,11 +598,8 @@ def permissions():
 
 
 def _request(verb):
-    def rf(url, data_or_user=None, user=None, middleware=None, expect=None, **kwargs):
-        if type(data_or_user) is User and user is None:
-            user = data_or_user
-        elif 'data' not in kwargs:
-            kwargs['data'] = data_or_user
+    def rf(url, data=None, user=None, middleware=None, expect=None, **kwargs):
+        kwargs['data'] = data
         if 'format' not in kwargs and 'content_type' not in kwargs:
             kwargs['format'] = 'json'
 

@@ -21,8 +21,7 @@ def role():
 def test_get_roles_list_admin(organization, get, admin):
     'Admin can see list of all roles'
     url = reverse('api:role_list')
-    response = get(url, admin)
-    assert response.status_code == 200
+    response = get(url=url, user=admin, expect=200)
     roles = response.data
     assert roles['count'] > 0
 
@@ -36,8 +35,7 @@ def test_get_roles_list_user(organization, inventory, team, get, user):
     organization.member_role.children.add(custom_role)
 
     url = reverse('api:role_list')
-    response = get(url, this_user)
-    assert response.status_code == 200
+    response = get(url=url, user=this_user, expect=200)
     roles = response.data
     assert roles['count'] > 0
     assert roles['count'] == len(roles['results']) # just to make sure the tests below are valid
@@ -87,8 +85,12 @@ def test_cant_create_role(post, admin):
     # Some day we might want to do this, but until that is speced out, lets
     # ensure we don't slip up and allow this implicitly through some helper or
     # another
-    response = post(reverse('api:role_list'), {'name': 'New Role'}, admin)
-    assert response.status_code == 405
+    post(
+        url=reverse('api:role_list'),
+        data={'name': 'New Role'},
+        user=admin,
+        expect=405
+    )
 
 
 @pytest.mark.django_db
@@ -97,8 +99,11 @@ def test_cant_delete_role(delete, admin, inventory):
     # Some day we might want to do this, but until that is speced out, lets
     # ensure we don't slip up and allow this implicitly through some helper or
     # another
-    response = delete(reverse('api:role_detail', kwargs={'pk': inventory.admin_role.id}), admin)
-    assert response.status_code == 405
+    delete(
+        url=reverse('api:role_detail', kwargs={'pk': inventory.admin_role.id}),
+        user=admin,
+        expect=405
+    )
 
 
 #
@@ -109,8 +114,7 @@ def test_cant_delete_role(delete, admin, inventory):
 @pytest.mark.django_db
 def test_get_user_roles_list(get, admin):
     url = reverse('api:user_roles_list', kwargs={'pk': admin.id})
-    response = get(url, admin)
-    assert response.status_code == 200
+    response = get(url=url, user=admin, expect=200)
     roles = response.data
     assert roles['count'] > 0 # 'system_administrator' role if nothing else
 
@@ -130,8 +134,7 @@ def test_user_view_other_user_roles(organization, inventory, team, get, alice, b
     # Bob is in a team that alice is not, alice cannot see that bob is a member of that team.
 
     url = reverse('api:user_roles_list', kwargs={'pk': bob.id})
-    response = get(url, alice)
-    assert response.status_code == 200
+    response = get(url=url, user=alice, expect=200)
     roles = response.data
     assert roles['count'] > 0
     assert roles['count'] == len(roles['results']) # just to make sure the tests below are valid
@@ -148,8 +151,7 @@ def test_user_view_other_user_roles(organization, inventory, team, get, alice, b
 
     # again but this time alice is part of the team, and should be able to see the team role
     team.member_role.members.add(alice)
-    response = get(url, alice)
-    assert response.status_code == 200
+    response = get(url=url, user=alice, expect=200)
     roles = response.data
     assert roles['count'] > 0
     assert roles['count'] == len(roles['results']) # just to make sure the tests below are valid
@@ -166,16 +168,13 @@ def test_add_role_to_user(role, post, admin):
     assert admin.roles.filter(id=role.id).count() == 0
     url = reverse('api:user_roles_list', kwargs={'pk': admin.id})
 
-    response = post(url, {'id': role.id}, admin)
-    assert response.status_code == 204
+    post(url=url, data={'id': role.id}, user=admin, expect=204)
     assert admin.roles.filter(id=role.id).count() == 1
 
-    response = post(url, {'id': role.id}, admin)
-    assert response.status_code == 204
+    post(url=url, data={'id': role.id}, user=admin, expect=204)
     assert admin.roles.filter(id=role.id).count() == 1
 
-    response = post(url, {}, admin)
-    assert response.status_code == 400
+    post(url=url, data={}, user=admin, expect=400)
     assert admin.roles.filter(id=role.id).count() == 1
 
 
@@ -183,12 +182,10 @@ def test_add_role_to_user(role, post, admin):
 def test_remove_role_from_user(role, post, admin):
     assert admin.roles.filter(id=role.id).count() == 0
     url = reverse('api:user_roles_list', kwargs={'pk': admin.id})
-    response = post(url, {'id': role.id}, admin)
-    assert response.status_code == 204
+    post(url=url, data={'id': role.id}, user=admin, expect=204)
     assert admin.roles.filter(id=role.id).count() == 1
 
-    response = post(url, {'disassociate': role.id, 'id': role.id}, admin)
-    assert response.status_code == 204
+    post(url=url, data={'disassociate': role.id, 'id': role.id}, user=admin, expect=204)
     assert admin.roles.filter(id=role.id).count() == 0
 
 
@@ -201,8 +198,7 @@ def test_remove_role_from_user(role, post, admin):
 def test_get_teams_roles_list(get, team, organization, admin):
     team.member_role.children.add(organization.admin_role)
     url = reverse('api:team_roles_list', kwargs={'pk': team.id})
-    response = get(url, admin)
-    assert response.status_code == 200
+    response = get(url=url, user=admin, expect=200)
     roles = response.data
 
     assert roles['count'] == 1
@@ -214,16 +210,13 @@ def test_add_role_to_teams(team, post, admin):
     assert team.member_role.children.filter(id=team.member_role.id).count() == 0
     url = reverse('api:team_roles_list', kwargs={'pk': team.id})
 
-    response = post(url, {'id': team.member_role.id}, admin)
-    assert response.status_code == 204
+    post(url=url, data={'id': team.member_role.id}, user=admin, expect=204)
     assert team.member_role.children.filter(id=team.member_role.id).count() == 1
 
-    response = post(url, {'id': team.member_role.id}, admin)
-    assert response.status_code == 204
+    post(url=url, data={'id': team.member_role.id}, user=admin, expect=204)
     assert team.member_role.children.filter(id=team.member_role.id).count() == 1
 
-    response = post(url, {}, admin)
-    assert response.status_code == 400
+    post(url=url, data={}, user=admin, expect=400)
     assert team.member_role.children.filter(id=team.member_role.id).count() == 1
 
 
@@ -231,12 +224,10 @@ def test_add_role_to_teams(team, post, admin):
 def test_remove_role_from_teams(team, post, admin):
     assert team.member_role.children.filter(id=team.member_role.id).count() == 0
     url = reverse('api:team_roles_list', kwargs={'pk': team.id})
-    response = post(url, {'id': team.member_role.id}, admin)
-    assert response.status_code == 204
+    post(url=url, data={'id': team.member_role.id}, user=admin, expect=204)
     assert team.member_role.children.filter(id=team.member_role.id).count() == 1
 
-    response = post(url, {'disassociate': team.member_role.id, 'id': team.member_role.id}, admin)
-    assert response.status_code == 204
+    post(url=url, data={'disassociate': True, 'id': team.member_role.id}, user=admin, expect=204)
     assert team.member_role.children.filter(id=team.member_role.id).count() == 0
 
 
@@ -248,25 +239,20 @@ def test_remove_role_from_teams(team, post, admin):
 @pytest.mark.django_db
 def test_get_role(get, admin, role):
     url = reverse('api:role_detail', kwargs={'pk': role.id})
-    response = get(url, admin)
-    assert response.status_code == 200
+    response = get(url=url, user=admin, expect=200)
     assert response.data['id'] == role.id
 
 
 @pytest.mark.django_db
 def test_put_role_405(put, admin, role):
     url = reverse('api:role_detail', kwargs={'pk': role.id})
-    response = put(url, {'name': 'Some new name'}, admin)
-    assert response.status_code == 405
-    #r = Role.objects.get(id=role.id)
-    #assert r.name == 'Some new name'
+    response = put(url=url, data={'name': 'Some new name'}, user=admin, expect=405)
 
 
 @pytest.mark.django_db
 def test_put_role_access_denied(put, alice, role):
     url = reverse('api:role_detail', kwargs={'pk': role.id})
-    response = put(url, {'name': 'Some new name'}, alice)
-    assert response.status_code == 403 or response.status_code == 405
+    put(url=url, data={'name': 'Some new name'}, user=alice, expect=405)
 
 
 #
@@ -278,8 +264,7 @@ def test_put_role_access_denied(put, alice, role):
 def test_get_role_users(get, admin, role):
     role.members.add(admin)
     url = reverse('api:role_users_list', kwargs={'pk': role.id})
-    response = get(url, admin)
-    assert response.status_code == 200
+    response = get(url=url, user=admin, expect=200)
     assert response.data['count'] == 1
     assert response.data['results'][0]['id'] == admin.id
 
@@ -339,9 +324,12 @@ def test_user_fail_to_add_user_to_job_template(post, organization, check_jobtemp
     assert rando not in check_jobtemplate.admin_role
     assert joe not in check_jobtemplate.execute_role
 
-    with transaction.atomic():
-        res = post(reverse('api:role_users_list', kwargs={'pk': check_jobtemplate.execute_role.id}), {'id': joe.id}, rando)
-    assert res.status_code == 403
+    post(
+        url=reverse('api:role_users_list', kwargs={'pk': check_jobtemplate.execute_role.id}),
+        data={'id': joe.id},
+        user=rando,
+        expect=403
+    )
 
     assert joe not in check_jobtemplate.execute_role
 
@@ -356,9 +344,12 @@ def test_user_fail_to_remove_user_to_job_template(post, organization, check_jobt
     assert rando not in check_jobtemplate.admin_role
     assert joe in check_jobtemplate.execute_role
 
-    with transaction.atomic():
-        res = post(reverse('api:role_users_list', kwargs={'pk': check_jobtemplate.execute_role.id}), {'disassociate': True, 'id': joe.id}, rando)
-    assert res.status_code == 403
+    post(
+        url=reverse('api:role_users_list', kwargs={'pk': check_jobtemplate.execute_role.id}),
+        data={'disassociate': True, 'id': joe.id},
+        user=rando,
+        expect=403
+    )
 
     assert joe in check_jobtemplate.execute_role
 
@@ -372,8 +363,7 @@ def test_user_fail_to_remove_user_to_job_template(post, organization, check_jobt
 def test_get_role_teams(get, team, admin, role):
     role.parents.add(team.member_role)
     url = reverse('api:role_teams_list', kwargs={'pk': role.id})
-    response = get(url, admin)
-    assert response.status_code == 200
+    response = get(url=url, user=admin, expect=200)
     assert response.data['count'] == 1
     assert response.data['results'][0]['id'] == team.id
 
@@ -382,8 +372,7 @@ def test_get_role_teams(get, team, admin, role):
 def test_add_team_to_role(post, team, admin, role):
     url = reverse('api:role_teams_list', kwargs={'pk': role.id})
     assert role.members.filter(id=admin.id).count() == 0
-    res = post(url, {'id': team.id}, admin)
-    assert res.status_code == 204
+    post(url=url, data={'id': team.id}, user=admin, expect=204)
     assert role.parents.filter(id=team.member_role.id).count() == 1
 
 
@@ -392,8 +381,7 @@ def test_remove_team_from_role(post, team, admin, role):
     role.members.add(admin)
     url = reverse('api:role_teams_list', kwargs={'pk': role.id})
     assert role.members.filter(id=admin.id).count() == 1
-    res = post(url, {'disassociate': True, 'id': team.id}, admin)
-    assert res.status_code == 204
+    post(url=url, data={'disassociate': True, 'id': team.id}, user=admin, expect=204)
     assert role.parents.filter(id=team.member_role.id).count() == 0
 
 
@@ -406,8 +394,7 @@ def test_remove_team_from_role(post, team, admin, role):
 def test_role_parents(get, team, admin, role):
     role.parents.add(team.member_role)
     url = reverse('api:role_parents_list', kwargs={'pk': role.id})
-    response = get(url, admin)
-    assert response.status_code == 200
+    response = get(url=url, user=admin, expect=200)
     assert response.data['count'] == 1
     assert response.data['results'][0]['id'] == team.member_role.id
 
@@ -421,8 +408,7 @@ def test_role_parents(get, team, admin, role):
 def test_role_children(get, team, admin, role):
     role.parents.add(team.member_role)
     url = reverse('api:role_children_list', kwargs={'pk': team.member_role.id})
-    response = get(url, admin)
-    assert response.status_code == 200
+    response = get(url=url, user=admin, expect=200)
     assert response.data['count'] == 2
     assert response.data['results'][0]['id'] == role.id or response.data['results'][1]['id'] == role.id
 
@@ -435,8 +421,7 @@ def test_role_children(get, team, admin, role):
 @pytest.mark.django_db
 def test_ensure_rbac_fields_are_present(organization, get, admin):
     url = reverse('api:organization_detail', kwargs={'pk': organization.id})
-    response = get(url, admin)
-    assert response.status_code == 200
+    response = get(url=url, user=admin, expect=200)
     org = response.data
 
     assert 'summary_fields' in org
@@ -444,9 +429,8 @@ def test_ensure_rbac_fields_are_present(organization, get, admin):
 
     role_pk = org['summary_fields']['object_roles']['admin_role']['id']
     role_url = reverse('api:role_detail', kwargs={'pk': role_pk})
-    org_role_response = get(role_url, admin)
+    org_role_response = get(url=role_url, user=admin, expect=200)
 
-    assert org_role_response.status_code == 200
     role = org_role_response.data
     assert role['related']['organization'] == url
 
@@ -454,8 +438,7 @@ def test_ensure_rbac_fields_are_present(organization, get, admin):
 @pytest.mark.django_db
 def test_ensure_role_summary_is_present(organization, get, user):
     url = reverse('api:organization_detail', kwargs={'pk': organization.id})
-    response = get(url, user('admin', True))
-    assert response.status_code == 200
+    response = get(url=url, user=user('admin', True), expect=200)
     org = response.data
 
     assert 'summary_fields' in org
