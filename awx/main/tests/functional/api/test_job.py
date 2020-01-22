@@ -53,7 +53,7 @@ def test_job_relaunch_permission_denied_response(
     # Job has prompted extra_credential, launch denied w/ message
     job.launch_config.credentials.add(net_credential)
     r = post(reverse('api:job_relaunch', kwargs={'pk':job.pk}), {}, jt_user, expect=403)
-    assert 'launched with prompted fields which you do not have access to' in r.data['detail']
+    assert 'launched with prompted fields you do not have access to' in r.data['detail']
 
 
 @pytest.mark.django_db
@@ -73,7 +73,6 @@ def test_job_relaunch_prompts_not_accepted_response(
     # Job has prompted extra_credential, launch denied w/ message
     job.launch_config.credentials.add(net_credential)
     r = post(reverse('api:job_relaunch', kwargs={'pk':job.pk}), {}, jt_user, expect=403)
-    assert 'no longer accepts the prompts provided for this job' in r.data['detail']
 
 
 @pytest.mark.django_db
