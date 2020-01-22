@@ -126,11 +126,11 @@ def test_job_template_extra_credentials_prompts_access(
     )
     jt.credentials.add(machine_credential)
     jt.execute_role.members.add(rando)
-    r = post(
+    post(
         reverse('api:job_template_launch', kwargs={'pk': jt.id}),
-        {'credentials': [machine_credential.pk, vault_credential.pk]}, rando
+        {'credentials': [machine_credential.pk, vault_credential.pk]}, rando,
+        expect=403
     )
-    assert r.status_code == 403
 
 
 @pytest.mark.django_db
