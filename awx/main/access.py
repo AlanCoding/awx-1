@@ -1463,10 +1463,6 @@ class JobTemplateAccess(NotificationAttachMixin, BaseAccess):
             if self.user not in inventory.use_role:
                 return False
 
-        organization = get_value(Organization, 'organization')
-        if (not organization) or (self.user not in organization.job_template_admin_role):
-            return False
-
         project = get_value(Project, 'project')
         # If the user has admin access to the project (as an org admin), should
         # be able to proceed without additional checks.
