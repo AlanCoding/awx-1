@@ -192,17 +192,25 @@ def cleanup_detached_labels_on_deleted_parent(sender, instance, **kwargs):
 
 def save_related_job_templates(sender, instance, **kwargs):
     '''save_related_job_templates loops through all of the
-    job templates that use an Inventory or Project that have had their
+    job templates that use an Inventory that have had their
     Organization updated. This triggers the rebuilding of the RBAC hierarchy
     and ensures the proper access restrictions.
     '''
-    if sender not in (Project, Inventory):
+    if sender is not Inventory:
         raise ValueError('This signal callback is only intended for use with Project or Inventory')
+
+    if ((update_fields and not ('organization' in update_fields or 'organization_id' in update_fields)) or
+            kwargs.get('created', False)):
+        return
 
     if instance._prior_values_store.get('organization_id') != instance.organization_id:
         jtq = JobTemplate.objects.filter(**{sender.__name__.lower(): instance})
         for jt in jtq:
-            update_role_parentage_for_instance(jt)
+            changed_ct = update_role_parentage_for_instance(jt)
+            if changed_ct:
+                logger.info('Permissions on JT {} changed due to inventory {} organization change from {} to {}.'.format(
+                    jt.pk, instance.pk, instance._prior_values_store.get('organization_id'), instance.organization_id
+                ))
 
 
 def connect_computed_field_signals():
