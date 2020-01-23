@@ -340,10 +340,10 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         """
         errors = []
         for ut in JobTemplate.SOFT_UNIQUE_TOGETHER:
-            qs = JobTemplate.objects.filter(
-                name=self.name,
-                organization=self.project.organization_id
-            )
+            kwargs = {'name': self.name}
+            if self.project:
+                kwargs['organization'] = self.project.organization_id
+            qs = JobTemplate.objects.filter(**kwargs)
             if self.pk:
                 qs = qs.exclude(pk=self.pk)
             if qs.exists():
