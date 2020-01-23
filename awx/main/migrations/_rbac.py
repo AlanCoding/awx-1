@@ -144,6 +144,49 @@ def migrate_ujt_organization_backward(apps, schema_editor):
     _migrate_unified_organization(apps, 'UnifiedJob', backward=True)
 
 
+def _restore_inventory_admins(apps, schema_editor, backward=False):
+    """With the JT.organization changes, admins of organizations connected to
+    job templates via inventory will have their permissions demoted.
+    This maintains current permissions over the migration by granting the
+    permissions they used to have explicitly on the JT itself.
+    """
+    Organization = apps.get_model('main', 'Organization')
+    JobTemplate = apps.get_model('main', 'JobTemplate')
+    added_ct = 0
+    for org in Organization.objects.iterator():
+        jts = list(
+            JobTemplate.objects.filter(inventory__organization=org).exclude(project__organization=org)
+        )
+        for user in org.admin_role.members.all():
+            for jt in jts:
+                logger.debug('Setting permissions for user {}, jt {}'.format(
+                    user.pk, jt.pk
+                ))
+                if not backward:
+                    has_admin = bool(user in jt.admin_role)
+                    if not has_admin:
+                        jt.admin_role.members.add(user)
+                        added_ct += 1
+                else:
+                    has_admin = bool(user in jt.admin_role.members.all())
+                    if has_admin:
+                        jt.admin_role.members.remove(user)
+                        added_ct += 1
+    if added_ct:
+        if not backward:
+            logger.info('Added explicit JT permission for {} users'.format(added_ct))
+        else:
+            logger.info('Removed explicit JT permission for {} users'.format(added_ct))
+
+
+def restore_inventory_admins(apps, schema_editor):
+    _restore_inventory_admins(apps, schema_editor)
+
+
+def restore_inventory_admins_backward(apps, schema_editor):
+    _restore_inventory_admins(apps, schema_editor, backward=True)
+
+
 def rebuild_role_hierarchy(apps, schema_editor):
     '''
     This should be called in any migration when ownerships are changed.
