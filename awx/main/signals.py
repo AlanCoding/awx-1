@@ -199,6 +199,7 @@ def save_related_job_templates(sender, instance, **kwargs):
     if sender is not Inventory:
         raise ValueError('This signal callback is only intended for use with Project or Inventory')
 
+    update_fields = kwargs.get('update_fields', None)
     if ((update_fields and not ('organization' in update_fields or 'organization_id' in update_fields)) or
             kwargs.get('created', False)):
         return
