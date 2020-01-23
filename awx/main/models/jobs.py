@@ -199,7 +199,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
         'labels', 'instance_groups', 'credentials', 'survey_spec'
     ]
     FIELDS_TO_DISCARD_AT_COPY = ['vault_credential', 'credential']
-    SOFT_UNIQUE_TOGETHER = [('polymorphic_ctype', 'name')]
+    SOFT_UNIQUE_TOGETHER = [('polymorphic_ctype', 'name', 'organization')]
 
     class Meta:
         app_label = 'main'
