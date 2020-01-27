@@ -163,7 +163,9 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
                     user.pk, jt.pk
                 ))
                 if not backward:
-                    has_admin = bool(user in jt.admin_role)
+                    # Queryset is borrowed from Role.__contains__, full model not available
+                    # same as: user in jt.admin_role
+                    has_admin = jt.admin_role.ancestors.filter(members=user).exists()
                     if not has_admin:
                         jt.admin_role.members.add(user)
                         added_ct += 1
