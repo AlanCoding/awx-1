@@ -72,6 +72,7 @@ from awx.main.utils import (
     prefetch_page_capabilities, get_external_account, truncate_stdout,
 )
 from awx.main.utils.filters import SmartFilter
+from awx.main.utils.named_url_graph import reset_counters
 from awx.main.redact import UriCleaner, REPLACE_STR
 
 from awx.main.validators import vars_validate_or_raise
@@ -347,6 +348,7 @@ class BaseSerializer(serializers.ModelSerializer, metaclass=BaseSerializerMetacl
 
     def _generate_named_url(self, url_path, obj, node):
         url_units = url_path.split('/')
+        reset_counters()
         named_url = node.generate_named_url(obj)
         url_units[4] = named_url
         return '/'.join(url_units)
