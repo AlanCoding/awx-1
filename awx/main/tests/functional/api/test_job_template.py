@@ -551,12 +551,8 @@ def test_jt_organization_follows_project(post, patch, admin_user):
 
 
 @pytest.mark.django_db
-def test_jt_organization_field_is_read_only(patch, admin_user):
-    org = Organization.objects.create(name='foo1')
-    project = Project.objects.create(
-        name='proj', organization=org, scm_type='git',
-        playbook_files=['helloworld.yml']
-    )
+def test_jt_organization_field_is_read_only(patch, post, project, admin_user):
+    org = project.organization
     jt = JobTemplate.objects.create(
         name='foo_jt',
         ask_inventory_on_launch=True,
@@ -571,6 +567,22 @@ def test_jt_organization_field_is_read_only(patch, admin_user):
     )
     assert r.data['organization'] == org.id
     assert JobTemplate.objects.get(pk=jt.pk).organization == org
+
+    # similar test, but on creation
+    r = post(
+        url=reverse('api:job_template_list'),
+        data={
+            'name': 'foobar',
+            'project': project.id,
+            'organization': org2.id,
+            'ask_inventory_on_launch': True,
+            'playbook': 'helloworld.yml'
+        },
+        user=admin_user,
+        expect=201
+    )
+    assert r.data['organization'] == org.id
+    assert JobTemplate.objects.get(pk=r.data['id']).organization == org
 
 
 @pytest.mark.django_db
