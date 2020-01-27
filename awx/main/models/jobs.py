@@ -343,6 +343,8 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Resour
             kwargs = {'name': self.name}
             if self.project:
                 kwargs['organization'] = self.project.organization_id
+            else:
+                kwargs['organization'] = None
             qs = JobTemplate.objects.filter(**kwargs)
             if self.pk:
                 qs = qs.exclude(pk=self.pk)
