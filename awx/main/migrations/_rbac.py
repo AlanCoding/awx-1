@@ -154,27 +154,33 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
     Organization = apps.get_model('main', 'Organization')
     JobTemplate = apps.get_model('main', 'JobTemplate')
     changed_ct = 0
-    for org in Organization.objects.iterator():
+    org_qs = Organization.objects.all()
+    org_qs = org_qs.prefetch_related(
+        'admin_role', 'execute_role',
+        'admin_role__members', 'execute_role__members'
+    )
+    for org in org_qs:
         jt_qs = JobTemplate.objects.filter(inventory__organization=org).exclude(project__organization=org)
-        jt_list = list(jt_qs)
-        for user in org.admin_role.members.all():
-            for jt in jt_list:
-                for role_name in ('admin_role', 'execute_role'):
+        jt_qs = jt_qs.prefetch_related('admin_role', 'execute_role')
+        for role_name in ('admin_role', 'execute_role'):
+            for user in getattr(org, role_name).members.all():
+                for jt in jt_qs:
                     logger.debug('{} {} on jt {} from user {} via inventory.organization {}'.format(
                         'Removing' if backward else 'Setting',
                         role_name, jt.pk, user.pk, org.pk
                     ))
+                    role = getattr(jt, role_name)
                     if not backward:
                         # Queryset is borrowed from Role.__contains__, full model not available
                         # same as: user in jt.admin_role
-                        has_role = getattr(jt, role_name).ancestors.filter(members=user).exists()
+                        has_role = role.ancestors.filter(members=user).exists()
                         if not has_role:
-                            getattr(jt, role_name).members.add(user)
+                            role.members.add(user)
                             changed_ct += 1
                     else:
-                        has_role = bool(user in getattr(jt, role_name).members.all())
+                        has_role = role.members.filter(id=user.id).exists()
                         if has_role:
-                            getattr(jt, role_name).members.remove(user)
+                            role.members.remove(user)
                             changed_ct += 1
     if changed_ct:
         logger.info('{} explicit JT permission for {} users in {:.4f} seconds'.format(
