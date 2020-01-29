@@ -21,6 +21,9 @@ class Migration(migrations.Migration):
     operations = [
         # backwards parents and ancestors caching
         migrations.RunPython(migrations.RunPython.noop, rebuild_role_parentage),
+        # for all permissions that will be removed, make them explicit
+        # called before other changes, because it relies on role ancestors
+        migrations.RunPython(restore_inventory_admins, restore_inventory_admins_backward),
         # add new organization field for JT and all other unified jobs
         migrations.AddField(
             model_name='unifiedjob',
@@ -70,7 +73,6 @@ class Migration(migrations.Migration):
             name='read_role',
             field=awx.main.fields.ImplicitRoleField(editable=False, null='True', on_delete=django.db.models.deletion.CASCADE, parent_role=['organization.auditor_role', 'inventory.organization.auditor_role', 'execute_role', 'admin_role'], related_name='+', to='main.Role'),
         ),
-        migrations.RunPython(restore_inventory_admins, restore_inventory_admins_backward),
         # Re-compute the role parents and ancestors caching
         # this may be a no-op because field post_save hooks from migrate_jt_organization
         migrations.RunPython(rebuild_role_parentage, migrations.RunPython.noop),

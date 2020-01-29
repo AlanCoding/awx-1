@@ -152,33 +152,34 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
     """
     Organization = apps.get_model('main', 'Organization')
     JobTemplate = apps.get_model('main', 'JobTemplate')
-    added_ct = 0
+    changed_ct = 0
     for org in Organization.objects.iterator():
-        jts = list(
-            JobTemplate.objects.filter(inventory__organization=org).exclude(project__organization=org)
-        )
+        jt_qs = JobTemplate.objects.filter(inventory__organization=org).exclude(project__organization=org)
+        jt_list = list(jt_qs)
         for user in org.admin_role.members.all():
-            for jt in jts:
-                logger.debug('Setting permissions for user {}, jt {}'.format(
-                    user.pk, jt.pk
-                ))
-                if not backward:
-                    # Queryset is borrowed from Role.__contains__, full model not available
-                    # same as: user in jt.admin_role
-                    has_admin = jt.admin_role.ancestors.filter(members=user).exists()
-                    if not has_admin:
-                        jt.admin_role.members.add(user)
-                        added_ct += 1
-                else:
-                    has_admin = bool(user in jt.admin_role.members.all())
-                    if has_admin:
-                        jt.admin_role.members.remove(user)
-                        added_ct += 1
-    if added_ct:
-        if not backward:
-            logger.info('Added explicit JT permission for {} users'.format(added_ct))
-        else:
-            logger.info('Removed explicit JT permission for {} users'.format(added_ct))
+            for jt in jt_list:
+                for role_name in ('admin_role', 'execute_role'):
+                    logger.debug('{} {} for user {}, jt {}'.format(
+                        'Removing' if backward else 'Setting',
+                        role_name, user.pk, jt.pk
+                    ))
+                    if not backward:
+                        # Queryset is borrowed from Role.__contains__, full model not available
+                        # same as: user in jt.admin_role
+                        has_role = getattr(jt, role_name).ancestors.filter(members=user).exists()
+                        if not has_role:
+                            getattr(jt, role_name).members.add(user)
+                            changed_ct += 1
+                    else:
+                        has_role = bool(user in getattr(jt, role_name).members.all())
+                        if has_role:
+                            getattr(jt, role_name).members.remove(user)
+                            changed_ct += 1
+    if changed_ct:
+        logger.info('{} explicit JT permission for {} users'.format(
+            'Removed' if backward else 'Added',
+            changed_ct
+        ))
 
 
 def restore_inventory_admins(apps, schema_editor):
