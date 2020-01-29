@@ -6,7 +6,7 @@ from django.db import migrations, models
 import django.db.models.deletion
 
 from awx.main.migrations._rbac import (
-    rebuild_role_parentage,
+    rebuild_role_parentage, rebuild_role_hierarchy,
     migrate_ujt_organization, migrate_ujt_organization_backward,
     restore_inventory_admins, restore_inventory_admins_backward
 )
@@ -21,9 +21,6 @@ class Migration(migrations.Migration):
     operations = [
         # backwards parents and ancestors caching
         migrations.RunPython(migrations.RunPython.noop, rebuild_role_parentage),
-        # for all permissions that will be removed, make them explicit
-        # called before other changes, because it relies on role ancestors
-        migrations.RunPython(restore_inventory_admins, restore_inventory_admins_backward),
         # add new organization field for JT and all other unified jobs
         migrations.AddField(
             model_name='unifiedjob',
@@ -76,4 +73,7 @@ class Migration(migrations.Migration):
         # Re-compute the role parents and ancestors caching
         # this may be a no-op because field post_save hooks from migrate_jt_organization
         migrations.RunPython(rebuild_role_parentage, migrations.RunPython.noop),
+        # for all permissions that will be removed, make them explicit
+        migrations.RunPython(restore_inventory_admins, restore_inventory_admins_backward),
+        migrations.RunPython(rebuild_role_hierarchy, migrations.RunPython.noop),
     ]
