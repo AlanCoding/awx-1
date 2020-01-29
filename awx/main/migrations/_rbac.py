@@ -160,9 +160,9 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
         for user in org.admin_role.members.all():
             for jt in jt_list:
                 for role_name in ('admin_role', 'execute_role'):
-                    logger.debug('{} {} on jt {} from user {}'.format(
+                    logger.debug('{} {} on jt {} from user {} via inventory.organization {}'.format(
                         'Removing' if backward else 'Setting',
-                        role_name, jt.pk, user.pk,
+                        role_name, jt.pk, user.pk, org.pk
                     ))
                     if not backward:
                         # Queryset is borrowed from Role.__contains__, full model not available
