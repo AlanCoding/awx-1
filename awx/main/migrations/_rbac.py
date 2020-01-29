@@ -115,7 +115,7 @@ def _migrate_unified_organization(apps, unified_cls_name, backward=False):
         if backward and UNIFIED_ORG_LOOKUPS.get(cls_name, 'not-found') is not None:
             logger.debug('Not reverse migrating {}, existing data should remain valid'.format(cls_name))
             continue
-        logger.debug('Migrating {} to new organization field'.format(cls_name))
+        logger.debug('{}Migrating {} to new organization field'.format(cls_name, 'Reverse ' if backward else ''))
 
         sub_qs = implicit_org_subquery(UnifiedClass, cls, backward=backward)
         if sub_qs is None:
@@ -129,7 +129,7 @@ def _migrate_unified_organization(apps, unified_cls_name, backward=False):
             r = UnifiedClass.objects.order_by().filter(polymorphic_ctype=this_ct).update(tmp_organization=sub_qs)
         if r:
             logger.info('Organization migration on {} affected {} rows.'.format(cls_name, r))
-    logger.info('Unified organization migration completed in %f seconds' % (time() - start))
+    logger.info('Unified organization migration completed in {:.4f} seconds'.format(time() - start))
 
 
 def migrate_ujt_organization(apps, schema_editor):
@@ -150,6 +150,7 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
     This maintains current permissions over the migration by granting the
     permissions they used to have explicitly on the JT itself.
     """
+    start = time()
     Organization = apps.get_model('main', 'Organization')
     JobTemplate = apps.get_model('main', 'JobTemplate')
     changed_ct = 0
@@ -159,9 +160,9 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
         for user in org.admin_role.members.all():
             for jt in jt_list:
                 for role_name in ('admin_role', 'execute_role'):
-                    logger.debug('{} {} for user {}, jt {}'.format(
+                    logger.debug('{} {} on jt {} from user {}'.format(
                         'Removing' if backward else 'Setting',
-                        role_name, user.pk, jt.pk
+                        role_name, jt.pk, user.pk,
                     ))
                     if not backward:
                         # Queryset is borrowed from Role.__contains__, full model not available
@@ -176,9 +177,9 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
                             getattr(jt, role_name).members.remove(user)
                             changed_ct += 1
     if changed_ct:
-        logger.info('{} explicit JT permission for {} users'.format(
+        logger.info('{} explicit JT permission for {} users in {:.4f} seconds'.format(
             'Removed' if backward else 'Added',
-            changed_ct
+            changed_ct, time() - start
         ))
 
 
