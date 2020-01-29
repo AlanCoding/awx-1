@@ -233,37 +233,33 @@ def rebuild_role_parentage(apps, schema_editor):
     updated_ct = 0
     model_ct = 0
     noop_ct = 0
-    Role = apps.get_model('main', "Role")
-    for role in Role.objects.iterator():
-        if not role.object_id:
-            noop_ct += 1
-            continue
-        model_tuple = (role.content_type_id, role.object_id)
-        if model_tuple in seen_models:
-            continue
-        seen_models.add(model_tuple)
+    with batch_role_ancestor_rebuilding():
+        for role in Role.objects.iterator():
+            if not role.object_id:
+                continue
+            model_tuple = (role.content_type_id, role.object_id)
+            if model_tuple in seen_models:
+                continue
+            seen_models.add(model_tuple)
 
-        # The GenericForeignKey does not work right in migrations
-        # with the usage as role.content_object
-        # so we do the lookup ourselves with current migration models
-        ct = role.content_type
-        app = ct.app_label
-        ct_model = apps.get_model(app, ct.model)
-        content_object = ct_model.objects.get(pk=role.object_id)
+            # The GenericForeignKey does not work right in migrations
+            # with the usage as role.content_object
+            # so we do the lookup ourselves with current migration models
+            ct = role.content_type
+            app = ct.app_label
+            ct_model = apps.get_model(app, ct.model)
+            content_object = ct_model.objects.get(pk=role.object_id)
 
-        updated = update_role_parentage_for_instance(content_object)
-        if updated:
-            model_ct += 1
-            logger.debug('Updated parents of {} roles of {}'.format(updated, content_object))
-        else:
-            noop_ct += 1
-        updated_ct += updated
+            updated = update_role_parentage_for_instance(content_object)
+            if updated:
+                model_ct += 1
+                logger.debug('Updated parents of {} roles of {}'.format(updated, content_object))
+            else:
+                noop_ct += 1
+            updated_ct += updated
 
-    logger.debug('No changes to role parents for {} roles'.format(noop_ct))
-    if updated_ct:
-        logger.info('Updated parentage for {} roles of {} resources'.format(updated_ct, model_ct))
+        logger.debug('No changes to role parents for {} roles'.format(noop_ct))
+        if updated_ct:
+            logger.info('Updated parentage for {} roles of {} resources'.format(updated_ct, model_ct))
 
     logger.info('Rebuild parentage completed in %f seconds' % (time() - start))
-
-    if updated_ct:
-        rebuild_role_hierarchy(apps, schema_editor)
