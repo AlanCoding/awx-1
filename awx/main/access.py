@@ -1647,7 +1647,7 @@ class JobAccess(BaseAccess):
         except JobLaunchConfig.DoesNotExist:
             config = None
 
-        # Standard permissions model (1)
+        # Standard permissions model
         if obj.job_template and (self.user not in obj.job_template.execute_role):
             return False
 
@@ -1662,13 +1662,15 @@ class JobAccess(BaseAccess):
                 if JobLaunchConfigAccess(self.user).can_add({'reference_obj': config}):
                     return True
 
-        # Standard permissions model without job template involved (2)
+        # Standard permissions model without job template involved
         if obj.organization and self.user in obj.organization.execute_role:
             return True
         elif not (obj.job_template or obj.organization):
             raise PermissionDenied(_('Job has been orphaned from its job template and organization.'))
         elif obj.job_template and config is not None:
             raise PermissionDenied(_('Job was launched with prompted fields you do not have access to.'))
+        elif obj.job_template and config is None:
+            raise PermissionDenied(_('Job was launched with unknown prompted fields. Organization admin permissions required.'))
 
         return False
 
