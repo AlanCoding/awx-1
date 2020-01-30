@@ -73,8 +73,6 @@ class Migration(migrations.Migration):
         # Re-compute the role parents and ancestors caching
         # this may be a no-op because field post_save hooks from migrate_jt_organization
         migrations.RunPython(rebuild_role_parentage, migrations.RunPython.noop),
-        migrations.RunPython(rebuild_role_hierarchy, migrations.RunPython.noop),
         # for all permissions that will be removed, make them explicit
         migrations.RunPython(restore_inventory_admins, restore_inventory_admins_backward),
-        migrations.RunPython(rebuild_role_hierarchy, migrations.RunPython.noop),
     ]

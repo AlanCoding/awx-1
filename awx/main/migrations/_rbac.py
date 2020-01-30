@@ -161,44 +161,35 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
     User = apps.get_model('auth', 'User')
     changed_ct = 0
     org_qs = Organization.objects.all()
-    org_qs = org_qs.prefetch_related(
-        'admin_role', 'execute_role',
-        # 'admin_role__members', 'execute_role__members'
-    )
+    org_qs = org_qs.prefetch_related('admin_role', 'execute_role')
     for org in org_qs:
         jt_qs = JobTemplate.objects.filter(inventory__organization=org).exclude(project__organization=org)
-        jt_qs = jt_qs.prefetch_related('admin_role', 'execute_role')
+        processed_users = set()
         for role_name in ('admin_role', 'execute_role'):
             org_role = getattr(org, role_name)
-            # for user in getattr(org, role_name).members.all():
             for jt in jt_qs:
                 role_id = getattr(jt, '{}_id'.format(role_name))
-                ancestor_qs = Role.objects.filter(
-                    descendents=role_id
-                )
-                logger.info('{} ancestors: {}'.format(
-                    role_id,
-                    [(r.role_field, r.object_id, getattr(role.content_type, 'model', None)) for r in ancestor_qs.all()]
-                ))
+                ancestor_qs = Role.objects.filter(descendents=role_id)
                 ancestor_ids = ancestor_qs.values_list('id', flat=True)
 
                 # use the database to filter intersection of users with access
                 # to the JT role and the organization role
                 user_qs = User.objects.filter(roles=org_role)
                 if backward:
-                    user_qs = user_qs.filter(roles=role)
+                    user_qs = user_qs.filter(roles=role_id)
                 else:
                     # Queryset is borrowed from Role.__contains__, full model not available
                     # same as: user in jt.admin_role
                     user_qs = user_qs.exclude(roles__in=ancestor_ids)
+
                 for user in user_qs:
-                    if user.is_superuser:
+                    if user.is_superuser or user.id in processed_users:
                         continue
+                    processed_users.add(user.id)
 
                     role = getattr(jt, role_name)
                     logger.debug('{} {} on jt {} from user {} via inventory.organization {}'.format(
-                        'Removing' if backward else 'Setting',
-                        role_name, jt.pk, user.pk, org.pk
+                        'Removing' if backward else 'Setting', role_name, jt.pk, user.pk, org.pk
                     ))
 
                     if not backward:
@@ -216,10 +207,12 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
 
 def restore_inventory_admins(apps, schema_editor):
     _restore_inventory_admins(apps, schema_editor)
+    rebuild_role_hierarchy(apps, schema_editor)
 
 
 def restore_inventory_admins_backward(apps, schema_editor):
     _restore_inventory_admins(apps, schema_editor, backward=True)
+    rebuild_role_hierarchy(apps, schema_editor)
 
 
 def rebuild_role_hierarchy(apps, schema_editor):
@@ -282,10 +275,10 @@ def rebuild_role_parentage(apps, schema_editor):
         removals.update(parents_removed)
         if parents_added:
             model_ct += 1
-            logger.debug('Added parents from roles {} of {}'.format(parents_added, content_object))
+            logger.debug('Added to parents of roles {} of {}'.format(parents_added, content_object))
         if parents_removed:
             model_ct += 1
-            logger.debug('Removed parents from roles {} of {}'.format(parents_removed, content_object))
+            logger.debug('Removed from parents of roles {} of {}'.format(parents_removed, content_object))
         else:
             noop_ct += 1
 
@@ -299,4 +292,4 @@ def rebuild_role_parentage(apps, schema_editor):
 
     # this is ran because the ordinary signals for
     # Role.parents.add and Role.parents.remove not called in migration
-    Role.rebuild_role_ancestor_list(additions, removals)
+    Role.rebuild_role_ancestor_list(list(additions), list(removals))
