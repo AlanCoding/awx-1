@@ -171,18 +171,17 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
                     ))
                     role_id = getattr(jt, '{}_id'.format(role_name))
                     role = Role.objects.get(id=role_id)
-                    logger.info('{} ancestors: {}'.format(
-                        (role.role_field, role.object_id, getattr(role.content_type, 'model', None)),
-                        [(r.role_field, r.object_id, getattr(r.content_type, 'model', None)) for r in role.ancestors.all()]
-                    ))
-                    logger.info('parents: {}'.format(
-                        [(r.role_field, r.object_id, r.content_type.model) for r in role.parents.all()]
-                    ))
-                    role = getattr(jt, role_name)
+                    # logger.info('{} ancestors: {}'.format(
+                    #     (role.role_field, role.object_id, getattr(role.content_type, 'model', None)),
+                    #     [(r.role_field, r.object_id, getattr(r.content_type, 'model', None)) for r in role.ancestors.all()]
+                    # ))
+                    # logger.info('parents: {}'.format(
+                    #     [(r.role_field, r.object_id, r.content_type.model) for r in role.parents.all()]
+                    # ))
                     if not backward:
                         # Queryset is borrowed from Role.__contains__, full model not available
                         # same as: user in jt.admin_role
-                        has_role = role.ancestors.filter(members=user).exists()
+                        has_role = role.ancestors.filter(members=user.id).exists()
                         if not has_role:
                             role.members.add(user.id)
                             changed_ct += 1
