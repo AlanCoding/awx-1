@@ -2,7 +2,6 @@ import logging
 from time import time
 
 from django.db.models import Subquery, OuterRef, F
-from django.db import connection
 
 from awx.main.fields import update_role_parentage_for_instance
 from awx.main.models.rbac import Role, batch_role_ancestor_rebuilding
@@ -108,7 +107,6 @@ def _migrate_unified_organization(apps, unified_cls_name, backward=False):
     (optimized method)
     """
     start = time()
-    queries_before = len(connection.queries)
     UnifiedClass = apps.get_model('main', unified_cls_name)
     ContentType = apps.get_model('contenttypes', 'ContentType')
 
@@ -132,7 +130,6 @@ def _migrate_unified_organization(apps, unified_cls_name, backward=False):
         if r:
             logger.info('Organization migration on {} affected {} rows.'.format(cls_name, r))
     logger.info('Unified organization migration completed in {:.4f} seconds'.format(time() - start))
-    logger.info('queries {}'.format(len(connection.queries) - queries_before))
 
 
 def migrate_ujt_organization(apps, schema_editor):
@@ -154,7 +151,6 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
     permissions they used to have explicitly on the JT itself.
     """
     start = time()
-    queries_before = len(connection.queries)
     JobTemplate = apps.get_model('main', 'JobTemplate')
     User = apps.get_model('auth', 'User')
     changed_ct = 0
@@ -206,7 +202,6 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
             'Removed' if backward else 'Added',
             changed_ct, time() - start
         ))
-    logger.info('queries {}'.format(len(connection.queries) - queries_before))
 
 
 def restore_inventory_admins(apps, schema_editor):
@@ -248,7 +243,6 @@ def rebuild_role_parentage(apps, schema_editor, models=None):
     This is like rebuild_role_hierarchy, but that method updates ancestors,
     whereas this method updates parents.
     '''
-    queries_before = len(connection.queries)
     start = time()
     seen_models = set()
     model_ct = 0
@@ -305,4 +299,3 @@ def rebuild_role_parentage(apps, schema_editor, models=None):
     # this is ran because the ordinary signals for
     # Role.parents.add and Role.parents.remove not called in migration
     Role.rebuild_role_ancestor_list(list(additions), list(removals))
-    logger.info('queries {}'.format(len(connection.queries) - queries_before))

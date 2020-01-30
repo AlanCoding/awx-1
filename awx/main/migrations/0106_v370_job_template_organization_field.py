@@ -12,6 +12,10 @@ from awx.main.migrations._rbac import (
 )
 
 
+def rebuild_jt_parents(apps, schema_editor):
+    rebuild_role_parentage(apps, schema_editor, models=('jobtemplate',))
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -20,7 +24,7 @@ class Migration(migrations.Migration):
 
     operations = [
         # backwards parents and ancestors caching
-        migrations.RunPython(migrations.RunPython.noop, rebuild_role_parentage),
+        migrations.RunPython(migrations.RunPython.noop, rebuild_jt_parents),
         # add new organization field for JT and all other unified jobs
         migrations.AddField(
             model_name='unifiedjob',
@@ -71,10 +75,7 @@ class Migration(migrations.Migration):
             field=awx.main.fields.ImplicitRoleField(editable=False, null='True', on_delete=django.db.models.deletion.CASCADE, parent_role=['organization.auditor_role', 'inventory.organization.auditor_role', 'execute_role', 'admin_role'], related_name='+', to='main.Role'),
         ),
         # Re-compute the role parents and ancestors caching
-        migrations.RunPython(
-            lambda apps, schema_editor: rebuild_role_parentage(apps, schema_editor, models=('jobtemplate',)),
-            migrations.RunPython.noop
-        ),
+        migrations.RunPython(rebuild_jt_parents, migrations.RunPython.noop),
         # for all permissions that will be removed, make them explicit
         migrations.RunPython(restore_inventory_admins, restore_inventory_admins_backward),
     ]
