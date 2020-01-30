@@ -2,6 +2,7 @@ import logging
 from time import time
 
 from django.db.models import Subquery, OuterRef
+from django.db import connection
 
 from awx.main.fields import update_role_parentage_for_instance
 from awx.main.models.rbac import Role, batch_role_ancestor_rebuilding
@@ -107,6 +108,7 @@ def _migrate_unified_organization(apps, unified_cls_name, backward=False):
     (optimized method)
     """
     start = time()
+    queries_before = len(connection.queries)
     UnifiedClass = apps.get_model('main', unified_cls_name)
     ContentType = apps.get_model('contenttypes', 'ContentType')
 
@@ -130,6 +132,7 @@ def _migrate_unified_organization(apps, unified_cls_name, backward=False):
         if r:
             logger.info('Organization migration on {} affected {} rows.'.format(cls_name, r))
     logger.info('Unified organization migration completed in {:.4f} seconds'.format(time() - start))
+    logger.info('queries {}'.format(len(connection.queries) - queries_before))
 
 
 def migrate_ujt_organization(apps, schema_editor):
@@ -151,42 +154,64 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
     permissions they used to have explicitly on the JT itself.
     """
     start = time()
+    connection.queries.clear()
+    queries_before = len(connection.queries)
     Organization = apps.get_model('main', 'Organization')
     JobTemplate = apps.get_model('main', 'JobTemplate')
+    User = apps.get_model('auth', 'User')
     changed_ct = 0
     org_qs = Organization.objects.all()
     org_qs = org_qs.prefetch_related(
         'admin_role', 'execute_role',
-        'admin_role__members', 'execute_role__members'
+        # 'admin_role__members', 'execute_role__members'
     )
     for org in org_qs:
         jt_qs = JobTemplate.objects.filter(inventory__organization=org).exclude(project__organization=org)
         jt_qs = jt_qs.prefetch_related('admin_role', 'execute_role')
         for role_name in ('admin_role', 'execute_role'):
-            for user in getattr(org, role_name).members.all():
-                for jt in jt_qs:
+            org_role = getattr(org, role_name)
+            # for user in getattr(org, role_name).members.all():
+            for jt in jt_qs:
+                role_id = getattr(jt, '{}_id'.format(role_name))
+                ancestor_qs = Role.objects.filter(
+                    descendents=role_id
+                )
+                logger.info('{} ancestors: {}'.format(
+                    role_id,
+                    [(r.role_field, r.object_id, getattr(role.content_type, 'model', None)) for r in ancestor_qs.all()]
+                ))
+                ancestor_ids = ancestor_qs.values_list('id', flat=True)
+
+                # use the database to filter intersection of users with access
+                # to the JT role and the organization role
+                user_qs = User.objects.filter(roles=org_role)
+                if backward:
+                    user_qs = user_qs.filter(roles=role)
+                else:
+                    # Queryset is borrowed from Role.__contains__, full model not available
+                    # same as: user in jt.admin_role
+                    user_qs = user_qs.exclude(roles__in=ancestor_ids)
+                for user in user_qs:
+                    if user.is_superuser:
+                        continue
+
+                    role = getattr(jt, role_name)
                     logger.debug('{} {} on jt {} from user {} via inventory.organization {}'.format(
                         'Removing' if backward else 'Setting',
                         role_name, jt.pk, user.pk, org.pk
                     ))
-                    role = getattr(jt, role_name)
+
                     if not backward:
-                        # Queryset is borrowed from Role.__contains__, full model not available
-                        # same as: user in jt.admin_role
-                        has_role = role.ancestors.filter(members=user).exists()
-                        if not has_role:
-                            role.members.add(user)
-                            changed_ct += 1
+                        role.members.add(user)
                     else:
-                        has_role = role.members.filter(id=user.id).exists()
-                        if has_role:
-                            role.members.remove(user)
-                            changed_ct += 1
+                        role.members.remove(user)
+                    changed_ct += 1
     if changed_ct:
         logger.info('{} explicit JT permission for {} users in {:.4f} seconds'.format(
             'Removed' if backward else 'Added',
             changed_ct, time() - start
         ))
+    logger.info('queries {}'.format(len(connection.queries) - queries_before))
 
 
 def restore_inventory_admins(apps, schema_editor):
