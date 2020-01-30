@@ -299,7 +299,7 @@ class TowerModule(AnsibleModule):
             except(Exception) as e:
                 self.fail_json(msg="Failed to parse the response json: {0}".format(e))
 
-        return {'status_code': response.status, 'json': response_json}
+        return {'status_code': response.getcode(), 'json': response_json}
 
     def authenticate(self, **kwargs):
         if self.username and self.password:

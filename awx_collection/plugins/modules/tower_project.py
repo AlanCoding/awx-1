@@ -267,7 +267,7 @@ def main():
         # If the state was absent we can let the module delete it if needed, the module will handle exiting from this
         module.delete_if_needed(project)
     elif state == 'present':
-        # If the state was present we can let the module build or update the existing team, this will return on its own
+        # If the state was present we can let the module build or update the existing project, this will return on its own
         module.create_or_update_if_needed(project, project_fields, endpoint='projects', item_type='project', on_create=on_change, on_update=on_change)
 
 

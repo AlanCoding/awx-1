@@ -117,7 +117,7 @@ def main():
         }
     })
 
-    # Create data to sent to create and update
+    # Create data to send to create and update
     inventory_fields = {
         'name': name,
         'description': description,
@@ -135,7 +135,7 @@ def main():
         if inventory and inventory['kind'] == '' and inventory_fields['kind'] == 'smart':
             module.fail_json(msg='You cannot turn a regular inventory into a "smart" inventory.')
 
-        # If the state was present we can let the module build or update the existing team, this will return on its own
+        # If the state was present we can let the module build or update the existing inventory, this will return on its own
         module.create_or_update_if_needed(inventory, inventory_fields, endpoint='inventories', item_type='inventory')
 
 
