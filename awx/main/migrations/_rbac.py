@@ -173,7 +173,7 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
                     role = Role.objects.get(id=role_id)
                     logger.info('{} ancestors: {}'.format(
                         (role.role_field, role.object_id, getattr(role.content_type, 'model', None)),
-                        [(r.role_field, r.object_id, getattr(role.content_type, 'model', None)) for r in role.ancestors.all()]
+                        [(r.role_field, r.object_id, getattr(r.content_type, 'model', None)) for r in role.ancestors.all()]
                     ))
                     logger.info('parents: {}'.format(
                         [(r.role_field, r.object_id, r.content_type.model) for r in role.parents.all()]
@@ -184,7 +184,7 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
                         # same as: user in jt.admin_role
                         has_role = role.ancestors.filter(members=user).exists()
                         if not has_role:
-                            role.members.add(user)
+                            role.members.add(user.id)
                             changed_ct += 1
                         else:
                             logger.debug(
@@ -192,12 +192,10 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
                                     user.pk, role_name, role.pk, jt.id
                                 )
                             )
-                        # elif user.pk == 63:
-                        #     import pdb; pdb.set_trace()
                     else:
                         has_role = role.members.filter(id=user.id).exists()
                         if has_role:
-                            role.members.remove(user)
+                            role.members.remove(user.id)
                             changed_ct += 1
     if changed_ct:
         logger.info('{} explicit JT permission for {} users in {:.4f} seconds'.format(
