@@ -115,7 +115,7 @@ def _migrate_unified_organization(apps, unified_cls_name, backward=False):
         if backward and UNIFIED_ORG_LOOKUPS.get(cls_name, 'not-found') is not None:
             logger.debug('Not reverse migrating {}, existing data should remain valid'.format(cls_name))
             continue
-        logger.debug('{}Migrating {} to new organization field'.format(cls_name, 'Reverse ' if backward else ''))
+        logger.debug('{}Migrating {} to new organization field'.format('Reverse ' if backward else '', cls_name))
 
         sub_qs = implicit_org_subquery(UnifiedClass, cls, backward=backward)
         if sub_qs is None:
