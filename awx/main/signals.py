@@ -207,8 +207,8 @@ def save_related_job_templates(sender, instance, **kwargs):
     if instance._prior_values_store.get('organization_id') != instance.organization_id:
         jtq = JobTemplate.objects.filter(**{sender.__name__.lower(): instance})
         for jt in jtq:
-            changed_ct = update_role_parentage_for_instance(jt)
-            if changed_ct:
+            parents_added, parents_removed = update_role_parentage_for_instance(jt)
+            if parents_added or parents_removed:
                 logger.info('Permissions on JT {} changed due to inventory {} organization change from {} to {}.'.format(
                     jt.pk, instance.pk, instance._prior_values_store.get('organization_id'), instance.organization_id
                 ))
