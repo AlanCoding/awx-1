@@ -160,26 +160,30 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
     changed_ct = 0
     jt_qs = JobTemplate.objects.filter(inventory__isnull=False)
     jt_qs = jt_qs.exclude(inventory__organization=F('project__organization'))
+    jt_qs = jt_qs.only('id', 'admin_role_id', 'execute_role_id', 'inventory_id')
     for jt in jt_qs.iterator():
         org = jt.inventory.organization
         for role_name in ('admin_role', 'execute_role'):
-            # In this specific case, the name for the org role and JT roles were the same
-            org_role_id = getattr(org, '{}_id'.format(role_name))
             role_id = getattr(jt, '{}_id'.format(role_name))
 
-            # use the database to filter intersection of users with access
-            # to the JT role and the organization role
-            user_qs = User.objects.filter(roles=org_role_id)
-            if backward:
-                user_qs = user_qs.filter(roles=role_id)
-            else:
+            user_qs = User.objects
+            if not backward:
+                # In this specific case, the name for the org role and JT roles were the same
+                org_role_id = getattr(org, '{}_id'.format(role_name))
+                user_qs = user_qs.filter(roles=org_role_id)
                 # bizarre migration behavior - ancestors / descendents of
                 # migration version of Role model is reversed, using current model briefly
                 ancestor_ids = list(
                     Role.objects.filter(descendents=role_id).values_list('id', flat=True)
                 )
-                # Queryset is same as Role.__contains__, user in jt.admin_role
+                # same as Role.__contains__, filter for "user in jt.admin_role"
                 user_qs = user_qs.exclude(roles__in=ancestor_ids)
+            else:
+                # use the database to filter intersection of users without access
+                # to the JT role and either organization role
+                user_qs = user_qs.filter(roles__in=[org.admin_role_id, org.execute_role_id])
+                # in reverse, intersection of users who have both
+                user_qs = user_qs.filter(roles=role_id)
 
             user_ids = list(user_qs.values_list('id', flat=True))
             if not user_ids:
@@ -191,6 +195,7 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
                 role_name, jt.pk, user_ids, org.pk
             ))
             if not backward:
+                # in reverse, explit role becomes redundant
                 role.members.add(*user_ids)
             else:
                 role.members.remove(*user_ids)
