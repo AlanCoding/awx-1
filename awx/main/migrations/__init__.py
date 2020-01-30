@@ -10,3 +10,8 @@ class ActivityStreamDisabledMigration(Migration):
         from awx.main.signals import disable_activity_stream
         with disable_activity_stream():
             return Migration.apply(self, project_state, schema_editor, collect_sql)
+
+    def unapply(self, state, schema_editor, **kwargs):
+        from awx.main.signals import disable_activity_stream
+        with disable_activity_stream():
+            return Migration.unapply(self, state, schema_editor, **kwargs)

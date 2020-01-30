@@ -2,6 +2,8 @@
 
 import awx.main.utils.polymorphic
 import awx.main.fields
+from awx.main.migrations import ActivityStreamDisabledMigration
+
 from django.db import migrations, models
 import django.db.models.deletion
 
@@ -12,7 +14,7 @@ from awx.main.migrations._rbac import (
 )
 
 
-class Migration(migrations.Migration):
+class Migration(ActivityStreamDisabledMigration):
 
     dependencies = [
         ('main', '0105_v370_remove_jobevent_parent_and_hosts'),

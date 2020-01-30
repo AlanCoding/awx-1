@@ -161,13 +161,22 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
     )
     for org in org_qs:
         jt_qs = JobTemplate.objects.filter(inventory__organization=org).exclude(project__organization=org)
-        jt_qs = jt_qs.prefetch_related('admin_role', 'execute_role')
+        # jt_qs = jt_qs.prefetch_related('admin_role', 'execute_role')
         for role_name in ('admin_role', 'execute_role'):
             for user in getattr(org, role_name).members.all():
                 for jt in jt_qs:
                     logger.debug('{} {} on jt {} from user {} via inventory.organization {}'.format(
                         'Removing' if backward else 'Setting',
                         role_name, jt.pk, user.pk, org.pk
+                    ))
+                    role_id = getattr(jt, '{}_id'.format(role_name))
+                    role = Role.objects.get(id=role_id)
+                    logger.info('{} ancestors: {}'.format(
+                        (role.role_field, role.object_id, getattr(role.content_type, 'model', None)),
+                        [(r.role_field, r.object_id, getattr(role.content_type, 'model', None)) for r in role.ancestors.all()]
+                    ))
+                    logger.info('parents: {}'.format(
+                        [(r.role_field, r.object_id, r.content_type.model) for r in role.parents.all()]
                     ))
                     role = getattr(jt, role_name)
                     if not backward:
@@ -177,6 +186,14 @@ def _restore_inventory_admins(apps, schema_editor, backward=False):
                         if not has_role:
                             role.members.add(user)
                             changed_ct += 1
+                        else:
+                            logger.debug(
+                                'User {} already has {}-{} role on JT {}'.format(
+                                    user.pk, role_name, role.pk, jt.id
+                                )
+                            )
+                        # elif user.pk == 63:
+                        #     import pdb; pdb.set_trace()
                     else:
                         has_role = role.members.filter(id=user.id).exists()
                         if has_role:
