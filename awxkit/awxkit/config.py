@@ -31,4 +31,5 @@ config.assume_untrusted = config.get('assume_untrusted', True)
 
 config.client_connection_attempts = int(os.getenv('AWXKIT_CLIENT_CONNECTION_ATTEMPTS', 5))
 config.prevent_teardown = to_bool(os.getenv('AWXKIT_PREVENT_TEARDOWN', False))
+config.prevent_teardown = True
 config.use_sessions = to_bool(os.getenv('AWXKIT_SESSIONS', False))
