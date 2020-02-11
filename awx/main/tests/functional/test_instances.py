@@ -321,7 +321,7 @@ class TestInstanceGroupOrdering:
 
     def test_job_instance_groups(self, instance_group_factory, inventory, project, default_instance_group):
         jt = JobTemplate.objects.create(inventory=inventory, project=project)
-        job = Job.objects.create(inventory=inventory, job_template=jt, project=project)
+        job = jt.create_unified_job()
         assert job.preferred_instance_groups == [default_instance_group]
         ig_org = instance_group_factory("OrgIstGrp", [default_instance_group.instances.first()])
         ig_inv = instance_group_factory("InvIstGrp", [default_instance_group.instances.first()])
