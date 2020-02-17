@@ -137,7 +137,7 @@ class TowerModule(AnsibleModule):
             raise ConfigFileException('The specified config file does not exist')
 
         if not access(config_path, R_OK):
-            raise ConfigFileException("The specified config file can not be read")
+            raise ConfigFileException("The specified config file cannot be read")
 
         # Read in the file contents:
         with open(config_path, 'r') as f:
