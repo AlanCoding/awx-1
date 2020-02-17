@@ -204,22 +204,6 @@ def main():
     # Create a module for ourselves
     module = TowerModule(argument_spec=argument_spec,
                          supports_check_mode=True,
-                         required_if=[
-                             # We don't want to require source if state is present because
-                             # you might be doing an update to an existing source.
-                             # Later on in the code, we will do a test so that if state: present
-                             # and if we don't have an object, we must have source.
-                             ('source', 'scm', ['source_project', 'source_path']),
-                             ('source', 'gce', ['credential']),
-                             ('source', 'azure_rm', ['credential']),
-                             ('source', 'vmware', ['credential']),
-                             ('source', 'satellite6', ['credential']),
-                             ('source', 'cloudforms', ['credential']),
-                             ('source', 'openstack', ['credential']),
-                             ('source', 'rhv', ['credential']),
-                             ('source', 'tower', ['credential']),
-                             ('source', 'custom', ['source_script']),
-                         ],
                          # This is provided by our module, it's not a core thing
                          mutually_exclusive_if=[
                              ('source', 'scm', ['source_regions',

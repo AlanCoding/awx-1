@@ -46,6 +46,7 @@ def test_create_inventory_source_implied_org(run_module, admin_user):
     org = Organization.objects.create(name='test-org')
     inv = Inventory.objects.create(name='test-inv', organization=org)
 
+    # Credential is not required for ec2 source, because of IAM roles
     result = run_module('tower_inventory_source', dict(
         name='Test Inventory Source',
         inventory='test-inv',
@@ -144,3 +145,16 @@ def test_custom_venv_no_op(run_module, admin_user, base_inventory, mocker):
     inv_src.refresh_from_db()
     assert inv_src.custom_virtualenv == '/venv/foobar/'
     assert inv_src.description == 'this is the changed description'
+
+
+@pytest.mark.django_db
+def test_missing_required_credential(run_module, admin_user, base_inventory):
+    result = run_module('tower_inventory_source', dict(
+        name='Test Azure Source',
+        inventory='test-inv',
+        source='azure_rm',
+        state='present'
+    ), admin_user)
+    assert result.pop('failed', None) is True, result
+
+    assert 'Credential is required for a cloud source' in result.get('msg', '')
