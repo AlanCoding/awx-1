@@ -126,6 +126,7 @@ class TowerModule(AnsibleModule):
         # If we have a specified  tower config, load it
         if self.params.get('tower_config_file'):
             try:
+                # TODO: warn if there are conflicts with other params
                 self.load_config(self.params.get('tower_config_file'))
             except ConfigFileException as cfe:
                 # Since we were told specifically to load this we want it to fail if we have an error
