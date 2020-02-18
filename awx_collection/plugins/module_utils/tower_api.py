@@ -125,6 +125,15 @@ class TowerModule(AnsibleModule):
 
         # If we have a specified  tower config, load it
         if self.params.get('tower_config_file'):
+            duplicated_params = []
+            for direct_field in ('tower_host', 'tower_username', 'tower_password', 'validate_certs'):
+                if self.params.get(direct_field):
+                    duplicated_params.append(direct_field)
+            if duplicated_params:
+                self.warn((
+                    'The parameter(s) {0} were provided at the same time as tower_config_file. '
+                    'Precedence may be unstable, we suggest either using config file or params.'
+                ).format(', '.join(duplicated_params)))
             try:
                 # TODO: warn if there are conflicts with other params
                 self.load_config(self.params.get('tower_config_file'))
