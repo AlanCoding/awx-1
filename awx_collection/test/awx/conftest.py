@@ -126,7 +126,7 @@ def run_module(request):
         result = json.loads(module_stdout)
         # A module exception should never be a test expectation
         if 'exception' in result:
-            raise Exception('Module encountered error:\n{}'.format(result['exception']))
+            raise Exception('Module encountered error:\n{0}'.format(result['exception']))
         return result
 
     return rf
