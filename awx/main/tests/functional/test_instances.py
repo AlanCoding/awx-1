@@ -310,7 +310,7 @@ class TestInstanceGroupOrdering:
         assert iu.preferred_instance_groups == [ig_inv, ig_org]
 
     def test_project_update_instance_groups(self, instance_group_factory, project, default_instance_group):
-        pu = ProjectUpdate.objects.create(project=project)
+        pu = ProjectUpdate.objects.create(project=project, organization=project.organization)
         assert pu.preferred_instance_groups == [default_instance_group]
         ig_org = instance_group_factory("OrgIstGrp", [default_instance_group.instances.first()])
         ig_tmp = instance_group_factory("TmpIstGrp", [default_instance_group.instances.first()])
