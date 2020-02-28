@@ -1566,7 +1566,9 @@ class RunJob(BaseTask):
         Build environment dictionary for ansible-playbook.
         '''
         plugin_dir = self.get_path_to('..', 'plugins', 'callback')
-        plugin_dirs = [plugin_dir]
+        plugin_dirs = []
+        if os.path.exists(plugin_dir):
+            plugin_dirs.append(plugin_dir)
         if hasattr(settings, 'AWX_ANSIBLE_CALLBACK_PLUGINS') and \
                 settings.AWX_ANSIBLE_CALLBACK_PLUGINS:
             plugin_dirs.extend(settings.AWX_ANSIBLE_CALLBACK_PLUGINS)
@@ -1594,7 +1596,10 @@ class RunJob(BaseTask):
         env['ANSIBLE_RETRY_FILES_ENABLED'] = "False"
         env['MAX_EVENT_RES'] = str(settings.MAX_EVENT_RES_DATA)
         if not isolated:
-            env['ANSIBLE_CALLBACK_PLUGINS'] = plugin_path
+            if plugin_path:
+                # if user used setting, or populated callback dir in plugins dir
+                # then this will be mutually exclusive with project ansible.cfg for now
+                env['ANSIBLE_CALLBACK_PLUGINS'] = plugin_path
             env['AWX_HOST'] = settings.TOWER_URL_BASE
 
         # Create a directory for ControlPath sockets that is unique to each
@@ -1986,6 +1991,9 @@ class RunProjectUpdate(BaseTask):
                                                       isolated=isolated,
                                                       private_data_files=private_data_files)
         self.add_ansible_venv(settings.ANSIBLE_VENV_PATH, env)
+        if 'ANSIBLE_STDOUT_CALLBACK' in env:
+            # event_callback to process the revision does not work with custom stdout callbacks
+            env.pop('ANSIBLE_STDOUT_CALLBACK')
         env['ANSIBLE_RETRY_FILES_ENABLED'] = str(False)
         env['ANSIBLE_ASK_PASS'] = str(False)
         env['ANSIBLE_BECOME_ASK_PASS'] = str(False)
