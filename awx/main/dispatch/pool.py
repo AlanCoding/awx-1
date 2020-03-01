@@ -375,7 +375,7 @@ class AutoscalePool(WorkerPool):
                 # the task manager to never do more work
                 current_task = w.current_task
                 if current_task and isinstance(current_task, dict):
-                    if current_task.get('task', '').endswith('tasks.run_task_manager'):
+                    if not current_task.get('task', '').endswith('awx.main.tasks.Run'):
                         if 'started' not in current_task:
                             w.managed_tasks[
                                 current_task['uuid']
