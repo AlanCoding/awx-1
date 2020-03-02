@@ -375,7 +375,8 @@ class AutoscalePool(WorkerPool):
                 # the task manager to never do more work
                 current_task = w.current_task
                 if current_task and isinstance(current_task, dict):
-                    if not current_task.get('task', '').endswith('awx.main.tasks.Run'):
+                    task_name = current_task.get('task', '')
+                    if not task_name.endswith('awx.main.tasks.Run'):
                         if 'started' not in current_task:
                             w.managed_tasks[
                                 current_task['uuid']
@@ -384,7 +385,7 @@ class AutoscalePool(WorkerPool):
                         w.managed_tasks[current_task['uuid']]['age'] = age
                         if age > (60 * 5):
                             logger.error(
-                                f'run_task_manager has held the advisory lock for >5m, sending SIGTERM to {w.pid}'
+                                f'{task_name} ran for for >5m, sending SIGTERM to {w.pid}'
                             )  # noqa
                             os.kill(w.pid, signal.SIGTERM)
 
