@@ -151,7 +151,7 @@ def inform_cluster_of_shutdown():
         logger.exception('Encountered problem with normal shutdown signal.')
 
 
-@task()
+@task(timeout=60 * 2)
 def apply_cluster_membership_policies():
     started_waiting = time.time()
     with advisory_lock('cluster_policy_lock', wait=True):
@@ -264,7 +264,7 @@ def apply_cluster_membership_policies():
         logger.debug('Cluster policy computation finished in {} seconds'.format(time.time() - started_compute))
 
 
-@task(queue='tower_broadcast_all', exchange_type='fanout')
+@task(queue='tower_broadcast_all', exchange_type='fanout', timeout=60)
 def handle_setting_changes(setting_keys):
     orig_len = len(setting_keys)
     for i in range(orig_len):
@@ -275,7 +275,7 @@ def handle_setting_changes(setting_keys):
     cache.delete_many(cache_keys)
 
 
-@task(queue='tower_broadcast_all', exchange_type='fanout')
+@task(queue='tower_broadcast_all', exchange_type='fanout', timeout=30)
 def delete_project_files(project_path):
     # TODO: possibly implement some retry logic
     lock_file = project_path + '.lock'
@@ -307,7 +307,7 @@ def profile_sql(threshold=1, minutes=1):
         logger.error('SQL QUERIES >={}s ENABLED FOR {} MINUTE(S)'.format(threshold, minutes))
 
 
-@task()
+@task(timeout=60 * 5)
 def send_notifications(notification_list, job_id=None):
     if not isinstance(notification_list, list):
         raise TypeError("notification_list should be of type list")
@@ -336,7 +336,7 @@ def send_notifications(notification_list, job_id=None):
                 logger.exception('Error saving notification {} result.'.format(notification.id))
 
 
-@task()
+@task(timeout=60**2)
 def gather_analytics():
     from awx.conf.models import Setting
     from rest_framework.fields import DateTimeField
@@ -374,7 +374,7 @@ def purge_old_stdout_files():
             logger.debug("Removing {}".format(os.path.join(settings.JOBOUTPUT_ROOT,f)))
 
 
-@task(queue=get_local_queuename)
+@task(queue=get_local_queuename, timeout=30)
 def cluster_node_heartbeat():
     logger.debug("Cluster node heartbeat task.")
     nowtime = now()
@@ -445,7 +445,7 @@ def cluster_node_heartbeat():
                 logger.exception('Error marking {} as lost'.format(other_inst.hostname))
 
 
-@task(queue=get_local_queuename)
+@task(queue=get_local_queuename, timeout=60 * 5)
 def awx_k8s_reaper():
     from awx.main.scheduler.kubernetes import PodManager # prevent circular import
     for group in InstanceGroup.objects.filter(credential__isnull=False).iterator():
@@ -464,7 +464,7 @@ def awx_k8s_reaper():
 
 
 
-@task(queue=get_local_queuename)
+@task(queue=get_local_queuename, timeout=60 * 5)
 def awx_isolated_heartbeat():
     local_hostname = settings.CLUSTER_HOST_ID
     logger.debug("Controlling node checking for any isolated management tasks.")
@@ -492,7 +492,7 @@ def awx_isolated_heartbeat():
         isolated_manager.IsolatedManager().health_check(isolated_instance_qs)
 
 
-@task()
+@task(timeout=60 * 2)
 def awx_periodic_scheduler():
     with advisory_lock('awx_periodic_scheduler_lock', wait=False) as acquired:
         if acquired is False:
@@ -549,7 +549,7 @@ def awx_periodic_scheduler():
         state.save()
 
 
-@task()
+@task(timeout=60)
 def handle_work_success(task_actual):
     try:
         instance = UnifiedJob.get_instance_by_type(task_actual['type'], task_actual['id'])
@@ -562,7 +562,7 @@ def handle_work_success(task_actual):
     schedule_task_manager()
 
 
-@task()
+@task(timeout=60)
 def handle_work_error(task_id, *args, **kwargs):
     subtasks = kwargs.get('subtasks', None)
     logger.debug('Executing error task id %s, subtasks: %s' % (task_id, str(subtasks)))
@@ -602,7 +602,7 @@ def handle_work_error(task_id, *args, **kwargs):
         pass
 
 
-@task()
+@task(timeout=60 * 5)
 def update_inventory_computed_fields(inventory_id):
     '''
     Signal handler and wrapper around inventory.update_computed_fields to

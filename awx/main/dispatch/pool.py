@@ -376,16 +376,17 @@ class AutoscalePool(WorkerPool):
                 current_task = w.current_task
                 if current_task and isinstance(current_task, dict):
                     task_name = current_task.get('task', '')
-                    if not task_name.endswith('awx.main.tasks.Run'):
+                    task_timeout = current_task.get('timeout', None)
+                    if task_timeout:
                         if 'started' not in current_task:
                             w.managed_tasks[
                                 current_task['uuid']
                             ]['started'] = time.time()
                         age = time.time() - current_task['started']
                         w.managed_tasks[current_task['uuid']]['age'] = age
-                        if age > (60 * 5):
+                        if age > task_timeout:
                             logger.error(
-                                f'{task_name} ran for for >5m, sending SIGTERM to {w.pid}'
+                                f'{task_name} ran for >{task_timeout}s, sending SIGTERM to {w.pid}'
                             )  # noqa
                             os.kill(w.pid, signal.SIGTERM)
 

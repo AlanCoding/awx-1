@@ -50,9 +50,10 @@ class task:
         print("Run this everywhere!")
     """
 
-    def __init__(self, queue=None, exchange_type=None):
+    def __init__(self, queue=None, exchange_type=None, timeout=None):
         self.queue = queue
         self.exchange_type = exchange_type
+        self.timeout = timeout
 
     def __call__(self, fn=None):
         queue = self.queue
@@ -82,6 +83,8 @@ class task:
                     'kwargs': kwargs,
                     'task': cls.name
                 }
+                if self.timeout:
+                    obj['timeout'] = self.timeout
                 obj.update(**kw)
                 if callable(queue):
                     queue = queue()
