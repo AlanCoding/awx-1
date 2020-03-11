@@ -202,28 +202,17 @@ def main():
 
     # Extract our parameters
     name = module.params.get('name')
-    description = module.params.get('description')
     scm_type = module.params.get('scm_type')
     if scm_type == "manual":
         scm_type = ""
-    scm_url = module.params.get('scm_url')
-    local_path = module.params.get('local_path')
-    scm_branch = module.params.get('scm_branch')
-    scm_refspec = module.params.get('scm_refspec')
     scm_credential = module.params.get('scm_credential')
-    scm_clean = module.params.get('scm_clean')
-    scm_delete_on_update = module.params.get('scm_delete_on_update')
-    scm_update_on_launch = module.params.get('scm_update_on_launch')
-    scm_update_cache_timeout = module.params.get('scm_update_cache_timeout')
-    scm_allow_override = module.params.get('scm_allow_override')
-    job_timeout = module.params.get('job_timeout')
-    custom_virtualenv = module.params.get('custom_virtualenv')
     organization = module.params.get('organization')
     state = module.params.get('state')
     wait = module.params.get('wait')
 
     # Attempt to look up the related items the user specified (these will fail the module if not found)
     org_id = module.resolve_name_to_id('organizations', organization)
+    scm_credential_id = None
     if scm_credential is not None:
         scm_credential_id = module.resolve_name_to_id('credentials', scm_credential)
 
@@ -235,30 +224,11 @@ def main():
         }
     })
 
-    # Create the data that gets sent for create and update
-    project_fields = {
-        'name': name,
-        'scm_type': scm_type,
-        'scm_url': scm_url,
-        'scm_branch': scm_branch,
-        'scm_refspec': scm_refspec,
-        'scm_clean': scm_clean,
-        'scm_delete_on_update': scm_delete_on_update,
-        'timeout': job_timeout,
-        'organization': org_id,
-        'scm_update_on_launch': scm_update_on_launch,
-        'scm_update_cache_timeout': scm_update_cache_timeout,
-        'custom_virtualenv': custom_virtualenv,
-    }
-    if description is not None:
-        project_fields['description'] = description
-    if scm_credential is not None:
-        project_fields['credential'] = scm_credential_id
-    if scm_allow_override is not None:
-        project_fields['scm_allow_override'] = scm_allow_override
-    if scm_type == '':
-        project_fields['local_path'] = local_path
+    if scm_type not in ('', 'scm') and module.params.get('local_path'):
+        module.fail_json(msg="Parameter local_path only valid for manual and scm types")
 
+    scm_update_cache_timeout = module.params.get('scm_update_cache_timeout')
+    scm_update_on_launch = module.params.get('scm_update_on_launch')
     if state != 'absent' and (scm_update_cache_timeout != 0 and scm_update_on_launch is not True):
         module.warn('scm_update_cache_timeout will be ignored since scm_update_on_launch was not set to true')
 
@@ -267,6 +237,9 @@ def main():
     on_change = None
     if wait and scm_type != '':
         on_change = wait_for_project_update
+
+    # Create the data that gets sent for create and update
+    project_fields = module.fields_for_update(organization=org_id, credential=scm_credential_id, scm_type=scm_type)
 
     if state == 'absent':
         # If the state was absent we can let the module delete it if needed, the module will handle exiting from this

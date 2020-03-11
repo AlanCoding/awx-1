@@ -88,8 +88,6 @@ def main():
 
     # Extract our parameters
     name = module.params.get('name')
-    new_name = module.params.get('new_name')
-    description = module.params.get('description')
     organization = module.params.get('organization')
     state = module.params.get('state')
 
@@ -105,12 +103,7 @@ def main():
     })
 
     # Create the data that gets sent for create and update
-    team_fields = {
-        'name': new_name if new_name else name,
-        'organization': org_id
-    }
-    if description is not None:
-        team_fields['description'] = description
+    team_fields = module.fields_for_update(organization=org_id)
 
     if state == 'absent':
         # If the state was absent we can let the module delete it if needed, the module will handle exiting from this
