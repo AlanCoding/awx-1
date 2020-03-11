@@ -44,16 +44,18 @@ class TowerModule(AnsibleModule):
     cookie_jar = CookieJar()
     authenticated = False
     config_name = 'tower_cli.cfg'
+    base_argument_spec = dict(
+        tower_host=dict(required=False, fallback=(env_fallback, ['TOWER_HOST'])),
+        tower_username=dict(required=False, fallback=(env_fallback, ['TOWER_USERNAME'])),
+        tower_password=dict(no_log=True, required=False, fallback=(env_fallback, ['TOWER_PASSWORD'])),
+        validate_certs=dict(type='bool', aliases=['tower_verify_ssl'], required=False, fallback=(env_fallback, ['TOWER_VERIFY_SSL'])),
+        tower_oauthtoken=dict(type='str', no_log=True, required=False, fallback=(env_fallback, ['TOWER_OAUTH_TOKEN'])),
+        tower_config_file=dict(type='path', required=False, default=None),
+    )
 
     def __init__(self, argument_spec, **kwargs):
-        args = dict(
-            tower_host=dict(required=False, fallback=(env_fallback, ['TOWER_HOST'])),
-            tower_username=dict(required=False, fallback=(env_fallback, ['TOWER_USERNAME'])),
-            tower_password=dict(no_log=True, required=False, fallback=(env_fallback, ['TOWER_PASSWORD'])),
-            validate_certs=dict(type='bool', aliases=['tower_verify_ssl'], required=False, fallback=(env_fallback, ['TOWER_VERIFY_SSL'])),
-            tower_oauthtoken=dict(type='str', no_log=True, required=False, fallback=(env_fallback, ['TOWER_OAUTH_TOKEN'])),
-            tower_config_file=dict(type='path', required=False, default=None),
-        )
+        args = dict()
+        args.update(self.base_argument_spec)
         args.update(argument_spec)
         kwargs['supports_check_mode'] = True
 
@@ -189,6 +191,24 @@ class TowerModule(AnsibleModule):
                         setattr(self, honorred_setting, bool(config_data[honorred_setting]))
                 else:
                     setattr(self, honorred_setting, config_data[honorred_setting])
+
+    def fields_for_update(self, **kwargs):
+        obj_fields = kwargs.copy()
+        new_identities = set()
+        for key, value in self.params.items():
+            if key in self.base_argument_spec.keys() or key == 'state':
+                continue
+            if value is None or value == '' or key in obj_fields:
+                continue
+            if key.startswith('new_'):
+                identifier_key = key.split('_', 1)[1]
+                new_identities.add(identifier_key)
+                obj_fields[identifier_key] = value
+            elif key in new_identities:
+                continue
+            else:
+                obj_fields[key] = value
+        return obj_fields
 
     def head_endpoint(self, endpoint, *args, **kwargs):
         return self.make_request('HEAD', endpoint, **kwargs)
