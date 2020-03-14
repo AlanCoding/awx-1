@@ -20,8 +20,10 @@ author: "Adrien Fleury (@fleu42)"
 version_added: "2.7"
 short_description: create, update, or destroy Ansible Tower workflow template.
 description:
-    - Create, update, or destroy Ansible Tower workflows. See
-      U(https://www.ansible.com/tower) for an overview.
+    - A tower-cli based module for CRUD actions on workflow job templates.
+    - Enables use of the old schema functionality.
+    - Not updated for new features, convert to the modules for
+      workflow_job_template and workflow_job_template node instead.
 options:
     allow_simultaneous:
       description:
@@ -142,6 +144,12 @@ def main():
         argument_spec=argument_spec,
         supports_check_mode=False
     )
+
+    module.deprecate(msg=(
+        "This module is replaced by the combination of tower_workflow_job_template and "
+        "tower_workflow_job_template_node. This uses the old tower-cli and wll be "
+        "removed in 2022."
+    ), version='4.2.0')
 
     name = module.params.get('name')
     state = module.params.get('state')
