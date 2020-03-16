@@ -9,7 +9,7 @@ There are two named-URL-related Tower configuration settings available under `/a
 ```
 "NAMED_URL_FORMATS": {
     "job_templates": "<name>++<organization.name>",
-    "workflow_job_templates": "<name>",
+    "workflow_job_templates": "<name>++<organization.name>",
     "workflow_job_template_nodes": "<identifier>++<workflow_job_template.name>++<organization.name>",
     "inventories": "<name>++<organization.name>",
     "users": "<username>",

@@ -86,6 +86,8 @@ options:
         - Used for looking up the node, cannot be modified after creation.
       required: True
       type: str
+      aliases:
+        - workflow
     organization:
       description:
         - The organization of the workflow job template the node exists in.
@@ -126,6 +128,14 @@ extends_documentation_fragment: awx.awx.auth
 '''
 
 EXAMPLES = '''
+- name: Create a node, follows tower_workflow_job_template example
+  tower_workflow_job_template_node:
+    identifier: my-first-node
+    workflow: example-workflow
+    unified_job_template: jt-for-node-use
+    organization: Default  # organization of workflow job template
+    extra_data:
+      foo_key: bar_value
 '''
 
 from ..module_utils.tower_api import TowerModule
@@ -143,7 +153,7 @@ def main():
         limit=dict(required=False, type='str'),
         diff_mode=dict(required=False, type='bool'),
         verbosity=dict(required=False, type='str', choices=['0', '1', '2', '3', '4', '5']),
-        workflow_job_template=dict(required=True, type='str'),
+        workflow_job_template=dict(required=True, type='str', aliases=['workflow']),
         organization=dict(required=False, type='str'),
         unified_job_template=dict(required=False, type='str'),
         all_parents_must_converge=dict(required=False, type='bool'),

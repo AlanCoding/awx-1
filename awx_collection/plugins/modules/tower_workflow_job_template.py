@@ -126,6 +126,11 @@ extends_documentation_fragment: awx.awx.auth
 '''
 
 EXAMPLES = '''
+- name: Create a workflow job template
+  tower_workflow_job_template:
+    name: example-workflow
+    description: created by Ansible Playbook
+    organization: Default
 '''
 
 from ..module_utils.tower_api import TowerModule
