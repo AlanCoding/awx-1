@@ -66,6 +66,7 @@ pip install -r requirements/requirements.txt -r requirements/requirements_dev.tx
 make clean-api
 pip install -e <path to your Ansible>
 pip install -e .
+pip install -e awxkit
 py.test awx_collection/test/awx/
 ```
 

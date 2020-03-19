@@ -291,7 +291,9 @@ class Import(CustomCommand):
         client.authenticate()
         self.client = client
         self.v2 = client.v2
+        self.perform_import(client)
 
+    def perform_import(self, data):
         for resource in self.dependent_resources(data):
             self.register_existing_assets(resource)
             self.create_assets(data, resource)
@@ -376,14 +378,21 @@ class Export(CustomCommand):
 
         # If no resource flags are explicitly used, export everything.
         all_resources = all(getattr(parsed, resource, None) is None for resource in EXPORTABLE_RESOURCES)
-
-        self.v2 = client.v2
-
-        data = {}
+        export_list = []
         for resource in EXPORTABLE_RESOURCES:
             value = getattr(parsed, resource, None)
             if all_resources or value is not None:
-                data[resource] = self.get_assets(resource, value)
+                export_list.append((resource, value))
+
+        self.v2 = client.v2
+        data = self.perform_export(export_list)
+
+        return data
+
+    def perform_export(self, export_list):
+        data = {}
+        for resource, value in export_list:
+            data[resource] = self.get_assets(resource, value)
 
         return data
 

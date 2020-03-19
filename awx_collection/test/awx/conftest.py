@@ -78,6 +78,7 @@ def run_module(request, collection_import):
         def new_request(self, method, url, **kwargs):
             kwargs_copy = kwargs.copy()
             if 'data' in kwargs:
+                print(kwargs)
                 if not isinstance(kwargs['data'], dict):
                     kwargs_copy['data'] = json.loads(kwargs['data'])
                 else:
