@@ -553,6 +553,7 @@ class TowerModule(AnsibleModule):
         #    2. The response from Tower from patching to the endpoint. It's up to you to process the response and exit from the module.
         #    3. An ItemNotDefined exception, if the existing_item does not exist
         # Note: common error codes from the Tower API can cause the module to fail
+        response = None
         if existing_item:
 
             # If we have an item, we can see if it needs an update
@@ -602,7 +603,11 @@ class TowerModule(AnsibleModule):
 
         # If we change something and have an on_change call it
         if on_update is not None and self.json_output['changed']:
-            on_update(self, response['json'])
+            if response is None:
+                last_data = existing_item
+            else:
+                last_data = response['json']
+            on_update(self, last_data)
         else:
             self.exit_json(**self.json_output)
 

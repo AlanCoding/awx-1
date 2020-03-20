@@ -151,7 +151,6 @@ import json
 def update_survey(module, last_request):
     spec_endpoint = last_request.get('related', {}).get('survey_spec')
     module.post_endpoint(spec_endpoint, **{'data': module.params.get('survey')})
-    module.json_output['changed'] = True
     module.exit_json(**module.json_output)
 
 
@@ -221,13 +220,12 @@ def main():
         new_fields['extra_vars'] = json.dumps(new_fields['extra_vars'])
 
     on_change = None
+    existing_spec = None
     if existing_item:
-        spec_endpoint = existing_item.get('related', {}).get('survey_spec')
         existing_spec = module.get_endpoint('spec_endpoint')
-    else:
-        existing_spec = None
     new_spec = module.params.get('survey')
     if new_spec and (new_spec != existing_spec):
+        module.json_output['changed'] = True
         on_change = update_survey
 
     if state == 'absent':
