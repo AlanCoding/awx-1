@@ -108,6 +108,16 @@ options:
         - Personal Access Token for posting back the status to the service API
       required: False
       type: str
+    survey_enabled:
+      description:
+        - Setting that variable will prompt the user for job type on the
+          workflow launch.
+      type: bool
+    survey:
+      description:
+        - The definition of the survey associated to the workflow.
+      type: dict
+      required: false
     state:
       description:
         - Desired state of the resource.
@@ -138,6 +148,13 @@ from ..module_utils.tower_api import TowerModule
 import json
 
 
+def update_survey(module, last_request):
+    spec_endpoint = last_request.get('related', {}).get('survey_spec')
+    module.post_endpoint(spec_endpoint, **{'data': module.params.get('survey')})
+    module.json_output['changed'] = True
+    module.exit_json(**module.json_output)
+
+
 def main():
     # Any additional arguments that are not fields of the item can be added here
     argument_spec = dict(
@@ -146,6 +163,7 @@ def main():
         description=dict(required=False, type='str'),
         extra_vars=dict(required=False, type='dict'),
         organization=dict(required=False, type='str'),
+        survey=dict(type='dict'),  # special handling
         survey_enabled=dict(required=False, type='bool'),
         allow_simultaneous=dict(required=False, type='bool'),
         ask_variables_on_launch=dict(required=False, type='bool'),
@@ -202,12 +220,26 @@ def main():
     if 'extra_vars' in new_fields:
         new_fields['extra_vars'] = json.dumps(new_fields['extra_vars'])
 
+    on_change = None
+    if existing_item:
+        spec_endpoint = existing_item.get('related', {}).get('survey_spec')
+        existing_spec = module.get_endpoint('spec_endpoint')
+    else:
+        existing_spec = None
+    new_spec = module.params.get('survey')
+    if new_spec and (new_spec != existing_spec):
+        on_change = update_survey
+
     if state == 'absent':
         # If the state was absent we can let the module delete it if needed, the module will handle exiting from this
         module.delete_if_needed(existing_item)
     elif state == 'present':
         # If the state was present and we can let the module build or update the existing item, this will return on its own
-        module.create_or_update_if_needed(existing_item, new_fields, endpoint='workflow_job_templates', item_type='workflow_job_template')
+        module.create_or_update_if_needed(
+            existing_item, new_fields,
+            endpoint='workflow_job_templates', item_type='workflow_job_template',
+            on_create=on_change, on_update=on_change
+        )
 
 
 if __name__ == '__main__':

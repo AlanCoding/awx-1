@@ -32,6 +32,7 @@ def test_create_workflow_job_template(run_module, admin_user, organization, surv
     }
 
     assert wfjt.organization_id == organization.id
+    assert wfjt.survey_spec == survey_spec
 
 
 @pytest.mark.django_db

@@ -16,7 +16,7 @@ def test_create_workflow_job_template(run_module, admin_user, organization, surv
         'survey_enabled': True,
         'state': 'present'
     }, admin_user)
-    assert not result.get('failed', False), result
+    assert not result.get('failed', False), result.get('msg', result)
 
     wfjt = WorkflowJobTemplate.objects.get(name='foo-workflow')
     assert wfjt.extra_vars == '{"foo": "bar", "another-foo": {"barz": "bar2"}}'
@@ -29,3 +29,4 @@ def test_create_workflow_job_template(run_module, admin_user, organization, surv
     }
 
     assert wfjt.organization_id == organization.id
+    assert wfjt.survey_spec == survey_spec
