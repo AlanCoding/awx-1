@@ -77,7 +77,8 @@ options:
     survey:
       description:
         - The definition of the survey associated to the workflow.
-      type: str
+      type: dict
+      required: false
     state:
       description:
         - Desired state of the resource.
@@ -132,7 +133,7 @@ def main():
         organization=dict(required=False),
         allow_simultaneous=dict(type='bool', required=False),
         schema=dict(type='list', elements='dict', required=False),
-        survey=dict(required=False),
+        survey=dict(type='dict'),
         survey_enabled=dict(type='bool', required=False),
         inventory=dict(required=False),
         ask_inventory=dict(type='bool', required=False),

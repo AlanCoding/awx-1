@@ -10,11 +10,13 @@ from awx.main.models import (
 
 
 @pytest.mark.django_db
-def test_create_workflow_job_template(run_module, admin_user, organization, silence_deprecation):
+def test_create_workflow_job_template(run_module, admin_user, organization, survey_spec, silence_deprecation):
     result = run_module('tower_workflow_template', {
         'name': 'foo-workflow',
         'organization': organization.name,
         'extra_vars': {'foo': 'bar', 'another-foo': {'barz': 'bar2'}},
+        'survey': survey_spec,
+        'survey_enabled': True,
         'state': 'present'
     }, admin_user)
 
