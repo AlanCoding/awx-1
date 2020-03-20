@@ -112,6 +112,27 @@ options:
         - It is copied to workflow job nodes corresponding to this node.
       required: True
       type: str
+    always_nodes:
+      description:
+        - Nodes that will run after this node completes.
+        - List of node identifiers.
+      required: False
+      type: list
+      elements: str
+    success_nodes:
+      description:
+        - Nodes that will run after this node on success.
+        - List of node identifiers.
+      required: False
+      type: list
+      elements: str
+    failure_nodes:
+      description:
+        - Nodes that will run after this node on failure.
+        - List of node identifiers.
+      required: False
+      type: list
+      elements: str
     state:
       description:
         - Desired state of the resource.
@@ -158,6 +179,9 @@ def main():
         unified_job_template=dict(required=False, type='str'),
         all_parents_must_converge=dict(required=False, type='bool'),
         identifier=dict(required=True, type='str'),
+        success_nodes=dict(type='list', elements='str'),
+        always_nodes=dict(type='list', elements='str'),
+        failure_nodes=dict(type='list', elements='str'),
         state=dict(choices=['present', 'absent'], default='present'),
     )
 
@@ -173,6 +197,7 @@ def main():
 
     # Attempt to look up the related items the user specified (these will fail the module if not found)
     workflow_job_template = module.params.get('workflow_job_template')
+    workflow_job_template_id = None
     if workflow_job_template:
         wfjt_search_fields = {'name': workflow_job_template}
         organization = module.params.get('organization')
@@ -184,7 +209,8 @@ def main():
             module.fail_json(msg="The workflow {0} in organization {1} was not found on the Tower server".format(
                 workflow_job_template, organization
             ))
-        search_fields['workflow_job_template'] = new_fields['workflow_job_template'] = wfjt_data['id']
+        workflow_job_template_id = wfjt_data['id']
+        search_fields['workflow_job_template'] = new_fields['workflow_job_template'] = workflow_job_template_id
 
     unified_job_template = module.params.get('unified_job_template')
     if unified_job_template:
@@ -205,6 +231,23 @@ def main():
         if field_val:
             new_fields[field_name] = field_val
 
+    association_fields = {}
+    for association in ('always_nodes', 'success_nodes', 'failure_nodes'):
+        name_list = module.params.get(association)
+        if name_list is None:
+            continue
+        id_list = []
+        for sub_name in name_list:
+            lookup_data = {'identifier': sub_name}
+            if workflow_job_template_id:
+                lookup_data['workflow_job_template'] = workflow_job_template_id
+            sub_obj = module.get_one('workflow_job_template_nodes', **{'data': lookup_data})
+            if sub_obj is None:
+                module.fail_json(msg='Could not find {0} with name {1}'.format(association, sub_name))
+            id_list.append(sub_obj['id'])
+        if id_list:
+            association_fields[association] = id_list
+
     # In the case of a new object, the utils need to know it is a node
     new_fields['type'] = 'workflow_job_template_node'
 
@@ -213,7 +256,11 @@ def main():
         module.delete_if_needed(existing_item)
     elif state == 'present':
         # If the state was present and we can let the module build or update the existing item, this will return on its own
-        module.create_or_update_if_needed(existing_item, new_fields, endpoint='workflow_job_template_nodes', item_type='workflow_job_template_node')
+        module.create_or_update_if_needed(
+            existing_item, new_fields,
+            endpoint='workflow_job_template_nodes', item_type='workflow_job_template_node',
+            associations=association_fields
+        )
 
 
 if __name__ == '__main__':
