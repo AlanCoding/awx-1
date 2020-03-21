@@ -18,10 +18,10 @@ DOCUMENTATION = '''
 module: tower_role
 version_added: "2.3"
 author: "Wayne Witzel III (@wwitzel3)"
-short_description: create, update, or destroy Ansible Tower role.
+short_description: grant or revoke an Ansible Tower role.
 description:
-    - Create, update, or destroy Ansible Tower roles. See
-      U(https://www.ansible.com/tower) for an overview.
+    - Roles are used for access control, this module is for managing user access to server resources.
+    - Grant or revoke Ansible Tower roles to users. See U(https://www.ansible.com/tower) for an overview.
 options:
     user:
       description:
@@ -41,6 +41,8 @@ options:
     target_team:
       description:
         - Team that the role acts on.
+        - For example, make someone a member or an admin of a team.
+        - Members of a team implicitly receive the permissions that the team has.
       type: str
     inventory:
       description:
@@ -52,7 +54,7 @@ options:
       type: str
     workflow:
       description:
-        - The job template the role acts on.
+        - The workflow job template the role acts on.
       type: str
     credential:
       description:
@@ -68,7 +70,9 @@ options:
       type: str
     state:
       description:
-        - Desired state of the resource.
+        - Desired state.
+        - State of present indicates the user should have the role.
+        - State of absent indicates the user should have the role taken away, if they have it.
       default: "present"
       choices: ["present", "absent"]
       type: str
@@ -126,21 +130,13 @@ def main():
     # Lookup data for all the objects specified in params
     params = module.params.copy()
     resource_param_keys = (
-        'user',
-        'team',
-        'target_team',
-        'inventory',
-        'job_template',
-        'workflow',
-        'credential',
-        'organization',
-        'project'
+        'user', 'team',
+        'target_team', 'inventory', 'job_template', 'workflow', 'credential', 'organization', 'project'
     )
     resource_data = {}
     for param in resource_param_keys:
         endpoint = module.param_to_endpoint(param)
         name_field = 'username' if param == 'user' else 'name'
-        key = 'team' if param == 'target_team' else param
 
         resource_name = params.get(param)
         if resource_name:
@@ -165,9 +161,9 @@ def main():
             resource_roles = resource['summary_fields']['object_roles']
             if role_field not in resource_roles:
                 available_roles = ', '.join(list(resource_roles.keys()))
-                module.fail_json(msg='The {0} {1} has no role {2}, available roles: {3}'.format(
-                    resource_type, resource['id'], role_field, available_roles
-                ))
+                module.fail_json(msg='Resource {0} has no role {1}, available roles: {2}'.format(
+                    resource['url'], role_field, available_roles
+                ), changed=False)
             role_data = resource_roles[role_field]
             endpoint = '/roles/{0}/{1}/'.format(role_data['id'], module.param_to_endpoint(actor_type))
             associations.setdefault(endpoint, [])
@@ -179,27 +175,20 @@ def main():
         existing_associated_ids = [association['id'] for association in response['json']['results']]
 
         if state == 'present':
-            ids_to_add = list(set(new_association_list) - set(existing_associated_ids))
-            ids_to_remove = []
+            for an_id in list(set(new_association_list) - set(existing_associated_ids)):
+                response = module.post_endpoint(association_endpoint, **{'data': {'id': int(an_id)}})
+                if response['status_code'] == 204:
+                    module.json_output['changed'] = True
+                else:
+                    module.fail_json(msg="Failed to grant role {0}".format(response['json']['detail']))
         else:
-            ids_to_add = []
-            ids_to_remove = list(set(existing_associated_ids) & set(new_association_list))
+            for an_id in list(set(existing_associated_ids) & set(new_association_list)):
+                response = module.post_endpoint(association_endpoint, **{'data': {'id': int(an_id), 'disassociate': True}})
+                if response['status_code'] == 204:
+                    module.json_output['changed'] = True
+                else:
+                    module.fail_json(msg="Failed to revoke role {0}".format(response['json']['detail']))
 
-        for an_id in ids_to_remove:
-            response = module.post_endpoint(association_endpoint, **{'data': {'id': int(an_id), 'disassociate': True}})
-            if response['status_code'] == 204:
-                module.json_output['changed'] = True
-            else:
-                module.fail_json(msg="Failed to disassociate item {0}".format(response['json']['detail']))
-
-        for an_id in ids_to_add:
-            response = module.post_endpoint(association_endpoint, **{'data': {'id': int(an_id)}})
-            if response['status_code'] == 204:
-                module.json_output['changed'] = True
-            else:
-                module.fail_json(msg="Failed to associate item {0}".format(response['json']['detail']))
-
-    # bye
     module.exit_json(**module.json_output)
 
 
