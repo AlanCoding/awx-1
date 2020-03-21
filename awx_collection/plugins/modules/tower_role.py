@@ -87,45 +87,9 @@ EXAMPLES = '''
     target_team: "My Team"
     role: member
     state: present
-    tower_config_file: "~/tower_cli.cfg"
 '''
 
-from ..module_utils.ansible_tower import TowerModule, tower_auth_config, tower_check_mode
-
-try:
-    import tower_cli
-    import tower_cli.exceptions as exc
-
-    from tower_cli.conf import settings
-except ImportError:
-    pass
-
-
-def update_resources(module, p):
-    '''update_resources attempts to fetch any of the resources given
-    by name using their unique field (identity)
-    '''
-    params = p.copy()
-    identity_map = {
-        'user': 'username',
-        'team': 'name',
-        'target_team': 'name',
-        'inventory': 'name',
-        'job_template': 'name',
-        'workflow': 'name',
-        'credential': 'name',
-        'organization': 'name',
-        'project': 'name',
-    }
-    for k, v in identity_map.items():
-        try:
-            if params[k]:
-                key = 'team' if k == 'target_team' else k
-                result = tower_cli.get_resource(key).get(**{v: params[k]})
-                params[k] = result['id']
-        except (exc.NotFound) as excinfo:
-            module.fail_json(msg='Failed to update role, {0} not found: {1}'.format(k, excinfo), changed=False)
-    return params
+from ..module_utils.tower_api import TowerModule
 
 
 def main():
@@ -147,32 +111,71 @@ def main():
 
     module = TowerModule(argument_spec=argument_spec, supports_check_mode=True)
 
-    module.deprecate(msg="This module is being moved to a different collection. Instead of awx.awx it will be migrated into awx.tower_cli", version="3.7")
-
     role_type = module.params.pop('role')
+    role_field = role_type + '_role'
     state = module.params.pop('state')
 
-    json_output = {'role': role_type, 'state': state}
+    module.json_output['role'] = role_type
 
-    tower_auth = tower_auth_config(module)
-    with settings.runtime_values(**tower_auth):
-        tower_check_mode(module)
-        role = tower_cli.get_resource('role')
+    # Lookup data for all the objects specified in params
+    params = module.params.copy()
+    resource_param_keys = (
+        'user',
+        'team',
+        'target_team',
+        'inventory',
+        'job_template',
+        'workflow',
+        'credential',
+        'organization',
+        'project'
+    )
+    resource_data = {}
+    for param in resource_param_keys:
+        endpoint = module.param_to_endpoint(param)
+        name_field = 'username' if param == 'user' else 'name'
+        key = 'team' if param == 'target_team' else param
 
-        params = update_resources(module, module.params)
-        params['type'] = role_type
+        resource_name = params.get(param)
+        if resource_name:
+            resource = module.get_one(endpoint, **{'data': {name_field: resource_name}})
+            if not resource:
+                module.fail_json(
+                    msg='Failed to update role, {0} not found in {1}'.format(param, endpoint),
+                    changed=False
+                )
+            resource_data[param] = resource
 
-        try:
-            if state == 'present':
-                result = role.grant(**params)
-                json_output['id'] = result['id']
-            elif state == 'absent':
-                result = role.revoke(**params)
-        except (exc.ConnectionError, exc.BadRequest, exc.NotFound, exc.AuthError) as excinfo:
-            module.fail_json(msg='Failed to update role: {0}'.format(excinfo), changed=False)
+    # separate actors from resources
+    actor_data = {}
+    for key in ('user', 'team'):
+        if key in resource_data:
+            actor_data[key] = resource_data.pop(key)
 
-    json_output['changed'] = result['changed']
-    module.exit_json(**json_output)
+    # build association agenda
+    associations = {}
+    for actor_type, actor in actor_data.items():
+        for resource_type, resource in resource_data.items():
+            resource_roles = resource['summary_fields']['object_roles']
+            if role_field not in resource_roles:
+                available_roles = ', '.join([rf for rf in resource_roles])
+                module.fail_json(msg='The {0} {1} has no role {2}, available roles: {3}'.format(
+                    resource_type, resource['id'], role_field, available_roles
+                ))
+            role_data = resource_roles[role_field]
+            endpoint = '/roles/{0}/{1}/'.format(role_data['id'], module.param_to_endpoint(actor_type))
+            associations.setdefault(endpoint, [])
+            associations[endpoint].append(actor['id'])
+
+    # perform associations
+    for association_endpoint, new_association_list in associations.items():
+        if state == 'present':
+            module.modify_associations(association_endpoint, new_association_list)
+        else:
+            module.fail_json(msg='Only role association is supported at this time.')
+
+    # bye
+    module.exit_json(**module.json_output)
 
 
 if __name__ == '__main__':
