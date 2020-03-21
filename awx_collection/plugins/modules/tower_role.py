@@ -175,10 +175,29 @@ def main():
 
     # perform associations
     for association_endpoint, new_association_list in associations.items():
+        response = module.get_all_endpoint(association_endpoint)
+        existing_associated_ids = [association['id'] for association in response['json']['results']]
+
         if state == 'present':
-            module.modify_associations(association_endpoint, new_association_list)
+            ids_to_add = list(set(new_association_list) - set(existing_associated_ids))
+            ids_to_remove = []
         else:
-            module.fail_json(msg='Only role association is supported at this time.')
+            ids_to_add = []
+            ids_to_remove = list(set(existing_associated_ids) & set(new_association_list))
+
+        for an_id in ids_to_remove:
+            response = module.post_endpoint(association_endpoint, **{'data': {'id': int(an_id), 'disassociate': True}})
+            if response['status_code'] == 204:
+                module.json_output['changed'] = True
+            else:
+                module.fail_json(msg="Failed to disassociate item {0}".format(response['json']['detail']))
+
+        for an_id in ids_to_add:
+            response = module.post_endpoint(association_endpoint, **{'data': {'id': int(an_id)}})
+            if response['status_code'] == 204:
+                module.json_output['changed'] = True
+            else:
+                module.fail_json(msg="Failed to associate item {0}".format(response['json']['detail']))
 
     # bye
     module.exit_json(**module.json_output)
