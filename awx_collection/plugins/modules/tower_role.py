@@ -72,6 +72,12 @@ options:
       default: "present"
       choices: ["present", "absent"]
       type: str
+    tower_oauthtoken:
+      description:
+        - The Tower OAuth token to use.
+      required: False
+      type: str
+      version_added: "3.7"
 
 requirements:
 - ansible-tower-cli >= 3.0.2
@@ -158,7 +164,7 @@ def main():
         for resource_type, resource in resource_data.items():
             resource_roles = resource['summary_fields']['object_roles']
             if role_field not in resource_roles:
-                available_roles = ', '.join([rf for rf in resource_roles])
+                available_roles = ', '.join(list(resource_roles.keys()))
                 module.fail_json(msg='The {0} {1} has no role {2}, available roles: {3}'.format(
                     resource_type, resource['id'], role_field, available_roles
                 ))
