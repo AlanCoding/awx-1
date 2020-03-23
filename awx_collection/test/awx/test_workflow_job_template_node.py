@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
@@ -27,8 +28,9 @@ def wfjt(organization):
 
 @pytest.mark.django_db
 def test_create_workflow_job_template_node(run_module, admin_user, wfjt, job_template):
+    this_identifier = '42🐉'
     result = run_module('tower_workflow_job_template_node', {
-        'identifier': '42',
+        'identifier': this_identifier,
         'workflow_job_template': 'foo-workflow',
         'organization': wfjt.organization.name,
         'unified_job_template': 'foo-jt',
@@ -36,11 +38,11 @@ def test_create_workflow_job_template_node(run_module, admin_user, wfjt, job_tem
     }, admin_user)
     assert not result.get('failed', False), result.get('msg', result)
 
-    node = WorkflowJobTemplateNode.objects.get(identifier='42')
+    node = WorkflowJobTemplateNode.objects.get(identifier=this_identifier)
 
     result.pop('invocation', None)
     assert result == {
-        "name": "42",  # FIXME: should this be identifier instead
+        "name": this_identifier,  # FIXME: should this be identifier instead
         "id": node.id,
         "changed": True
     }
