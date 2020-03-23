@@ -158,6 +158,10 @@ class WorkflowJobTemplateNode(WorkflowNodeBase):
     class Meta:
         app_label = 'main'
         unique_together = (("identifier", "workflow_job_template"),)
+        indexes = [
+            models.Index(fields=["identifier", "workflow_job_template"]),
+            models.Index(fields=['identifier']),
+        ]
 
     def get_absolute_url(self, request=None):
         return reverse('api:workflow_job_template_node_detail', kwargs={'pk': self.pk}, request=request)
@@ -232,6 +236,13 @@ class WorkflowJobNode(WorkflowNodeBase):
         blank=True,  # blank denotes pre-migration job nodes
         help_text=_('An identifier coresponding to the workflow job template node that this node was created from.'),
     )
+
+    class Meta:
+        app_label = 'main'
+        indexes = [
+            models.Index(fields=["identifier", "workflow_job"]),
+            models.Index(fields=['identifier']),
+        ]
 
     def get_absolute_url(self, request=None):
         return reverse('api:workflow_job_node_detail', kwargs={'pk': self.pk}, request=request)
