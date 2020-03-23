@@ -14,7 +14,8 @@ def job_template(project, inventory):
         playbook='helloworld.yml',
         name='foo-jt',
         ask_variables_on_launch=True,
-        ask_credential_on_launch=True
+        ask_credential_on_launch=True,
+        ask_limit_on_launch=True
     )
 
 
@@ -49,6 +50,31 @@ def test_create_workflow_job_template_node(run_module, admin_user, wfjt, job_tem
 
 
 @pytest.mark.django_db
+def test_make_use_of_prompts(run_module, admin_user, wfjt, job_template, machine_credential, vault_credential):
+    # Create to temporarily woraround other issue https://github.com/ansible/awx/issues/5177
+    WorkflowJobTemplateNode.objects.create(
+        identifier='42', workflow_job_template=wfjt, unified_job_template=job_template)
+    result = run_module('tower_workflow_job_template_node', {
+        'identifier': '42',
+        'workflow_job_template': 'foo-workflow',
+        'organization': wfjt.organization.name,
+        'unified_job_template': 'foo-jt',
+        'extra_data': {'foo': 'bar', 'another-foo': {'barz': 'bar2'}},
+        'limit': 'foo_hosts',
+        'credentials': [machine_credential.name, vault_credential.name],
+        'state': 'present'
+    }, admin_user)
+    assert not result.get('failed', False), result.get('msg', result)
+    assert result.get('changed', False)
+
+    node = WorkflowJobTemplateNode.objects.get(identifier='42')
+
+    assert node.limit == 'foo_hosts'
+    assert node.extra_data == {'foo': 'bar', 'another-foo': {'barz': 'bar2'}}
+    assert set(node.credentials.all()) == set([machine_credential, vault_credential])
+
+
+@pytest.mark.django_db
 def test_create_with_edges(run_module, admin_user, wfjt, job_template):
     next_nodes = [
         WorkflowJobTemplateNode.objects.create(
@@ -59,10 +85,7 @@ def test_create_with_edges(run_module, admin_user, wfjt, job_template):
     ]
     # Create to temporarily woraround other issue https://github.com/ansible/awx/issues/5177
     WorkflowJobTemplateNode.objects.create(
-        identifier='42',
-        workflow_job_template=wfjt,
-        unified_job_template=job_template
-    )
+        identifier='42', workflow_job_template=wfjt, unified_job_template=job_template)
 
     result = run_module('tower_workflow_job_template_node', {
         'identifier': '42',

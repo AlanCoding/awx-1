@@ -133,6 +133,14 @@ options:
       required: False
       type: list
       elements: str
+    credentials:
+      description:
+        - Credentials to be applied to job as launch-time prompts.
+        - List of credential names.
+        - Uniqueness is not handled rigorously.
+      required: False
+      type: list
+      elements: str
     state:
       description:
         - Desired state of the resource.
@@ -182,6 +190,7 @@ def main():
         success_nodes=dict(type='list', elements='str'),
         always_nodes=dict(type='list', elements='str'),
         failure_nodes=dict(type='list', elements='str'),
+        credentials=dict(type='list', elements='str'),
         state=dict(choices=['present', 'absent'], default='present'),
     )
 
@@ -232,18 +241,23 @@ def main():
             new_fields[field_name] = field_val
 
     association_fields = {}
-    for association in ('always_nodes', 'success_nodes', 'failure_nodes'):
+    for association in ('always_nodes', 'success_nodes', 'failure_nodes', 'credentials'):
         name_list = module.params.get(association)
         if name_list is None:
             continue
         id_list = []
         for sub_name in name_list:
-            lookup_data = {'identifier': sub_name}
-            if workflow_job_template_id:
-                lookup_data['workflow_job_template'] = workflow_job_template_id
-            sub_obj = module.get_one('workflow_job_template_nodes', **{'data': lookup_data})
+            if association == 'credentials':
+                endpoint = 'credentials'
+                lookup_data = {'name': sub_name}
+            else:
+                endpoint = 'workflow_job_template_nodes'
+                lookup_data = {'identifier': sub_name}
+                if workflow_job_template_id:
+                    lookup_data['workflow_job_template'] = workflow_job_template_id
+            sub_obj = module.get_one(endpoint, **{'data': lookup_data})
             if sub_obj is None:
-                module.fail_json(msg='Could not find {0} with name {1}'.format(association, sub_name))
+                module.fail_json(msg='Could not find {0} entry with name {1}'.format(association, sub_name))
             id_list.append(sub_obj['id'])
         if id_list:
             association_fields[association] = id_list
