@@ -34,15 +34,18 @@ class ItemNotDefined(Exception):
 class BaseBackend(object):
     url = None
     honorred_settings = ('host', 'username', 'password', 'verify_ssl', 'oauth_token')
+    # settings from params
     host = '127.0.0.1'
     username = None
     password = None
     verify_ssl = True
     oauth_token = None
     oauth_token_id = None
+    # persistent items
     session = None
     cookie_jar = CookieJar()
     authenticated = False
+    error = None
     config_name = 'tower_cli.cfg'
     argument_spec = dict(
         tower_host=dict(fallback=(env_fallback, ['TOWER_HOST'])),
@@ -76,18 +79,21 @@ class BaseBackend(object):
         if not re.match('^https{0,1}://', self.host):
             self.host = "https://{0}".format(self.host)
 
+        self.error = None
         # Try to parse the hostname as a url
         try:
             self.url = urlparse(self.host)
         except Exception as e:
-            self.fail_json(msg="Unable to parse tower_host as a URL ({1}): {0}".format(self.host, e))
+            self.error = "Unable to parse tower_host as a URL ({1}): {0}".format(self.host, e)
+            return
 
         # Try to resolve the hostname
         hostname = self.url.netloc.split(':')[0]
         try:
             gethostbyname(hostname)
         except Exception as e:
-            self.fail_json(msg="Unable to resolve tower_host ({1}): {0}".format(hostname, e))
+            self.error = "Unable to resolve tower_host ({1}): {0}".format(hostname, e)
+            return
 
         self.session = Request(cookies=CookieJar(), validate_certs=self.verify_ssl)
 
@@ -396,6 +402,8 @@ class TowerModule(AnsibleModule):
                 auth_params[key] = self.params.pop(key)
 
         self.backend = BaseBackend(auth_params)
+        if self.backend.error:
+            self.fail_json(msg=self.backend.error)
 
     @staticmethod
     def param_to_endpoint(name):
