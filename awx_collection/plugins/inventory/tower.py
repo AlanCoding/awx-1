@@ -92,7 +92,7 @@ import os
 
 from ansible.module_utils import six
 from ansible.module_utils._text import to_text, to_native
-from ansible.errors import AnsibleOptionsError
+from ansible.errors import AnsibleParserError, AnsibleOptionsError
 from ansible.plugins.inventory import BaseInventoryPlugin
 from ansible.config.manager import ensure_type
 
@@ -129,9 +129,9 @@ class InventoryModule(BaseInventoryPlugin):
             if plugin_param in self._options:
                 module_params[module_param] = self._options[plugin_param]
 
-        module = BaseBackend(module_params)
-        if module.error:
-            raise AnsibleParserError(module.error)
+        backend = BaseBackend(module_params)
+        if backend.error:
+            raise AnsibleParserError(backend.error)
 
         # validate type of inventory_id because we allow two types as special case
         inventory_id = self.get_option('inventory_id')
