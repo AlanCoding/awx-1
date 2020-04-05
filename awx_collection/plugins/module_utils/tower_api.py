@@ -233,6 +233,9 @@ class BaseBackend(object):
             msg = 'Unexpected return code when calling {url.path}/{url.netloc}: {status_code}'
         return msg.format(**r)
 
+    def get_endpoint(self, endpoint, *args, **kwargs):
+        return self.make_request('GET', endpoint, **kwargs)
+
     @staticmethod
     def read_response(response_data, response_object):
         try:
