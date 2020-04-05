@@ -31,7 +31,7 @@ class ItemNotDefined(Exception):
     pass
 
 
-class TowerModule(AnsibleModule):
+class BaseBackend(object):
     url = None
     honorred_settings = ('host', 'username', 'password', 'verify_ssl', 'oauth_token')
     host = '127.0.0.1'
@@ -44,22 +44,19 @@ class TowerModule(AnsibleModule):
     cookie_jar = CookieJar()
     authenticated = False
     config_name = 'tower_cli.cfg'
+    argument_spec = dict(
+        tower_host=dict(fallback=(env_fallback, ['TOWER_HOST'])),
+        tower_username=dict(fallback=(env_fallback, ['TOWER_USERNAME'])),
+        tower_password=dict(no_log=True, fallback=(env_fallback, ['TOWER_PASSWORD'])),
+        validate_certs=dict(type='bool', aliases=['tower_verify_ssl'], fallback=(env_fallback, ['TOWER_VERIFY_SSL'])),
+        tower_oauthtoken=dict(no_log=True, fallback=(env_fallback, ['TOWER_OAUTH_TOKEN'])),
+        tower_config_file=dict(type='path'),
+    )
 
-    def __init__(self, argument_spec, **kwargs):
-        args = dict(
-            tower_host=dict(required=False, fallback=(env_fallback, ['TOWER_HOST'])),
-            tower_username=dict(required=False, fallback=(env_fallback, ['TOWER_USERNAME'])),
-            tower_password=dict(no_log=True, required=False, fallback=(env_fallback, ['TOWER_PASSWORD'])),
-            validate_certs=dict(type='bool', aliases=['tower_verify_ssl'], required=False, fallback=(env_fallback, ['TOWER_VERIFY_SSL'])),
-            tower_oauthtoken=dict(type='str', no_log=True, required=False, fallback=(env_fallback, ['TOWER_OAUTH_TOKEN'])),
-            tower_config_file=dict(type='path', required=False, default=None),
-        )
-        args.update(argument_spec)
-        kwargs['supports_check_mode'] = True
-
-        self.json_output = {'changed': False}
-
-        super(TowerModule, self).__init__(argument_spec=args, **kwargs)
+    def __init__(self, params, module=None):
+        self.params = params
+        if module:
+            self.module = module
 
         self.load_config_files()
 
@@ -190,6 +187,216 @@ class TowerModule(AnsibleModule):
                 else:
                     setattr(self, honorred_setting, config_data[honorred_setting])
 
+    def fail_msg(self, response):
+        code = response['status_code']
+        if code > 500:
+            code = 500
+        r = response.copy()
+        r['url'] = self.url
+        if 'exc' in response:
+            r['exc_name'] = type(r['exc']).__name__
+        CANNED_TEXT = {
+            # Sanity check: Did the server send back some kind of internal error?
+            500: 'The host sent back a server error ({url.netloc}): {status_code}. Please check the logs and try again later',
+            # Sanity check: Did we fail to authenticate properly?  If so, fail out now; this is always a failure.
+            401: 'Invalid Tower authentication credentials for {url.path} (HTTP 401).',
+            # Sanity check: Did we get a forbidden response, which means that the user isn't allowed to do this? Report that.
+            403: 'You do not have permission to {method} to {url.path} (HTTP 403).',
+            # Sanity check: Did we get a 404 response?
+            # Requests with primary keys will return a 404 if there is no response, and we want to consistently trap these.
+            404: 'The requested object could not be found at {url.path}.',
+            # Sanity check: Did we get a 405 response?
+            # A 405 means we used a method that isn't allowed. Usually this is a bad request, but it requires special treatment because the
+            # API sends it as a logic error in a few situations (e.g. trying to cancel a job that isn't running).
+            405: 'The Tower server says you cannot make a request with the {method} method to this endpoing {url.path}',
+            # Sanity check: Did we get some other kind of error?  If so, write an appropriate error message.
+            400: 'The server reports some kind of user error at {url.path}, details: {json}',
+            SSLValidationError: 'Could not establish a secure connection to your host ({exc}): {url.netloc}.',
+            ConnectionError: 'There was a network error of some kind trying to connect to your host ({exc}): {url.netloc}.',
+            Exception: 'There was an unknown error when trying to connect to {url.path}/{url.netloc}: {exc_name} {exc}'
+        }
+        if code is None:
+            exc = response['exc']
+            if type(exc) in CANNED_TEXT:
+                msg = CANNED_TEXT[type(exc)]
+        elif code in CANNED_TEXT:
+            msg = CANNED_TEXT[code]
+        elif code in (204, 200, 201):
+            raise RuntimeError('Programming error: asked for error text for normal response {0}'.format(response))
+        else:
+            msg = 'Unexpected return code when calling {url.path}/{url.netloc}: {status_code}'
+        return msg.format(**r)
+
+    @staticmethod
+    def read_response(response_data, response_object):
+        try:
+            response_body = response_object.read()
+        except(Exception):
+            return response_data
+
+        try:
+            response_data['json'] = loads(response_body)
+        # JSONDecodeError only available on Python 3.5+
+        except(ValueError):
+            response_data['text'] = response_body
+
+    def make_request(self, method, endpoint, data=None):
+        # In case someone is calling us directly; make sure we were given a method, let's not just assume a GET
+        if not method:
+            raise Exception("The HTTP method must be defined")
+
+        # Make sure we start with /api/vX
+        if not endpoint.startswith("/"):
+            endpoint = "/{0}".format(endpoint)
+        if not endpoint.startswith("/api/"):
+            endpoint = "/api/v2{0}".format(endpoint)
+        if not endpoint.endswith('/') and '?' not in endpoint:
+            endpoint = "{0}/".format(endpoint)
+
+        headers = {}
+
+        # Authenticate to Tower (if we've not already done so)
+        if not self.authenticated:
+            # This method will set a cookie in the cookie jar for us
+            self.authenticate(data=data)
+        if self.oauth_token:
+            # If we have a oauth token, we just use a bearer header
+            headers['Authorization'] = 'Bearer {0}'.format(self.oauth_token)
+
+        # Update the URL path with the endpoint
+        self.url = self.url._replace(path=endpoint)
+
+        request_text = None  # Important, if content type is not JSON, this should not be dict type
+        if method in ['POST', 'PUT', 'PATCH']:
+            headers.setdefault('Content-Type', 'application/json')
+            if data is not None:
+                request_text = dumps(data)
+        elif data is not None:
+            self.url = self.url._replace(query=urlencode(data))
+
+        response = {}
+        try:
+            r = self.session.open(
+                method, self.url.geturl(), headers=headers,
+                validate_certs=self.verify_ssl, follow_redirects=True,
+                data=request_text
+            )
+        except(HTTPError) as he:
+            # We are going to return a 400 so the plugin can decide what to do with it
+            self.read_response(response, he)
+            response['status_code'] = he.code
+            return response
+        except(Exception) as e:
+            response['status_code'] = None
+            response['exc'] = e
+            return response
+        finally:
+            self.url = self.url._replace(query=None)
+
+        self.read_response(response, r)
+
+        if PY2:
+            status_code = r.getcode()
+        else:
+            status_code = r.status
+        response['status_code'] = status_code
+        response['method'] = method
+        return response
+
+    def authenticate(self, **kwargs):
+        if self.username and self.password:
+            # Attempt to get a token from /api/v2/tokens/ by giving it our username/password combo
+            # If we have a username and password, we need to get a session cookie
+            login_data = {
+                "description": "Ansible Tower Module Token",
+                "application": None,
+                "scope": "write",
+            }
+            # Post to the tokens endpoint with baisc auth to try and get a token
+            api_token_url = (self.url._replace(path='/api/v2/tokens/')).geturl()
+
+            try:
+                response = self.session.open(
+                    'POST', api_token_url,
+                    validate_certs=self.verify_ssl, follow_redirects=True,
+                    force_basic_auth=True, url_username=self.username, url_password=self.password,
+                    data=dumps(login_data), headers={'Content-Type': 'application/json'}
+                )
+            except HTTPError as he:
+                try:
+                    resp = he.read()
+                except Exception as e:
+                    resp = 'unknown {0}'.format(e)
+                self.fail_json(msg='Failed to get token: {0}'.format(he), response=resp)
+            except(Exception) as e:
+                # Sanity check: Did the server send back some kind of internal error?
+                self.fail_json(msg='Failed to get token: {0}'.format(e))
+
+            token_response = None
+            try:
+                token_response = response.read()
+                response_json = loads(token_response)
+                self.oauth_token_id = response_json['id']
+                self.oauth_token = response_json['token']
+            except(Exception) as e:
+                self.fail_json(msg="Failed to extract token information from login response: {0}".format(e), **{'response': token_response})
+
+        # If we have neither of these, then we can try un-authenticated access
+        self.authenticated = True
+
+    def logout(self):
+        if self.oauth_token_id is not None and self.username and self.password:
+            # Attempt to delete our current token from /api/v2/tokens/
+            # Post to the tokens endpoint with baisc auth to try and get a token
+            api_token_url = (
+                self.url._replace(
+                    path='/api/v2/tokens/{0}/'.format(self.oauth_token_id),
+                    query=None  # in error cases, fail_json exists before exception handling
+                )
+            ).geturl()
+
+            try:
+                self.session.open(
+                    'DELETE',
+                    api_token_url,
+                    validate_certs=self.verify_ssl,
+                    follow_redirects=True,
+                    force_basic_auth=True,
+                    url_username=self.username,
+                    url_password=self.password
+                )
+                self.oauth_token_id = None
+                self.authenticated = False
+            except HTTPError as he:
+                try:
+                    resp = he.read()
+                except Exception as e:
+                    resp = 'unknown {0}'.format(e)
+                self.warn('Failed to release tower token: {0}, response: {1}'.format(he, resp))
+            except(Exception) as e:
+                # Sanity check: Did the server send back some kind of internal error?
+                self.warn('Failed to release tower token {0}: {1}'.format(self.oauth_token_id, e))
+
+
+class TowerModule(AnsibleModule):
+
+    def __init__(self, argument_spec, **kwargs):
+        args = {}
+        args.update(BaseBackend.argument_spec)
+        args.update(argument_spec)
+        kwargs['supports_check_mode'] = True
+
+        self.json_output = {'changed': False}
+
+        super(TowerModule, self).__init__(argument_spec=args, **kwargs)
+
+        auth_params = {}
+        for key in BaseBackend.argument_spec:
+            if key in self.params:
+                auth_params[key] = self.params.pop(key)
+
+        self.backend = BaseBackend(auth_params)
+
     @staticmethod
     def param_to_endpoint(name):
         exceptions = {
@@ -283,148 +490,16 @@ class TowerModule(AnsibleModule):
         else:
             self.fail_json(msg="Found too many names {0} at endpoint {1} try using an ID instead of a name".format(name_or_id, endpoint))
 
-    def make_request(self, method, endpoint, *args, **kwargs):
-        # In case someone is calling us directly; make sure we were given a method, let's not just assume a GET
-        if not method:
-            raise Exception("The HTTP method must be defined")
+    def make_request(self, method, endpoint, data=None, return_none_on_404=False):
+        response = self.backend.make_request(method, endpoint, data=data)
 
-        # Make sure we start with /api/vX
-        if not endpoint.startswith("/"):
-            endpoint = "/{0}".format(endpoint)
-        if not endpoint.startswith("/api/"):
-            endpoint = "/api/v2{0}".format(endpoint)
-        if not endpoint.endswith('/') and '?' not in endpoint:
-            endpoint = "{0}/".format(endpoint)
+        code = response['status_code']
+        if code in (None, 401, 403, 404, 405) or code >= 500:
+            if code == 404 and return_none_on_404:
+                return None
+            self.fail_json(self.backend.fail_msg(response))
 
-        # Extract the headers, this will be used in a couple of places
-        headers = kwargs.get('headers', {})
-
-        # Authenticate to Tower (if we've not already done so)
-        if not self.authenticated:
-            # This method will set a cookie in the cookie jar for us
-            self.authenticate(**kwargs)
-        if self.oauth_token:
-            # If we have a oauth token, we just use a bearer header
-            headers['Authorization'] = 'Bearer {0}'.format(self.oauth_token)
-
-        # Update the URL path with the endpoint
-        self.url = self.url._replace(path=endpoint)
-
-        if method in ['POST', 'PUT', 'PATCH']:
-            headers.setdefault('Content-Type', 'application/json')
-            kwargs['headers'] = headers
-        elif kwargs.get('data'):
-            self.url = self.url._replace(query=urlencode(kwargs.get('data')))
-
-        data = None  # Important, if content type is not JSON, this should not be dict type
-        if headers.get('Content-Type', '') == 'application/json':
-            data = dumps(kwargs.get('data', {}))
-
-        try:
-            response = self.session.open(method, self.url.geturl(), headers=headers, validate_certs=self.verify_ssl, follow_redirects=True, data=data)
-        except(SSLValidationError) as ssl_err:
-            self.fail_json(msg="Could not establish a secure connection to your host ({1}): {0}.".format(self.url.netloc, ssl_err))
-        except(ConnectionError) as con_err:
-            self.fail_json(msg="There was a network error of some kind trying to connect to your host ({1}): {0}.".format(self.url.netloc, con_err))
-        except(HTTPError) as he:
-            # Sanity check: Did the server send back some kind of internal error?
-            if he.code >= 500:
-                self.fail_json(msg='The host sent back a server error ({1}): {0}. Please check the logs and try again later'.format(self.url.path, he))
-            # Sanity check: Did we fail to authenticate properly?  If so, fail out now; this is always a failure.
-            elif he.code == 401:
-                self.fail_json(msg='Invalid Tower authentication credentials for {0} (HTTP 401).'.format(self.url.path))
-            # Sanity check: Did we get a forbidden response, which means that the user isn't allowed to do this? Report that.
-            elif he.code == 403:
-                self.fail_json(msg="You don't have permission to {1} to {0} (HTTP 403).".format(self.url.path, method))
-            # Sanity check: Did we get a 404 response?
-            # Requests with primary keys will return a 404 if there is no response, and we want to consistently trap these.
-            elif he.code == 404:
-                if kwargs.get('return_none_on_404', False):
-                    return None
-                self.fail_json(msg='The requested object could not be found at {0}.'.format(self.url.path))
-            # Sanity check: Did we get a 405 response?
-            # A 405 means we used a method that isn't allowed. Usually this is a bad request, but it requires special treatment because the
-            # API sends it as a logic error in a few situations (e.g. trying to cancel a job that isn't running).
-            elif he.code == 405:
-                self.fail_json(msg="The Tower server says you can't make a request with the {0} method to this endpoing {1}".format(method, self.url.path))
-            # Sanity check: Did we get some other kind of error?  If so, write an appropriate error message.
-            elif he.code >= 400:
-                # We are going to return a 400 so the module can decide what to do with it
-                page_data = he.read()
-                try:
-                    return {'status_code': he.code, 'json': loads(page_data)}
-                # JSONDecodeError only available on Python 3.5+
-                except ValueError:
-                    return {'status_code': he.code, 'text': page_data}
-            elif he.code == 204 and method == 'DELETE':
-                # A 204 is a normal response for a delete function
-                pass
-            else:
-                self.fail_json(msg="Unexpected return code when calling {0}: {1}".format(self.url.geturl(), he))
-        except(Exception) as e:
-            self.fail_json(msg="There was an unknown error when trying to connect to {2}: {0} {1}".format(type(e).__name__, e, self.url.geturl()))
-        finally:
-            self.url = self.url._replace(query=None)
-
-        response_body = ''
-        try:
-            response_body = response.read()
-        except(Exception) as e:
-            self.fail_json(msg="Failed to read response body: {0}".format(e))
-
-        response_json = {}
-        if response_body and response_body != '':
-            try:
-                response_json = loads(response_body)
-            except(Exception) as e:
-                self.fail_json(msg="Failed to parse the response json: {0}".format(e))
-
-        if PY2:
-            status_code = response.getcode()
-        else:
-            status_code = response.status
-        return {'status_code': status_code, 'json': response_json}
-
-    def authenticate(self, **kwargs):
-        if self.username and self.password:
-            # Attempt to get a token from /api/v2/tokens/ by giving it our username/password combo
-            # If we have a username and password, we need to get a session cookie
-            login_data = {
-                "description": "Ansible Tower Module Token",
-                "application": None,
-                "scope": "write",
-            }
-            # Post to the tokens endpoint with baisc auth to try and get a token
-            api_token_url = (self.url._replace(path='/api/v2/tokens/')).geturl()
-
-            try:
-                response = self.session.open(
-                    'POST', api_token_url,
-                    validate_certs=self.verify_ssl, follow_redirects=True,
-                    force_basic_auth=True, url_username=self.username, url_password=self.password,
-                    data=dumps(login_data), headers={'Content-Type': 'application/json'}
-                )
-            except HTTPError as he:
-                try:
-                    resp = he.read()
-                except Exception as e:
-                    resp = 'unknown {0}'.format(e)
-                self.fail_json(msg='Failed to get token: {0}'.format(he), response=resp)
-            except(Exception) as e:
-                # Sanity check: Did the server send back some kind of internal error?
-                self.fail_json(msg='Failed to get token: {0}'.format(e))
-
-            token_response = None
-            try:
-                token_response = response.read()
-                response_json = loads(token_response)
-                self.oauth_token_id = response_json['id']
-                self.oauth_token = response_json['token']
-            except(Exception) as e:
-                self.fail_json(msg="Failed to extract token information from login response: {0}".format(e), **{'response': token_response})
-
-        # If we have neither of these, then we can try un-authenticated access
-        self.authenticated = True
+        return response
 
     def default_check_mode(self):
         '''Execute check mode logic for Ansible Tower modules'''
@@ -640,47 +715,14 @@ class TowerModule(AnsibleModule):
         else:
             return self.create_if_needed(existing_item, new_item, endpoint, on_create=on_create, item_type=item_type, associations=associations)
 
-    def logout(self):
-        if self.oauth_token_id is not None and self.username and self.password:
-            # Attempt to delete our current token from /api/v2/tokens/
-            # Post to the tokens endpoint with baisc auth to try and get a token
-            api_token_url = (
-                self.url._replace(
-                    path='/api/v2/tokens/{0}/'.format(self.oauth_token_id),
-                    query=None  # in error cases, fail_json exists before exception handling
-                )
-            ).geturl()
-
-            try:
-                self.session.open(
-                    'DELETE',
-                    api_token_url,
-                    validate_certs=self.verify_ssl,
-                    follow_redirects=True,
-                    force_basic_auth=True,
-                    url_username=self.username,
-                    url_password=self.password
-                )
-                self.oauth_token_id = None
-                self.authenticated = False
-            except HTTPError as he:
-                try:
-                    resp = he.read()
-                except Exception as e:
-                    resp = 'unknown {0}'.format(e)
-                self.warn('Failed to release tower token: {0}, response: {1}'.format(he, resp))
-            except(Exception) as e:
-                # Sanity check: Did the server send back some kind of internal error?
-                self.warn('Failed to release tower token {0}: {1}'.format(self.oauth_token_id, e))
-
     def fail_json(self, **kwargs):
         # Try to log out if we are authenticated
-        self.logout()
+        self.backend.logout()
         super(TowerModule, self).fail_json(**kwargs)
 
     def exit_json(self, **kwargs):
         # Try to log out if we are authenticated
-        self.logout()
+        self.backend.logout()
         super(TowerModule, self).exit_json(**kwargs)
 
     def is_job_done(self, job_status):
