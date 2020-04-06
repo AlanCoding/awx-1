@@ -96,7 +96,7 @@ from ansible.errors import AnsibleParserError, AnsibleOptionsError
 from ansible.plugins.inventory import BaseInventoryPlugin
 from ansible.config.manager import ensure_type
 
-from ..module_utils.tower_api import BaseBackend
+from ..module_utils.tower_api import PythonBackend  # TODO: allow running with other backends
 
 
 class InventoryModule(BaseInventoryPlugin):
@@ -129,7 +129,7 @@ class InventoryModule(BaseInventoryPlugin):
             if plugin_param in self._options:
                 module_params[module_param] = self._options[plugin_param]
 
-        backend = BaseBackend(module_params)
+        backend = PythonBackend(module_params)
         if backend.error:
             raise AnsibleParserError(backend.error)
 

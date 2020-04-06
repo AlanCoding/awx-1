@@ -12,8 +12,9 @@ from ansible.module_utils.six.moves.configparser import ConfigParser, NoOptionEr
 from socket import gethostbyname
 import re
 from json import loads, dumps
-from os.path import isfile, expanduser, split, join, exists, isdir
-from os import access, R_OK, getcwd
+import os
+import sys
+
 from distutils.util import strtobool
 
 try:
@@ -32,7 +33,6 @@ class ItemNotDefined(Exception):
 
 
 class BaseBackend(object):
-    url = None
     honorred_settings = ('host', 'username', 'password', 'verify_ssl', 'oauth_token')
     # settings from params
     host = '127.0.0.1'
@@ -42,10 +42,9 @@ class BaseBackend(object):
     oauth_token = None
     oauth_token_id = None
     # persistent items
-    session = None
-    cookie_jar = CookieJar()
     authenticated = False
     error = None
+    skippable = False
     config_name = 'tower_cli.cfg'
     argument_spec = dict(
         tower_host=dict(fallback=(env_fallback, ['TOWER_HOST'])),
@@ -54,60 +53,35 @@ class BaseBackend(object):
         validate_certs=dict(type='bool', aliases=['tower_verify_ssl'], fallback=(env_fallback, ['TOWER_VERIFY_SSL'])),
         tower_oauthtoken=dict(no_log=True, fallback=(env_fallback, ['TOWER_OAUTH_TOKEN'])),
         tower_config_file=dict(type='path'),
+        tower_backend=dict(choices=['python', 'awxkit', 'server'], default='python', fallback=(env_fallback, ['TOWER_BACKEND'])),
     )
 
-    def __init__(self, params, module=None):
-        self.params = params
-        if module:
-            self.module = module
-
-        self.load_config_files()
+    def __init__(self, params):
+        self.load_config_files(params)
 
         # Parameters specified on command line will override settings in any config
-        if self.params.get('tower_host'):
-            self.host = self.params.get('tower_host')
-        if self.params.get('tower_username'):
-            self.username = self.params.get('tower_username')
-        if self.params.get('tower_password'):
-            self.password = self.params.get('tower_password')
-        if self.params.get('validate_certs') is not None:
-            self.verify_ssl = self.params.get('validate_certs')
-        if self.params.get('tower_oauthtoken'):
-            self.oauth_token = self.params.get('tower_oauthtoken')
+        if params.get('tower_host'):
+            self.host = params.get('tower_host')
+        if params.get('tower_username'):
+            self.username = params.get('tower_username')
+        if params.get('tower_password'):
+            self.password = params.get('tower_password')
+        if params.get('validate_certs') is not None:
+            self.verify_ssl = params.get('validate_certs')
+        if params.get('tower_oauthtoken'):
+            self.oauth_token = params.get('tower_oauthtoken')
 
-        # Perform some basic validation
-        if not re.match('^https{0,1}://', self.host):
-            self.host = "https://{0}".format(self.host)
-
-        self.error = None
-        # Try to parse the hostname as a url
-        try:
-            self.url = urlparse(self.host)
-        except Exception as e:
-            self.error = "Unable to parse tower_host as a URL ({1}): {0}".format(self.host, e)
-            return
-
-        # Try to resolve the hostname
-        hostname = self.url.netloc.split(':')[0]
-        try:
-            gethostbyname(hostname)
-        except Exception as e:
-            self.error = "Unable to resolve tower_host ({1}): {0}".format(hostname, e)
-            return
-
-        self.session = Request(cookies=CookieJar(), validate_certs=self.verify_ssl)
-
-    def load_config_files(self):
+    def load_config_files(self, params):
         # Load configs like TowerCLI would have from least import to most
-        config_files = ['/etc/tower/tower_cli.cfg', join(expanduser("~"), ".{0}".format(self.config_name))]
-        local_dir = getcwd()
-        config_files.append(join(local_dir, self.config_name))
-        while split(local_dir)[1]:
-            local_dir = split(local_dir)[0]
-            config_files.insert(2, join(local_dir, ".{0}".format(self.config_name)))
+        config_files = ['/etc/tower/tower_cli.cfg', os.path.join(os.path.expanduser("~"), ".{0}".format(self.config_name))]
+        local_dir = os.getcwd()
+        config_files.append(os.path.join(local_dir, self.config_name))
+        while os.path.split(local_dir)[1]:
+            local_dir = os.path.split(local_dir)[0]
+            config_files.insert(2, os.path.join(local_dir, ".{0}".format(self.config_name)))
 
         for config_file in config_files:
-            if exists(config_file) and not isdir(config_file):
+            if os.path.exists(config_file) and not os.path.isdir(config_file):
                 # Only throw a formatting error if the file exists and is not a directory
                 try:
                     self.load_config(config_file)
@@ -115,29 +89,29 @@ class BaseBackend(object):
                     self.fail_json('The config file {0} is not properly formatted'.format(config_file))
 
         # If we have a specified  tower config, load it
-        if self.params.get('tower_config_file'):
+        if params.get('tower_config_file'):
             duplicated_params = []
             for direct_field in ('tower_host', 'tower_username', 'tower_password', 'validate_certs', 'tower_oauthtoken'):
-                if self.params.get(direct_field):
+                if params.get(direct_field):
                     duplicated_params.append(direct_field)
             if duplicated_params:
                 self.warn((
                     'The parameter(s) {0} were provided at the same time as tower_config_file. '
                     'Precedence may be unstable, we suggest either using config file or params.'
-                ).format(', '.join(duplicated_params)))
+                ).format(', '.os.path.join(duplicated_params)))
             try:
                 # TODO: warn if there are conflicts with other params
-                self.load_config(self.params.get('tower_config_file'))
+                self.load_config(params.get('tower_config_file'))
             except ConfigFileException as cfe:
                 # Since we were told specifically to load this we want it to fail if we have an error
                 self.fail_json(msg=cfe)
 
     def load_config(self, config_path):
         # Validate the config file is an actual file
-        if not isfile(config_path):
+        if not os.path.isfile(config_path):
             raise ConfigFileException('The specified config file does not exist')
 
-        if not access(config_path, R_OK):
+        if not os.access(config_path, os.R_OK):
             raise ConfigFileException("The specified config file cannot be read")
 
         # Read in the file contents:
@@ -195,7 +169,7 @@ class BaseBackend(object):
 
     def fail_msg(self, response):
         code = response['status_code']
-        if code > 500:
+        if code and code > 500:
             code = 500
         r = response.copy()
         r['url'] = self.url
@@ -219,22 +193,74 @@ class BaseBackend(object):
             400: 'The server reports some kind of user error at {url.path}, details: {json}',
             SSLValidationError: 'Could not establish a secure connection to your host ({exc}): {url.netloc}.',
             ConnectionError: 'There was a network error of some kind trying to connect to your host ({exc}): {url.netloc}.',
-            Exception: 'There was an unknown error when trying to connect to {url.path}/{url.netloc}: {exc_name} {exc}'
+            Exception: 'There was an unknown error when trying to connect to {url.netloc}{url.path}: {exc_name} {exc}'
         }
         if code is None:
             exc = response['exc']
             if type(exc) in CANNED_TEXT:
                 msg = CANNED_TEXT[type(exc)]
+            else:
+                msg = CANNED_TEXT[Exception]
         elif code in CANNED_TEXT:
             msg = CANNED_TEXT[code]
         elif code in (204, 200, 201):
             raise RuntimeError('Programming error: asked for error text for normal response {0}'.format(response))
         else:
-            msg = 'Unexpected return code when calling {url.path}/{url.netloc}: {status_code}'
+            msg = 'Unexpected return code when calling {url.netloc}{url.path}: {status_code}'
         return msg.format(**r)
+
+    @staticmethod
+    def sanitize_endpoint(endpoint):
+        # Make sure we start with /api/vX
+        if not endpoint.startswith("/"):
+            endpoint = "/{0}".format(endpoint)
+        if not endpoint.startswith("/api/"):
+            endpoint = "/api/v2{0}".format(endpoint)
+        if not endpoint.endswith('/') and '?' not in endpoint:
+            endpoint = "{0}/".format(endpoint)
+        return endpoint
 
     def get_endpoint(self, endpoint, *args, **kwargs):
         return self.make_request('GET', endpoint, **kwargs)
+
+    def make_request(self, method, endpoint, data=None):
+        raise NotImplementedError()
+
+    def logout(self):
+        raise NotImplementedError()
+
+
+class PythonBackend(BaseBackend):
+    url = None
+    # persistent items
+    session = None
+    cookie_jar = CookieJar()
+    choice = 'python'
+
+    def __init__(self, params):
+        super(PythonBackend, self).__init__(params)  # process config files
+
+        # Perform some basic validation
+        if not re.match('^https{0,1}://', self.host):
+            self.host = "https://{0}".format(self.host)
+
+        self.error = None
+        # Try to parse the hostname as a url
+        try:
+            self.url = urlparse(self.host)
+        except Exception as e:
+            self.error = "Unable to parse tower_host as a URL ({1}): {0}".format(self.host, e)
+            return
+
+        # Try to resolve the hostname
+        hostname = self.url.netloc.split(':')[0]
+        try:
+            gethostbyname(hostname)
+        except Exception as e:
+            self.error = "Unable to resolve tower_host ({1}): {0}".format(hostname, e)
+            return
+
+        self.session = Request(cookies=CookieJar(), validate_certs=self.verify_ssl)
 
     @staticmethod
     def read_response(response_data, response_object):
@@ -254,13 +280,7 @@ class BaseBackend(object):
         if not method:
             raise Exception("The HTTP method must be defined")
 
-        # Make sure we start with /api/vX
-        if not endpoint.startswith("/"):
-            endpoint = "/{0}".format(endpoint)
-        if not endpoint.startswith("/api/"):
-            endpoint = "/api/v2{0}".format(endpoint)
-        if not endpoint.endswith('/') and '?' not in endpoint:
-            endpoint = "{0}/".format(endpoint)
+        endpoint = self.sanitize_endpoint(endpoint)
 
         headers = {}
 
@@ -312,7 +332,7 @@ class BaseBackend(object):
         response['method'] = method
         return response
 
-    def authenticate(self, **kwargs):
+    def authenticate(self, data=None):
         if self.username and self.password:
             # Attempt to get a token from /api/v2/tokens/ by giving it our username/password combo
             # If we have a username and password, we need to get a session cookie
@@ -387,6 +407,75 @@ class BaseBackend(object):
                 self.warn('Failed to release tower token {0}: {1}'.format(self.oauth_token_id, e))
 
 
+class ServerBackend(BaseBackend):
+    choice = 'server'
+    user = None
+
+    def __init__(self, params):
+        super(ServerBackend, self).__init__(params)  # process config files
+
+        candidate_venvs = (
+            ('/var/lib/awx/venv/awx/lib/python3.6/site-packages/', False),  # production
+            ('/venv/awx/lib/python3.6/site-packages/', True)  # development
+        )
+
+        for awx_venv_path, DEBUG in candidate_venvs:
+            if os.path.exists(awx_venv_path) and awx_venv_path not in sys.path:
+                sys.path.insert(1, awx_venv_path)
+                if DEBUG:
+                    # Unique to docker deployment, this is not ideal, may be better to solve server-side
+                    sys.path.insert(1, '/awx_devel')
+                print(awx_venv_path)
+                break
+
+        try:
+            import awx  # this may take a while
+        except ImportError as e:
+            self.error = 'This host does not have AWX or Ansible Tower installed: {0}'.format(e)
+            self.skippable = True
+            return
+        awx.prepare_env()  # Choose django settings
+
+        import django
+        django.setup()  # Setup django settings
+
+    def make_request(self, method, endpoint, data=None):
+        from rest_framework.test import APIRequestFactory, force_authenticate  # need if providing user
+        from django.urls import resolve
+        from awx.main.models import User
+
+        if self.username and not self.user:
+            try:
+                self.user = User.objects.get(username=self.username)
+            except User.DoesNotExist as exc:
+                return {
+                    'status_code': None,
+                    'exc': exc
+                }
+
+        endpoint = self.sanitize_endpoint(endpoint)
+        url = 'https://localhost{0}'.format(endpoint)  # base should not matter
+
+        # TODO: refactor this out, vestage from other backend
+        self.url = urlparse(self.host)
+        self.url._replace(path=endpoint)
+
+        request = getattr(APIRequestFactory(), method.lower())(url, data=data, format='json')
+        if self.user:
+            force_authenticate(request, user=self.user)
+
+        view, view_args, view_kwargs = resolve(endpoint)
+
+        response = view(request, *view_args, **view_kwargs)
+        return {
+            'status_code': response.status_code,
+            'json': response.data
+        }
+
+    def logout(self):
+        pass
+
+
 class TowerModule(AnsibleModule):
 
     def __init__(self, argument_spec, **kwargs):
@@ -404,9 +493,18 @@ class TowerModule(AnsibleModule):
             if key in self.params:
                 auth_params[key] = self.params.pop(key)
 
-        self.backend = BaseBackend(auth_params)
+        backend_choice = auth_params.pop('tower_backend')
+        for cls in BaseBackend.__subclasses__():
+            if cls.choice == backend_choice:
+                BackendClass = cls
+                break
+
+        self.backend = BackendClass(auth_params)
         if self.backend.error:
-            self.fail_json(msg=self.backend.error)
+            if self.backend.skippable:
+                self.exit_json(skipped=True, msg=self.backend.error)
+            else:
+                self.fail_json(msg=self.backend.error)
 
     @staticmethod
     def param_to_endpoint(name):
@@ -508,7 +606,7 @@ class TowerModule(AnsibleModule):
         if code in (None, 401, 403, 404, 405) or code >= 500:
             if code == 404 and return_none_on_404:
                 return None
-            self.fail_json(self.backend.fail_msg(response))
+            self.fail_json(msg=self.backend.fail_msg(response))
 
         return response
 
@@ -728,12 +826,14 @@ class TowerModule(AnsibleModule):
 
     def fail_json(self, **kwargs):
         # Try to log out if we are authenticated
-        self.backend.logout()
+        if hasattr(self, 'backend'):  # __init__ may not have finished
+            self.backend.logout()
         super(TowerModule, self).fail_json(**kwargs)
 
     def exit_json(self, **kwargs):
         # Try to log out if we are authenticated
-        self.backend.logout()
+        if hasattr(self, 'backend'):
+            self.backend.logout()
         super(TowerModule, self).exit_json(**kwargs)
 
     def is_job_done(self, job_status):

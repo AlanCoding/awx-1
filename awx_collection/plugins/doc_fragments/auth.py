@@ -35,6 +35,17 @@ options:
     description:
     - Path to the Tower or AWX config file.
     type: path
+  tower_backend:
+    description:
+    - The tool to use for carrying out API actions.
+    - The python option will make requests via python code.
+    - The awxkit option will use the awxkit library as an intermediary.
+    - The server option only works if executing on a configured server, see docs.
+    type: str
+    choices:
+    - python
+    - awxkit
+    - server
 
 notes:
 - If no I(config_file) is provided we will attempt to use the tower-cli library
