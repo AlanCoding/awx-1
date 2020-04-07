@@ -31,9 +31,18 @@ class ItemNotDefined(Exception):
     pass
 
 
+AUTH_ARGSPEC = dict(
+    tower_host=dict(required=False, fallback=(env_fallback, ['TOWER_HOST'])),
+    tower_username=dict(required=False, fallback=(env_fallback, ['TOWER_USERNAME'])),
+    tower_password=dict(no_log=True, required=False, fallback=(env_fallback, ['TOWER_PASSWORD'])),
+    validate_certs=dict(type='bool', aliases=['tower_verify_ssl'], required=False, fallback=(env_fallback, ['TOWER_VERIFY_SSL'])),
+    tower_oauthtoken=dict(type='str', no_log=True, required=False, fallback=(env_fallback, ['TOWER_OAUTH_TOKEN'])),
+    tower_config_file=dict(type='path', required=False, default=None),
+)
+
+
 class TowerModule(AnsibleModule):
     url = None
-    honorred_settings = ('host', 'username', 'password', 'verify_ssl', 'oauth_token')
     host = '127.0.0.1'
     username = None
     password = None
@@ -45,54 +54,76 @@ class TowerModule(AnsibleModule):
     authenticated = False
     config_name = 'tower_cli.cfg'
 
-    def __init__(self, argument_spec, **kwargs):
-        args = dict(
-            tower_host=dict(required=False, fallback=(env_fallback, ['TOWER_HOST'])),
-            tower_username=dict(required=False, fallback=(env_fallback, ['TOWER_USERNAME'])),
-            tower_password=dict(no_log=True, required=False, fallback=(env_fallback, ['TOWER_PASSWORD'])),
-            validate_certs=dict(type='bool', aliases=['tower_verify_ssl'], required=False, fallback=(env_fallback, ['TOWER_VERIFY_SSL'])),
-            tower_oauthtoken=dict(type='str', no_log=True, required=False, fallback=(env_fallback, ['TOWER_OAUTH_TOKEN'])),
-            tower_config_file=dict(type='path', required=False, default=None),
-        )
+    def __init__(self, argument_spec, direct_params=None, **kwargs):
+        args = {}
+        args.update(AUTH_ARGSPEC)
         args.update(argument_spec)
         kwargs['supports_check_mode'] = True
 
         self.json_output = {'changed': False}
 
-        super(TowerModule, self).__init__(argument_spec=args, **kwargs)
+        if direct_params is not None:
+            self.params = direct_params
+        else:
+            super(TowerModule, self).__init__(argument_spec=args, **kwargs)
+
+        self.short_params = {}
+        for long_param in AUTH_ARGSPEC:
+            short_param = {
+                # exceptions in naming
+                # 'tower-cli-name': 'collection-parameter-name'
+                'validate_certs': 'verify_ssl',
+                'tower_oauthtoken': 'oauth_token'
+            }.get(long_param, long_param[len('tower_'):])
+            self.short_params[short_param] = long_param
 
         self.load_config_files()
 
         # Parameters specified on command line will override settings in any config
-        if self.params.get('tower_host'):
-            self.host = self.params.get('tower_host')
-        if self.params.get('tower_username'):
-            self.username = self.params.get('tower_username')
-        if self.params.get('tower_password'):
-            self.password = self.params.get('tower_password')
-        if self.params.get('validate_certs') is not None:
-            self.verify_ssl = self.params.get('validate_certs')
-        if self.params.get('tower_oauthtoken'):
-            self.oauth_token = self.params.get('tower_oauthtoken')
+        for short_param, long_param in self.short_params.items():
+            direct_value = self.params.get(long_param)
+            if direct_value:
+                setattr(self, short_param, direct_value)
 
         # Perform some basic validation
         if not re.match('^https{0,1}://', self.host):
             self.host = "https://{0}".format(self.host)
 
+        # Get an absolute url as means of validating hostname early
+        self.get_absolute_url('ping', validate=True)
+
+        self.session = Request(cookies=CookieJar(), validate_certs=self.verify_ssl)
+
+    def get_absolute_url(self, endpoint, query_data=None, validate=False):
         # Try to parse the hostname as a url
         try:
-            self.url = urlparse(self.host)
+            url = urlparse(self.host)
         except Exception as e:
             self.fail_json(msg="Unable to parse tower_host as a URL ({1}): {0}".format(self.host, e))
 
-        # Try to resolve the hostname
-        hostname = self.url.netloc.split(':')[0]
-        try:
-            gethostbyname(hostname)
-        except Exception as e:
-            self.fail_json(msg="Unable to resolve tower_host ({1}): {0}".format(hostname, e))
+        if validate:
+            # Try to resolve the hostname
+            hostname = url.netloc.split(':')[0]
+            try:
+                gethostbyname(hostname)
+            except Exception as e:
+                self.fail_json(msg="Unable to resolve tower_host ({1}): {0}".format(hostname, e))
 
-        self.session = Request(cookies=CookieJar(), validate_certs=self.verify_ssl)
+        # Make sure we start with /api/vX
+        if not endpoint.startswith("/"):
+            endpoint = "/{0}".format(endpoint)
+        if not endpoint.startswith("/api/"):
+            endpoint = "/api/v2{0}".format(endpoint)
+        if not endpoint.endswith('/') and '?' not in endpoint:
+            endpoint = "{0}/".format(endpoint)
+
+        # Update the URL path with the endpoint
+        url = url._replace(path=endpoint)
+
+        if query_data:
+            url = url._replace(query=urlencode(query_data))
+
+        return url.geturl()
 
     def load_config_files(self):
         # Load configs like TowerCLI would have from least import to most
@@ -113,10 +144,10 @@ class TowerModule(AnsibleModule):
 
         # If we have a specified  tower config, load it
         if self.params.get('tower_config_file'):
-            duplicated_params = []
-            for direct_field in ('tower_host', 'tower_username', 'tower_password', 'validate_certs', 'tower_oauthtoken'):
-                if self.params.get(direct_field):
-                    duplicated_params.append(direct_field)
+            duplicated_params = [
+                fn for fn in AUTH_ARGSPEC
+                if fn != 'tower_config_file' and self.params.get(fn) is not None
+            ]
             if duplicated_params:
                 self.warn((
                     'The parameter(s) {0} were provided at the same time as tower_config_file. '
@@ -166,7 +197,7 @@ class TowerModule(AnsibleModule):
 
                 # If we made it here then we have values from reading the ini file, so let's pull them out into a dict
                 config_data = {}
-                for honorred_setting in self.honorred_settings:
+                for honorred_setting in self.short_params:
                     try:
                         config_data[honorred_setting] = config.get('general', honorred_setting)
                     except (NoOptionError):
@@ -179,7 +210,7 @@ class TowerModule(AnsibleModule):
             raise ConfigFileException("An unknown exception occured trying to load config file: {0}".format(e))
 
         # If we made it here, we have a dict which has values in it from our config, any final settings logic can be performed here
-        for honorred_setting in self.honorred_settings:
+        for honorred_setting in self.short_params:
             if honorred_setting in config_data:
                 # Veriffy SSL must be a boolean
                 if honorred_setting == 'verify_ssl':
@@ -290,18 +321,10 @@ class TowerModule(AnsibleModule):
         else:
             self.fail_json(msg="Found too many names {0} at endpoint {1} try using an ID instead of a name".format(name_or_id, endpoint))
 
-    def make_request(self, method, endpoint, *args, **kwargs):
+    def make_request(self, method, endpoint, data=None):
         # In case someone is calling us directly; make sure we were given a method, let's not just assume a GET
         if not method:
             raise Exception("The HTTP method must be defined")
-
-        # Make sure we start with /api/vX
-        if not endpoint.startswith("/"):
-            endpoint = "/{0}".format(endpoint)
-        if not endpoint.startswith("/api/"):
-            endpoint = "/api/v2{0}".format(endpoint)
-        if not endpoint.endswith('/') and '?' not in endpoint:
-            endpoint = "{0}/".format(endpoint)
 
         # Extract the headers, this will be used in a couple of places
         headers = kwargs.get('headers', {})
@@ -314,46 +337,48 @@ class TowerModule(AnsibleModule):
             # If we have a oauth token, we just use a bearer header
             headers['Authorization'] = 'Bearer {0}'.format(self.oauth_token)
 
-        # Update the URL path with the endpoint
-        self.url = self.url._replace(path=endpoint)
+        query_data = None
+        if method == 'GET':
+            query_data = data
+        url = self.get_absolute_url(endpoint, query_params=data)
 
         if method in ['POST', 'PUT', 'PATCH']:
             headers.setdefault('Content-Type', 'application/json')
             kwargs['headers'] = headers
-        elif kwargs.get('data'):
-            self.url = self.url._replace(query=urlencode(kwargs.get('data')))
+        elif method != 'GET':
+            raise RuntimeError('Method must be GET, POST, PUT, PATCH, got {0}'.format(method))
 
         data = None  # Important, if content type is not JSON, this should not be dict type
         if headers.get('Content-Type', '') == 'application/json':
             data = dumps(kwargs.get('data', {}))
 
         try:
-            response = self.session.open(method, self.url.geturl(), headers=headers, validate_certs=self.verify_ssl, follow_redirects=True, data=data)
+            response = self.session.open(method, url, headers=headers, validate_certs=self.verify_ssl, follow_redirects=True, data=data)
         except(SSLValidationError) as ssl_err:
-            self.fail_json(msg="Could not establish a secure connection to your host ({1}): {0}.".format(self.url.netloc, ssl_err))
+            self.fail_json(msg="Could not establish a secure connection to your host ({self.host}): {exc}.".format(self=self, exc=ssl_err))
         except(ConnectionError) as con_err:
-            self.fail_json(msg="There was a network error of some kind trying to connect to your host ({1}): {0}.".format(self.url.netloc, con_err))
+            self.fail_json(msg="There was a network error of some kind trying to connect to your host ({self.host}): {exc}.".format(self=self, exc=con_err))
         except(HTTPError) as he:
             # Sanity check: Did the server send back some kind of internal error?
             if he.code >= 500:
-                self.fail_json(msg='The host sent back a server error ({1}): {0}. Please check the logs and try again later'.format(self.url.path, he))
+                self.fail_json(msg='The host sent back a server error ({1}): {0}. Please check the logs and try again later'.format(endpoint, he))
             # Sanity check: Did we fail to authenticate properly?  If so, fail out now; this is always a failure.
             elif he.code == 401:
-                self.fail_json(msg='Invalid Tower authentication credentials for {0} (HTTP 401).'.format(self.url.path))
+                self.fail_json(msg='Invalid Tower authentication credentials for {0} (HTTP 401).'.format(endpoint))
             # Sanity check: Did we get a forbidden response, which means that the user isn't allowed to do this? Report that.
             elif he.code == 403:
-                self.fail_json(msg="You don't have permission to {1} to {0} (HTTP 403).".format(self.url.path, method))
+                self.fail_json(msg="You don't have permission to {1} to {0} (HTTP 403).".format(endpoint, method))
             # Sanity check: Did we get a 404 response?
             # Requests with primary keys will return a 404 if there is no response, and we want to consistently trap these.
             elif he.code == 404:
                 if kwargs.get('return_none_on_404', False):
                     return None
-                self.fail_json(msg='The requested object could not be found at {0}.'.format(self.url.path))
+                self.fail_json(msg='The requested object could not be found at {0}.'.format(endpoint))
             # Sanity check: Did we get a 405 response?
             # A 405 means we used a method that isn't allowed. Usually this is a bad request, but it requires special treatment because the
             # API sends it as a logic error in a few situations (e.g. trying to cancel a job that isn't running).
             elif he.code == 405:
-                self.fail_json(msg="The Tower server says you can't make a request with the {0} method to this endpoing {1}".format(method, self.url.path))
+                self.fail_json(msg="The Tower server says you can't make a request with the {0} method to this endpoing {1}".format(method, endpoint))
             # Sanity check: Did we get some other kind of error?  If so, write an appropriate error message.
             elif he.code >= 400:
                 # We are going to return a 400 so the module can decide what to do with it
@@ -367,11 +392,9 @@ class TowerModule(AnsibleModule):
                 # A 204 is a normal response for a delete function
                 pass
             else:
-                self.fail_json(msg="Unexpected return code when calling {0}: {1}".format(self.url.geturl(), he))
+                self.fail_json(msg="Unexpected return code when calling {0}: {1}".format(url, he))
         except(Exception) as e:
-            self.fail_json(msg="There was an unknown error when trying to connect to {2}: {0} {1}".format(type(e).__name__, e, self.url.geturl()))
-        finally:
-            self.url = self.url._replace(query=None)
+            self.fail_json(msg="There was an unknown error when trying to connect to {2}: {0} {1}".format(type(e).__name__, e, url))
 
         response_body = ''
         try:
@@ -402,7 +425,7 @@ class TowerModule(AnsibleModule):
                 "scope": "write",
             }
             # Post to the tokens endpoint with baisc auth to try and get a token
-            api_token_url = (self.url._replace(path='/api/v2/tokens/')).geturl()
+            api_token_url = self.get_absolute_url('/api/v2/tokens/')
 
             try:
                 response = self.session.open(
@@ -651,12 +674,7 @@ class TowerModule(AnsibleModule):
         if self.oauth_token_id is not None and self.username and self.password:
             # Attempt to delete our current token from /api/v2/tokens/
             # Post to the tokens endpoint with baisc auth to try and get a token
-            api_token_url = (
-                self.url._replace(
-                    path='/api/v2/tokens/{0}/'.format(self.oauth_token_id),
-                    query=None  # in error cases, fail_json exists before exception handling
-                )
-            ).geturl()
+            api_token_url = self.get_absolute_url('/api/v2/tokens/{0}/'.format(self.oauth_token_id))
 
             try:
                 self.session.open(
