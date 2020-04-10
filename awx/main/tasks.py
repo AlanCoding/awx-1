@@ -1227,12 +1227,14 @@ class BaseTask(object):
                 event_data = json.loads(event_data_json)
             except json.JSONDecodeError:
                 pass
-        elif isinstance(self, RunJob) and self.instance.gather_event_types in ("none", "errors"):
+        elif isinstance(self, RunJob) and self.instance.gather_event_types != "all":
             event_level = BasePlaybookEvent._level_event(event_data.get("event"))
             failed = event_data.get("event") in BasePlaybookEvent.FAILED_EVENTS
             skip_save = event_level in [0,3]
             if self.instance.gather_event_types == "errors":
                 skip_save = skip_save and not failed
+            elif self.instance.gather_event_types == "output":
+                skip_save = skip_save and not event_data.get("stdout")
             event_data["skip_save"] = skip_save
 
         event_data.setdefault(self.event_data_key, self.instance.id)

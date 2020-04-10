@@ -31,6 +31,7 @@ PERM_INVENTORY_SCAN   = 'scan'
 
 JOB_EVENTS_ALL = "all"
 JOB_EVENTS_ONLY_ERRORS = "errors"
+JOB_EVENTS_OUTPUT = "output"
 JOB_EVENTS_NONE = "none"
 
 JOB_TYPE_CHOICES = [
@@ -57,6 +58,7 @@ PROJECT_UPDATE_JOB_TYPE_CHOICES = [
 JOB_EVENTS_COLLECTED_CHOICES = [
     (JOB_EVENTS_ALL, _("All")),
     (JOB_EVENTS_ONLY_ERRORS, _("Only events that contain errors")),
+    (JOB_EVENTS_OUTPUT, _("Only events that contain stdout or stderr output")),
     (JOB_EVENTS_NONE, _("Only Headers")),
 ]
 
