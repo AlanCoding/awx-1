@@ -15,6 +15,8 @@ STATIC_ROOT = '/var/lib/awx/public/static'
 PROJECTS_ROOT = '/var/lib/awx/projects'
 
 INVENTORY_COLLECTIONS_ROOT = '/var/lib/awx/vendor/inventory_collections'
+PROJECT_COLLECTIONS_ROOT = '/var/lib/awx/vendor/project_collections'
+ISOLATED_COLLECTIONS_ROOT = '/var/lib/awx/vendor/isolated_collections'
 
 JOBOUTPUT_ROOT = '/var/lib/awx/job_status'
 
