@@ -97,6 +97,8 @@ ADD requirements/requirements.txt \
 RUN mkdir -p /venv && chmod g+w /venv
 RUN cd /tmp && VENV_BASE="/venv" make requirements_dev
 RUN mkdir -p /vendor/inventory_collections && chmod g+w /vendor/inventory_collections
+RUN mkdir -p /vendor/project_collections && chmod g+w /vendor/project_collections
+RUN mkdir -p /vendor/isolated_collections && chmod g+w /vendor/isolated_collections
 RUN cd /tmp && COLLECTION_BASE="/vendor/inventory_collections" make requirements_collections
 
 # Use the distro provided npm to bootstrap our required version of node
