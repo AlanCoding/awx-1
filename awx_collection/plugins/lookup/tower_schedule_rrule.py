@@ -231,8 +231,12 @@ class LookupModule(LookupBase):
                 raise AnsibleError('Timezone parameter is not valid')
             timezone = kwargs['timezone']
 
-        # rrule puts a \n in the rule instad of a space and can't hand timezones
-        return_rrule = str(my_rule).replace('\n', ' ').replace('DTSTART:', 'DTSTART;TZID={0}:'.format(timezone))
+        # rrule puts a \n in the rule instad of a space and can't handle timezones
+        rrule_string = str(my_rule)
+        separator_string = ' '
+        if 'RRULE:' not in rrule_string:
+            separator_string = ' RRULE:'
+        return_rrule = rrule_string.replace('\n', separator_string).replace('DTSTART:', 'DTSTART;TZID={0}:'.format(timezone))
         # Tower requires an interval. rrule will not add interval if its set to 1
         if kwargs.get('every', 1) == 1:
             return_rrule = "{0};INTERVAL=1".format(return_rrule)
