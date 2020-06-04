@@ -191,7 +191,10 @@ class TowerModule(AnsibleModule):
                             pass
 
                 except Exception as e:
-                    raise ConfigFileException("An unknown exception occured trying to ini load config file: {0}".format(e))
+                    print('config string')
+                    print(config_string)
+                    raise
+                    raise ConfigFileException("An unknown exception occurred trying to ini load config file: {0}".format(e))
 
         except Exception as e:
             raise ConfigFileException("An unknown exception occured trying to load config file: {0}".format(e))
