@@ -25,7 +25,7 @@ def mock_ping_response(self, method, url, **kwargs):
     r = Response()
     r.getheader = getheader.__get__(r)
     r.read = read.__get__(r)
-    r.status = status.__get__(r)
+    r.status = 200
     return r
 
 
