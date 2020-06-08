@@ -3,13 +3,13 @@ plugin_routing:
   modules:
     tower_receive:
       deprecation:
-        removal_date: TBD
+        removal_version: 14.0.0
         warning_text: see plugin documentation for details
     tower_send:
       deprecation:
-        removal_date: TBD
+        removal_version: 14.0.0
         warning_text: see plugin documentation for details
     tower_workflow_template:
       deprecation:
-        removal_date: TBD
+        removal_version: 14.0.0
         warning_text: see plugin documentation for details
