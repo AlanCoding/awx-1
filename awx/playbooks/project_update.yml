@@ -1,7 +1,8 @@
 ---
 # The following variables will be set by the runner of this playbook:
 # project_path: PROJECTS_DIR/_local_path_
-# project_cache: CACHE_DIR/.__awx_cache/_local_path_
+# cache_dir: folder where role and collection requirements will be downloaded to
+#     sub-folders will be created in this directory of requirements_roles and requirements_collections
 # scm_url: https://server/repo
 # insights_url: Insights service URL (from configuration)
 # scm_branch: branch/tag/revision (HEAD if unset)
@@ -26,13 +27,6 @@
     - name: delete project directory before update
       file:
         path: "{{project_path|quote}}"
-        state: absent
-      tags:
-        - delete
-
-    - name: delete project cache directory before update
-      file:
-        path: "{{project_cache|quote}}"
         state: absent
       tags:
         - delete
@@ -116,13 +110,6 @@
         - update_hg
         - update_svn
         - update_insights
-
-    - name: Set content cache location
-      set_fact:
-        cache_dir: "{{ project_cache }}/{{ scm_version|default(scm_branch) }}"
-      tags:
-        - install_collections
-        - install_roles
 
     - block:
         - name: detect requirements.yml

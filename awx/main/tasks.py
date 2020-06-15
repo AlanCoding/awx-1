@@ -2173,6 +2173,13 @@ class RunProjectUpdate(BaseTask):
                 raise RuntimeError('Could not determine a revision to run from project.')
         elif not scm_branch:
             scm_branch = {'hg': 'tip'}.get(project_update.scm_type, 'HEAD')
+
+        if project_update.job_type == 'run':
+            cache_dir = os.path.join(project_update.get_cache_path(), str(project_update.project.last_job_id))
+        else:
+            # last update is myself
+            cache_dir = os.path.join(project_update.get_cache_path(), str(project_update.id))
+
         extra_vars.update({
             'project_path': project_update.get_project_path(check_if_exists=False),
             'insights_url': settings.INSIGHTS_URL_BASE,
@@ -2181,7 +2188,7 @@ class RunProjectUpdate(BaseTask):
             'scm_url': scm_url,
             'scm_branch': scm_branch,
             'scm_clean': project_update.scm_clean,
-            'project_cache': project_update.get_cache_path(),
+            'cache_dir': cache_dir,
             'roles_enabled': settings.AWX_ROLES_ENABLED,
             'collections_enabled': settings.AWX_COLLECTIONS_ENABLED,
         })
@@ -2333,12 +2340,12 @@ class RunProjectUpdate(BaseTask):
                 else:
                     self.original_branch = git_repo.active_branch
 
-    def clear_project_cache(self, instance, revision):
+    def clear_project_cache(self, instance):
         cache_dir = instance.get_cache_path()
         if os.path.isdir(cache_dir):
             for entry in os.listdir(cache_dir):
                 old_path = os.path.join(cache_dir, entry)
-                if entry != revision:
+                if entry != str(instance.id):
                     # invalidate, then delete
                     new_path = os.path.join(cache_dir,'.~~delete~~' + entry)
                     try:
@@ -2379,8 +2386,9 @@ class RunProjectUpdate(BaseTask):
     def post_run_hook(self, instance, status):
         # To avoid hangs, very important to release lock even if errors happen here
         try:
+            if instance.job_type == 'check':
+                self.clear_project_cache(instance)
             if self.playbook_new_revision:
-                self.clear_project_cache(instance, self.playbook_new_revision)
                 instance.scm_revision = self.playbook_new_revision
                 instance.save(update_fields=['scm_revision'])
             if self.job_private_data_dir:
