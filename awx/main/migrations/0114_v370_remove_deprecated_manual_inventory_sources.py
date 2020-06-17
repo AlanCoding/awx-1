@@ -25,7 +25,7 @@ class Migration(migrations.Migration):
             model_name='inventorysource',
             name='deprecated_group',
         ),
-        migrations.RunPython(remove_manual_inventory_sources),
+        migrations.RunPython(remove_manual_inventory_sources, migrations.RunPython.noop),
         migrations.AlterField(
             model_name='inventorysource',
             name='source',

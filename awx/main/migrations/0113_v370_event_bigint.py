@@ -89,7 +89,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(migrate_event_data),
+        migrations.RunPython(migrate_event_data, migrations.RunPython.noop),  # EXTREMELY unstable, expect damage to the flux capacitor
         FakeAlterField(
             model_name='adhoccommandevent',
             name='id',
