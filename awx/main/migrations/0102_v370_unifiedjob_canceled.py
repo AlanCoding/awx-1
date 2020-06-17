@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('main', '0099_v361_license_cleanup'),
+        ('main', '0101_v370_generate_new_uuids_for_iso_nodes'),
     ]
 
     operations = [

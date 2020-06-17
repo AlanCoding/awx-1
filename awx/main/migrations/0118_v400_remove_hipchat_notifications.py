@@ -16,11 +16,11 @@ def remove_hipchat_notifications(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('main', '0115_v370_schedule_set_null'),
+        ('main', '0116_v370'),
     ]
 
     operations = [
-        migrations.RunPython(remove_hipchat_notifications, migrations.RunPython.noop),  # backwards is still unsupported
+        migrations.RunPython(remove_hipchat_notifications, migrations.RunPython.noop),
         migrations.AlterField(
             model_name='notification',
             name='notification_type',

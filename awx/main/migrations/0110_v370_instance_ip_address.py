@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('main', '0099_v361_license_cleanup'),
+        ('main', '0109_v370_job_template_organization_field'),
     ]
 
     operations = [
