@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(remove_hipchat_notifications),
+        migrations.RunPython(remove_hipchat_notifications, migrations.RunPython.noop),  # backwards is still unsupported
         migrations.AlterField(
             model_name='notification',
             name='notification_type',

@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('main', '0104_v370_cleanup_old_scan_jts'),
+        ('main', '0099_v361_license_cleanup'),
     ]
 
     operations = [

@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('main', '0110_v370_instance_ip_address'),
+        ('main', '0099_v361_license_cleanup'),
     ]
 
     operations = [

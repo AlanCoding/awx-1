@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('main', '0107_v370_workflow_convergence_api_toggle'),
+        ('main', '0099_v361_license_cleanup'),
     ]
 
     operations = [

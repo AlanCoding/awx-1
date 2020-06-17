@@ -19,7 +19,7 @@ def rebuild_jt_parents(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('main', '0108_v370_unifiedjob_dependencies_processed'),
+        ('main', '0099_v361_license_cleanup'),
     ]
 
     operations = [
