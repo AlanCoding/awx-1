@@ -61,7 +61,7 @@ fi
 if [ ! -d "$base_dir/awx/awx" ]
 then
 	mkdir -p $base_dir/awx
-  ln -s $(shell pwd)/awx_collection $base_dir/awx/awx
+  ln -s $(pwd)/awx_collection $base_dir/awx/awx
 else
   echo "awx collection already exists"
 fi
