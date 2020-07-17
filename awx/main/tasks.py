@@ -1893,14 +1893,16 @@ class RunJob(BaseTask):
             sync_needs = all_sync_needs
         # Galaxy requirements are not supported for manual projects
         if not sync_needs and job.project.scm_type:
+            cache_id = str(job.project.last_update_id)
+            cache_path = os.path.join(job.project.get_cache_path(), cache_id)
             # see if we need a sync because of presence of roles
             galaxy_req_path = os.path.join(project_path, 'roles', 'requirements.yml')
-            if os.path.exists(galaxy_req_path):
+            if os.path.exists(galaxy_req_path) and not os.path.exists(cache_path):
                 logger.debug('Running project sync for {} because of galaxy role requirements.'.format(job.log_format))
                 sync_needs.append('install_roles')
 
             galaxy_collections_req_path = os.path.join(project_path, 'collections', 'requirements.yml')
-            if os.path.exists(galaxy_collections_req_path):
+            if os.path.exists(galaxy_collections_req_path) and not os.path.exists(cache_path):
                 logger.debug('Running project sync for {} because of galaxy collections requirements.'.format(job.log_format))
                 sync_needs.append('install_collections')
 
@@ -2173,12 +2175,6 @@ class RunProjectUpdate(BaseTask):
         elif not scm_branch:
             scm_branch = {'hg': 'tip'}.get(project_update.scm_type, 'HEAD')
 
-        if project_update.job_type == 'run':
-            cache_dir = os.path.join(project_update.get_cache_path(), str(project_update.project.last_job_id))
-        else:
-            # last update is myself
-            cache_dir = os.path.join(project_update.get_cache_path(), str(project_update.id))
-
         extra_vars.update({
             'projects_root': settings.PROJECTS_ROOT.rstrip('/'),
             'local_path': os.path.basename(project_update.project.local_path),
@@ -2189,7 +2185,6 @@ class RunProjectUpdate(BaseTask):
             'scm_url': scm_url,
             'scm_branch': scm_branch,
             'scm_clean': project_update.scm_clean,
-            'cache_dir': cache_dir,
             'roles_enabled': settings.AWX_ROLES_ENABLED,
             'collections_enabled': settings.AWX_COLLECTIONS_ENABLED,
         })
