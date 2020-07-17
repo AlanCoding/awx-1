@@ -1866,6 +1866,7 @@ class RunJob(BaseTask):
         job_revision = job.project.scm_revision
         sync_needs = []
         all_sync_needs = ['update_{}'.format(job.project.scm_type), 'install_roles', 'install_collections']
+        branch_override = bool(job.scm_branch and job.scm_branch != job.project.scm_branch)
         if not job.project.scm_type:
             pass # manual projects are not synced, user has responsibility for that
         elif not os.path.exists(project_path):
@@ -1893,16 +1894,18 @@ class RunJob(BaseTask):
             sync_needs = all_sync_needs
         # Galaxy requirements are not supported for manual projects
         if not sync_needs and job.project.scm_type:
-            cache_id = str(job.project.last_update_id)
-            cache_path = os.path.join(job.project.get_cache_path(), cache_id)
+            has_cache = False
+            cache_id = str(job.project.last_job_id)
+            if cache_id and not branch_override:
+                has_cache = os.path.join(job.project.get_cache_path(), cache_id)
             # see if we need a sync because of presence of roles
             galaxy_req_path = os.path.join(project_path, 'roles', 'requirements.yml')
-            if os.path.exists(galaxy_req_path) and not os.path.exists(cache_path):
+            if os.path.exists(galaxy_req_path) and not has_cache:
                 logger.debug('Running project sync for {} because of galaxy role requirements.'.format(job.log_format))
                 sync_needs.append('install_roles')
 
             galaxy_collections_req_path = os.path.join(project_path, 'collections', 'requirements.yml')
-            if os.path.exists(galaxy_collections_req_path) and not os.path.exists(cache_path):
+            if os.path.exists(galaxy_collections_req_path) and not has_cache:
                 logger.debug('Running project sync for {} because of galaxy collections requirements.'.format(job.log_format))
                 sync_needs.append('install_collections')
 
@@ -1922,7 +1925,7 @@ class RunJob(BaseTask):
                 execution_node=pu_en,
                 celery_task_id=job.celery_task_id
             )
-            if job.scm_branch and job.scm_branch != job.project.scm_branch:
+            if branch_override:
                 sync_metafields['scm_branch'] = job.scm_branch
             if 'update_' not in sync_metafields['job_tags']:
                 sync_metafields['scm_revision'] = job_revision
@@ -1958,6 +1961,7 @@ class RunJob(BaseTask):
                 project_path, os.path.join(private_data_dir, 'project'),
                 job.project.scm_type, job_revision
             )
+            RunProjectUpdate.make_content_copy(job.project, private_data_dir)
 
         if job.inventory.kind == 'smart':
             # cache smart inventory memberships so that the host_filter query is not
@@ -1997,10 +2001,7 @@ class RunProjectUpdate(BaseTask):
 
     @property
     def proot_show_paths(self):
-        show_paths = [settings.PROJECTS_ROOT]
-        if self.job_private_data_dir:
-            show_paths.append(self.job_private_data_dir)
-        return show_paths
+        return [settings.PROJECTS_ROOT]
 
     def __init__(self, *args, job_private_data_dir=None, **kwargs):
         super(RunProjectUpdate, self).__init__(*args, **kwargs)
@@ -2174,7 +2175,6 @@ class RunProjectUpdate(BaseTask):
                 raise RuntimeError('Could not determine a revision to run from project.')
         elif not scm_branch:
             scm_branch = {'hg': 'tip'}.get(project_update.scm_type, 'HEAD')
-
         extra_vars.update({
             'projects_root': settings.PROJECTS_ROOT.rstrip('/'),
             'local_path': os.path.basename(project_update.project.local_path),
@@ -2326,7 +2326,7 @@ class RunProjectUpdate(BaseTask):
             os.mkdir(settings.PROJECTS_ROOT)
         self.acquire_lock(instance)
         self.original_branch = None
-        if (instance.scm_type == 'git' and instance.job_type == 'run' and instance.branch_override):
+        if instance.scm_type == 'git' and instance.branch_override:
             project_path = instance.project.get_project_path(check_if_exists=False)
             if os.path.exists(project_path):
                 git_repo = git.Repo(project_path)
@@ -2378,6 +2378,20 @@ class RunProjectUpdate(BaseTask):
         else:
             copy_tree(project_path, destination_folder, preserve_symlinks=1)
 
+    @staticmethod
+    def make_content_copy(project, destination_folder):
+        """Given that the cache for project is properly populated (and not branch_override)
+        this will copy over the roles and collections from its cache folder to job folder
+        """
+        cache_id = str(project.last_job_id)
+        cache_path = os.path.join(project.get_cache_path(), cache_id)
+        for subfolder in ('requirements_roles', 'requirements_collections'):
+            cache_subpath = os.path.join(cache_path, subfolder)
+            if os.path.exists(cache_subpath):
+                dest_subpath = os.path.join(destination_folder, subfolder)
+                copy_tree(cache_subpath, dest_subpath, preserve_symlinks=1)
+                logger.debug('Project {0} prepared {1} from cache'.format(project.pk, dest_subpath))
+
     def post_run_hook(self, instance, status):
         # To avoid hangs, very important to release lock even if errors happen here
         try:
@@ -2394,21 +2408,21 @@ class RunProjectUpdate(BaseTask):
                         # WARNING: self.job_private_data_dir should always be populated in branch override case
                         dest_subpath = os.path.join(self.job_private_data_dir, subfolder)
                         os.rename(stage_subpath, dest_subpath)
-                        logger.debug('Prepared {0} from {1} as cache bypass'.format(dest_subpath, instance.log_format))
+                        logger.debug('{0} prepared {1} as cache bypass'.format(instance.log_format, dest_subpath))
             else:
-                cache_id = str(instance.project.last_update_id)
+                cache_id = str(instance.project.last_job_id or instance.id)
                 cache_path = os.path.join(instance.get_cache_path(), cache_id)
                 if os.path.exists(stage_path):
+                    if os.path.exists(cache_path):
+                        logger.warning(
+                            'Replacing existing cache {0}, this is'
+                            'unexpected and may negatively affect performance'.format(cache_path))
+                        shutil.rmtree(cache_path)
                     os.rename(stage_path, cache_path)
-                    logger.debug('New write to cache at {0}'.format(cache_path))
+                    logger.debug('{0} wrote to cache at {1}'.format(instance.log_format, cache_path))
                 self.clear_project_cache(instance.get_cache_path(), keep_value=cache_id)
                 if self.job_private_data_dir:
-                    for subfolder in ('requirements_roles', 'requirements_collections'):
-                        cache_subpath = os.path.join(cache_path, subfolder)
-                        if os.path.exists(cache_subpath):
-                            dest_subpath = os.path.join(self.job_private_data_dir, subfolder)
-                            copy_tree(cache_subpath, dest_subpath, preserve_symlinks=1)
-                            logger.debug('Prepared {0} from {1} using cache'.format(dest_subpath, instance.log_format))
+                    self.make_content_copy(instance.project, self.job_private_data_dir)
             # project folder copy to job dir
             if self.job_private_data_dir:
                 # copy project folder before resetting to default branch
