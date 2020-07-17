@@ -560,6 +560,17 @@ class ProjectUpdate(UnifiedJob, ProjectOptions, JobNotificationMixin, TaskManage
     def result_stdout_raw(self):
         return self._result_stdout_raw(redact_sensitive=True)
 
+    @property
+    def branch_override(self):
+        """Returns True if using a non-default branch, where the default
+        branch is that defined on the associated project
+        """
+        if not self.project:
+            return True
+        return bool(
+            self.scm_branch and self.scm_branch != self.project.scm_branch
+        )
+
     def result_stdout_raw_limited(self, start_line=0, end_line=None, redact_sensitive=True):
         return self._result_stdout_raw_limited(start_line, end_line, redact_sensitive=redact_sensitive)
 

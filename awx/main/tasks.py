@@ -2165,8 +2165,7 @@ class RunProjectUpdate(BaseTask):
         extra_vars.update(extra_vars_new)
 
         scm_branch = project_update.scm_branch
-        branch_override = bool(scm_branch and project_update.scm_branch != project_update.project.scm_branch)
-        if project_update.job_type == 'run' and (not branch_override):
+        if project_update.job_type == 'run' and (not project_update.branch_override):
             if project_update.project.scm_revision:
                 scm_branch = project_update.project.scm_revision
             elif not scm_branch:
@@ -2181,7 +2180,9 @@ class RunProjectUpdate(BaseTask):
             cache_dir = os.path.join(project_update.get_cache_path(), str(project_update.id))
 
         extra_vars.update({
-            'project_path': project_update.get_project_path(check_if_exists=False),
+            'projects_root': settings.PROJECTS_ROOT.rstrip('/'),
+            'local_path': os.path.basename(project_update.project.local_path),
+            'project_path': project_update.get_project_path(check_if_exists=False),  # deprecated
             'insights_url': settings.INSIGHTS_URL_BASE,
             'awx_license_type': get_license(show_key=False).get('license_type', 'UNLICENSED'),
             'awx_version': get_awx_version(),
@@ -2330,8 +2331,7 @@ class RunProjectUpdate(BaseTask):
             os.mkdir(settings.PROJECTS_ROOT)
         self.acquire_lock(instance)
         self.original_branch = None
-        if (instance.scm_type == 'git' and instance.job_type == 'run' and instance.project and
-                instance.scm_branch != instance.project.scm_branch):
+        if (instance.scm_type == 'git' and instance.job_type == 'run' and instance.branch_override):
             project_path = instance.project.get_project_path(check_if_exists=False)
             if os.path.exists(project_path):
                 git_repo = git.Repo(project_path)
@@ -2340,12 +2340,12 @@ class RunProjectUpdate(BaseTask):
                 else:
                     self.original_branch = git_repo.active_branch
 
-    def clear_project_cache(self, instance):
-        cache_dir = instance.get_cache_path()
+    @staticmethod
+    def clear_project_cache(cache_dir, keep_value):
         if os.path.isdir(cache_dir):
             for entry in os.listdir(cache_dir):
                 old_path = os.path.join(cache_dir, entry)
-                if entry != str(instance.id):
+                if entry != keep_value:
                     # invalidate, then delete
                     new_path = os.path.join(cache_dir,'.~~delete~~' + entry)
                     try:
@@ -2386,16 +2386,41 @@ class RunProjectUpdate(BaseTask):
     def post_run_hook(self, instance, status):
         # To avoid hangs, very important to release lock even if errors happen here
         try:
-            if instance.job_type == 'check':
-                self.clear_project_cache(instance)
             if self.playbook_new_revision:
                 instance.scm_revision = self.playbook_new_revision
                 instance.save(update_fields=['scm_revision'])
+            # Roles and collection folders copy - both to durable cache and job dir
+            stage_path = os.path.join(instance.get_cache_path(), 'stage')
+            if instance.branch_override:
+                # No caching for branch override, just move folders to destination
+                for subfolder in ('requirements_roles', 'requirements_collections'):
+                    stage_subpath = os.path.join(stage_path, subfolder)
+                    if os.path.exists(stage_subpath):
+                        # WARNING: self.job_private_data_dir should always be populated in branch override case
+                        dest_subpath = os.path.join(self.job_private_data_dir, subfolder)
+                        os.rename(stage_subpath, dest_subpath)
+                        logger.debug('Prepared {0} from {1} as cache bypass'.format(dest_subpath, instance.log_format))
+            else:
+                cache_id = str(instance.project.last_update_id)
+                cache_path = os.path.join(instance.get_cache_path(), cache_id)
+                if os.path.exists(stage_path):
+                    os.rename(stage_path, cache_path)
+                    logger.debug('New write to cache at {0}'.format(cache_path))
+                self.clear_project_cache(instance.get_cache_path(), keep_value=cache_id)
+                if self.job_private_data_dir:
+                    for subfolder in ('requirements_roles', 'requirements_collections'):
+                        cache_subpath = os.path.join(cache_path, subfolder)
+                        if os.path.exists(cache_subpath):
+                            dest_subpath = os.path.join(self.job_private_data_dir, subfolder)
+                            copy_tree(cache_subpath, dest_subpath, preserve_symlinks=1)
+                            logger.debug('Prepared {0} from {1} using cache'.format(dest_subpath, instance.log_format))
+            # project folder copy to job dir
             if self.job_private_data_dir:
                 # copy project folder before resetting to default branch
                 # because some git-tree-specific resources (like submodules) might matter
                 self.make_local_copy(
-                    instance.get_project_path(check_if_exists=False), os.path.join(self.job_private_data_dir, 'project'),
+                    instance.get_project_path(check_if_exists=False),
+                    os.path.join(self.job_private_data_dir, 'project'),
                     instance.scm_type, instance.scm_revision
                 )
                 if self.original_branch:

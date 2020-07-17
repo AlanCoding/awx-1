@@ -1,8 +1,9 @@
 ---
 # The following variables will be set by the runner of this playbook:
-# project_path: PROJECTS_DIR/_local_path_
-# cache_dir: folder where role and collection requirements will be downloaded to
-#     sub-folders will be created in this directory of requirements_roles and requirements_collections
+# projects_root: Global location for caching project checkouts and roles and collections
+#     should not have trailing slash on end
+# local_path: Path within projects_root to use for this project
+# project_path: projects_root/local_path
 # scm_url: https://server/repo
 # insights_url: Insights service URL (from configuration)
 # scm_branch: branch/tag/revision (HEAD if unset)
@@ -111,6 +112,12 @@
         - update_svn
         - update_insights
 
+- hosts: localhost
+  gather_facts: false
+  connection: local
+  name: Install content with ansible-galaxy command if necessary
+  tasks:
+
     - block:
         - name: detect requirements.yml
           stat:
@@ -118,7 +125,10 @@
           register: doesRequirementsExist
 
         - name: fetch galaxy roles from requirements.yml
-          command: ansible-galaxy role install -r roles/requirements.yml -p {{ cache_dir }}/requirements_roles {{ ' -' + 'v' * ansible_verbosity if ansible_verbosity else '' }}
+          command: >
+            ansible-galaxy role install -r roles/requirements.yml
+            --roles-path {{projects_root}}/.__awx_cache/{{local_path}}/stage/requirements_roles
+            {{ ' -' + 'v' * ansible_verbosity if ansible_verbosity else '' }}
           args:
             chdir: "{{project_path|quote}}"
           register: galaxy_result
@@ -145,7 +155,10 @@
           register: doesCollectionRequirementsExist
 
         - name: fetch galaxy collections from collections/requirements.yml
-          command: ansible-galaxy collection install -r collections/requirements.yml -p {{ cache_dir }}/requirements_collections {{ ' -' + 'v' * ansible_verbosity if ansible_verbosity else '' }}
+          command: >
+            ansible-galaxy collection install -r collections/requirements.yml
+            --collections-path {{projects_root}}/.__awx_cache/{{local_path}}/stage/requirements_collections
+            {{ ' -' + 'v' * ansible_verbosity if ansible_verbosity else '' }}
           args:
             chdir: "{{project_path|quote}}"
           register: galaxy_collection_result
@@ -155,12 +168,6 @@
             ANSIBLE_FORCE_COLOR: false
             ANSIBLE_COLLECTIONS_PATHS: "{{ cache_dir }}/requirements_collections"
             GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"
-
-        - name: populate job directory with needed collections
-          synchronize:
-            src: "{{ cache_dir }}/requirements_collections/"
-            dest: "{{ collections_destination }}"
-          when: collections_destination is defined and doesCollectionRequirementsExist.stat.exists
 
       when:
         - "ansible_version.full is version_compare('2.8', '>=')"
