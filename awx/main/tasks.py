@@ -2403,7 +2403,7 @@ class RunProjectUpdate(BaseTask):
                 dest_subpath = os.path.join(job_private_data_dir, subfolder)
                 copy_tree(cache_subpath, dest_subpath, preserve_symlinks=1)
                 logger.debug('{0} {1} prepared {2} from cache'.format(
-                    type(project).__meta__, project.pk, dest_subpath))
+                    type(project).__name__, project.pk, dest_subpath))
 
     def post_run_hook(self, instance, status):
         # To avoid hangs, very important to release lock even if errors happen here
