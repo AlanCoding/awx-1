@@ -2392,12 +2392,18 @@ class RunProjectUpdate(BaseTask):
         if not cache_id:
             cache_id = str(project.last_job_id)
         cache_path = os.path.join(project.get_cache_path(), cache_id)
-        for subfolder in ('requirements_roles', 'requirements_collections'):
+        subfolders = []
+        if settings.AWX_COLLECTIONS_ENABLED:
+            subfolders.append('requirements_collections')
+        if settings.AWX_ROLES_ENABLED:
+            subfolders.append('requirements_roles')
+        for subfolder in subfolders:
             cache_subpath = os.path.join(cache_path, subfolder)
             if os.path.exists(cache_subpath):
                 dest_subpath = os.path.join(job_private_data_dir, subfolder)
                 copy_tree(cache_subpath, dest_subpath, preserve_symlinks=1)
-                logger.debug('Project {0} prepared {1} from cache'.format(project.pk, dest_subpath))
+                logger.debug('{0} {1} prepared {2} from cache'.format(
+                    type(project).__meta__, project.pk, dest_subpath))
 
     def post_run_hook(self, instance, status):
         # To avoid hangs, very important to release lock even if errors happen here
