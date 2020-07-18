@@ -1879,7 +1879,7 @@ class RunJob(BaseTask):
             git_repo = git.Repo(project_path)
             try:
                 desired_revision = job.project.scm_revision
-                if job.scm_branch and job.scm_branch != job.project.scm_branch:
+                if branch_override:
                     desired_revision = job.scm_branch  # could be commit or not, but will try as commit
                 current_revision = git_repo.head.commit.hexsha
                 if desired_revision == current_revision:
@@ -1895,19 +1895,25 @@ class RunJob(BaseTask):
         # Galaxy requirements are not supported for manual projects
         if not sync_needs and job.project.scm_type:
             has_cache = False
-            cache_id = str(job.project.last_job_id)
-            if cache_id and not branch_override:
-                has_cache = os.path.join(job.project.get_cache_path(), cache_id)
+            if not branch_override:
+                cache_id = str(job.project.last_job_id)
+                has_cache = os.path.exists(os.path.join(job.project.get_cache_path(), cache_id))
             # see if we need a sync because of presence of roles
             galaxy_req_path = os.path.join(project_path, 'roles', 'requirements.yml')
-            if os.path.exists(galaxy_req_path) and not has_cache:
+            roles_exist = os.path.exists(galaxy_req_path)
+            if roles_exist and not has_cache:
                 logger.debug('Running project sync for {} because of galaxy role requirements.'.format(job.log_format))
                 sync_needs.append('install_roles')
+            elif roles_exist:
+                logger.debug('Using cached roles for {}'.format(job.log_format))
 
             galaxy_collections_req_path = os.path.join(project_path, 'collections', 'requirements.yml')
-            if os.path.exists(galaxy_collections_req_path) and not has_cache:
+            collections_exist = os.path.exists(galaxy_collections_req_path)
+            if collections_exist and not has_cache:
                 logger.debug('Running project sync for {} because of galaxy collections requirements.'.format(job.log_format))
                 sync_needs.append('install_collections')
+            elif collections_exist:
+                logger.debug('Using cached collections for {}'.format(job.log_format))
 
         if sync_needs:
             pu_ig = job.instance_group
