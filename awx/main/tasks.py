@@ -1958,10 +1958,8 @@ class RunJob(BaseTask):
                 job = self.update_model(job.pk, scm_revision=job_revision)
             # Project update does not copy the folder, so copy here
             RunProjectUpdate.make_local_copy(
-                project_path, os.path.join(private_data_dir, 'project'),
-                job.project.scm_type, job_revision
+                job.project, private_data_dir, scm_revision=job_revision
             )
-            RunProjectUpdate.make_content_copy(job.project, private_data_dir)
 
         if job.inventory.kind == 'smart':
             # cache smart inventory memberships so that the host_filter query is not
@@ -2350,16 +2348,28 @@ class RunProjectUpdate(BaseTask):
                         logger.warning(f"Could not remove cache directory {old_path}")
 
     @staticmethod
-    def make_local_copy(project_path, destination_folder, scm_type, scm_revision):
-        if scm_type == 'git':
+    def make_local_copy(project, job_private_data_dir, scm_revision=None, cache_id=None):
+        """Copy project content to a job private_data_dir
+
+        :param object project: Either a project or a project update
+        :param str job_private_data_dir: The root of the ansible-runner folder
+        :param str scm_revision: For branch_override cases, the git revision to copy
+        :param str cache_id: Identification of the roles and collections cache folder
+        """
+        project_path = project.get_project_path(check_if_exists=False)
+        destination_folder = os.path.join(job_private_data_dir, 'project')
+        if not scm_revision:
+            scm_revision = project.scm_revision
+
+        if project.scm_type == 'git':
             git_repo = git.Repo(project_path)
             if not os.path.exists(destination_folder):
                 os.mkdir(destination_folder, stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
             tmp_branch_name = 'awx_internal/{}'.format(uuid4())
             # always clone based on specific job revision
-            if not scm_revision:
+            if not project.scm_revision:
                 raise RuntimeError('Unexpectedly could not determine a revision to run from project.')
-            source_branch = git_repo.create_head(tmp_branch_name, scm_revision)
+            source_branch = git_repo.create_head(tmp_branch_name, project.scm_revision)
             # git clone must take file:// syntax for source repo or else options like depth will be ignored
             source_as_uri = Path(project_path).as_uri()
             git.Repo.clone_from(
@@ -2378,17 +2388,14 @@ class RunProjectUpdate(BaseTask):
         else:
             copy_tree(project_path, destination_folder, preserve_symlinks=1)
 
-    @staticmethod
-    def make_content_copy(project, destination_folder):
-        """Given that the cache for project is properly populated (and not branch_override)
-        this will copy over the roles and collections from its cache folder to job folder
-        """
-        cache_id = str(project.last_job_id)
+        # copy over the roles and collection cache to job folder
+        if not cache_id:
+            cache_id = str(project.last_job_id)
         cache_path = os.path.join(project.get_cache_path(), cache_id)
         for subfolder in ('requirements_roles', 'requirements_collections'):
             cache_subpath = os.path.join(cache_path, subfolder)
             if os.path.exists(cache_subpath):
-                dest_subpath = os.path.join(destination_folder, subfolder)
+                dest_subpath = os.path.join(job_private_data_dir, subfolder)
                 copy_tree(cache_subpath, dest_subpath, preserve_symlinks=1)
                 logger.debug('Project {0} prepared {1} from cache'.format(project.pk, dest_subpath))
 
@@ -2401,37 +2408,26 @@ class RunProjectUpdate(BaseTask):
             # Roles and collection folders copy - both to durable cache and job dir
             stage_path = os.path.join(instance.get_cache_path(), 'stage')
             if instance.branch_override:
-                # No caching for branch override, just move folders to destination
-                for subfolder in ('requirements_roles', 'requirements_collections'):
-                    stage_subpath = os.path.join(stage_path, subfolder)
-                    if os.path.exists(stage_subpath):
-                        # WARNING: self.job_private_data_dir should always be populated in branch override case
-                        dest_subpath = os.path.join(self.job_private_data_dir, subfolder)
-                        os.rename(stage_subpath, dest_subpath)
-                        logger.debug('{0} prepared {1} as cache bypass'.format(instance.log_format, dest_subpath))
+                # We actually do not want to cache these cases, so we just set an id
+                # which we are sure that nothing will reference for its cache
+                cache_id = str(instance.id)
             else:
                 cache_id = str(instance.project.last_job_id or instance.id)
-                cache_path = os.path.join(instance.get_cache_path(), cache_id)
-                if os.path.exists(stage_path):
-                    if os.path.exists(cache_path):
-                        logger.warning(
-                            'Replacing existing cache {0}, this is'
-                            'unexpected and may negatively affect performance'.format(cache_path))
-                        shutil.rmtree(cache_path)
-                    os.rename(stage_path, cache_path)
-                    logger.debug('{0} wrote to cache at {1}'.format(instance.log_format, cache_path))
+            cache_path = os.path.join(instance.get_cache_path(), cache_id)
+            if os.path.exists(stage_path):
+                if os.path.exists(cache_path):
+                    logger.warning(
+                        'Replacing existing cache {0}, this is'
+                        'unexpected and may negatively affect performance'.format(cache_path))
+                    shutil.rmtree(cache_path)
+                os.rename(stage_path, cache_path)
+                logger.debug('{0} wrote to cache at {1}'.format(instance.log_format, cache_path))
+            if not instance.branch_override:
                 self.clear_project_cache(instance.get_cache_path(), keep_value=cache_id)
-                if self.job_private_data_dir:
-                    self.make_content_copy(instance.project, self.job_private_data_dir)
-            # project folder copy to job dir
             if self.job_private_data_dir:
                 # copy project folder before resetting to default branch
                 # because some git-tree-specific resources (like submodules) might matter
-                self.make_local_copy(
-                    instance.get_project_path(check_if_exists=False),
-                    os.path.join(self.job_private_data_dir, 'project'),
-                    instance.scm_type, instance.scm_revision
-                )
+                self.make_local_copy(instance, self.job_private_data_dir, cache_id=cache_id)
                 if self.original_branch:
                     # for git project syncs, non-default branches can be problems
                     # restore to branch the repo was on before this run
@@ -2714,11 +2710,7 @@ class RunInventoryUpdate(BaseTask):
                 raise
         elif inventory_update.source == 'scm' and inventory_update.launch_type == 'scm' and source_project:
             # This follows update, not sync, so make copy here
-            project_path = source_project.get_project_path(check_if_exists=False)
-            RunProjectUpdate.make_local_copy(
-                project_path, os.path.join(private_data_dir, 'project'),
-                source_project.scm_type, source_project.scm_revision
-            )
+            RunProjectUpdate.make_local_copy(source_project, private_data_dir)
 
 
 @task(queue=get_local_queuename)
