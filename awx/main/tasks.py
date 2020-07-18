@@ -2332,13 +2332,17 @@ class RunProjectUpdate(BaseTask):
                     self.original_branch = git_repo.head.commit
                 else:
                     self.original_branch = git_repo.active_branch
+        stage_path = os.path.join(instance.get_cache_path(), 'stage')
+        if os.path.exists(stage_path):
+            logger.warning('{0} cache staging area unexpectedly existed before update.')
+            shutil.rmtree(stage_path)
 
     @staticmethod
     def clear_project_cache(cache_dir, keep_value):
         if os.path.isdir(cache_dir):
             for entry in os.listdir(cache_dir):
                 old_path = os.path.join(cache_dir, entry)
-                if entry != keep_value:
+                if entry not in (keep_value, 'stage'):
                     # invalidate, then delete
                     new_path = os.path.join(cache_dir,'.~~delete~~' + entry)
                     try:
@@ -2419,6 +2423,9 @@ class RunProjectUpdate(BaseTask):
                 cache_id = str(instance.id)
             else:
                 cache_id = str(instance.project.last_job_id or instance.id)
+            # Clear other caches before saving this one, and if branch is overridden
+            # do not clear cache for main branch, but do clear it for other branches
+            self.clear_project_cache(instance.get_cache_path(), keep_value=str(instance.project.last_job_id))
             cache_path = os.path.join(instance.get_cache_path(), cache_id)
             if os.path.exists(stage_path):
                 if os.path.exists(cache_path):
@@ -2428,8 +2435,6 @@ class RunProjectUpdate(BaseTask):
                     shutil.rmtree(cache_path)
                 os.rename(stage_path, cache_path)
                 logger.debug('{0} wrote to cache at {1}'.format(instance.log_format, cache_path))
-            if not instance.branch_override:
-                self.clear_project_cache(instance.get_cache_path(), keep_value=cache_id)
             if self.job_private_data_dir:
                 # copy project folder before resetting to default branch
                 # because some git-tree-specific resources (like submodules) might matter
