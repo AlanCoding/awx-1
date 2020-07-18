@@ -4,15 +4,18 @@ AWX supports the use of Ansible Collections. This section will give ways to use 
 
 ### Project Collections Requirements
 
-If you specify a Collections requirements file in SCM at `collections/requirements.yml`,
-then AWX will install Collections from that file in the implicit project sync
-before a job run. The invocation looks like:
+If you specify a collections requirements file in SCM at `collections/requirements.yml`,
+then AWX will install collections from that file to a special cache folder in project updates.
+Before a job runs, the roles and/or collections will be copied from the special
+cache folder to the job temporary folder.
+
+The invocation looks like:
 
 ```
-ansible-galaxy collection install -r requirements.yml -p <job tmp location>/requirements_collections
+ansible-galaxy collection install -r requirements.yml -p <project cache location>/requirements_collections
 ```
 
-Example of the resultant `tmp` directory where job is running:
+Example of the resultant job `tmp` directory where job is running:
 
 ```
 ├── project
@@ -20,7 +23,7 @@ Example of the resultant `tmp` directory where job is running:
 │   └── debug.yml
 ├── requirements_collections
 │   └── ansible_collections
-│       └── username
+│       └── collection_namespace
 │           └── collection_name
 │               ├── FILES.json
 │               ├── MANIFEST.json
@@ -51,6 +54,29 @@ Example of the resultant `tmp` directory where job is running:
 │           └── Archlinux.yml
 └── tmp_6wod58k
 
+```
+
+### Cache Folder Mechanics
+
+Every time a project is manually updated, the roles and collections are
+downloaded. In other words, the content cache is invalidated every time
+a project is updated manually.
+That means that the `ansible-galaxy` commands are ran to download content
+even if the project revision does not change in the course of the update.
+
+Project updates all initially target a staging directory at a path like:
+
+```
+/var/lib/awx/projects/.__awx_cache/_42__project_name/stage
+```
+
+After the update finishes, the task logic will decide what id to associate
+with the content downloaded.
+Then the folder will be renamed from "stage" to the cache id.
+For instance, if the cache id is determined to be 63:
+
+```
+/var/lib/awx/projects/.__awx_cache/_42__project_name/63
 ```
 
 ### Galaxy Server Selection
