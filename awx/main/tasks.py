@@ -2319,7 +2319,7 @@ class RunProjectUpdate(BaseTask):
             shutil.rmtree(stage_path)
         # Important - the presence of an empty cache will indicate that a given
         # project revision did not have any roles or collections
-        os.mkdir(stage_path)
+        os.makedirs(stage_path)
 
     @staticmethod
     def clear_project_cache(cache_dir, keep_value):
@@ -2406,9 +2406,7 @@ class RunProjectUpdate(BaseTask):
                 cache_path = os.path.join(base_path, instance.cache_id)
                 if os.path.exists(stage_path):
                     if os.path.exists(cache_path):
-                        logger.warning(
-                            'Replacing existing cache {0}, this is'
-                            'unexpected and may negatively affect performance'.format(cache_path))
+                        logger.warning('Rewriting cache at {0}, performance may suffer'.format(cache_path))
                         shutil.rmtree(cache_path)
                     os.rename(stage_path, cache_path)
                     logger.debug('{0} wrote to cache at {1}'.format(instance.log_format, cache_path))
