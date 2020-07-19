@@ -2399,7 +2399,8 @@ class RunProjectUpdate(BaseTask):
             # Roles and collection folders copy to durable cache
             base_path = instance.get_cache_path()
             stage_path = os.path.join(base_path, 'stage')
-            if instance.status == 'successful':
+            if (instance.status == 'successful' and
+                    'install_roles' in instance.job_tags and 'install_collections' in instance.job_tags):
                 # Clear other caches before saving this one, and if branch is overridden
                 # do not clear cache for main branch, but do clear it for other branches
                 self.clear_project_cache(base_path, keep_value=str(instance.project.last_job_id))
