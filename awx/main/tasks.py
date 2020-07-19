@@ -1872,48 +1872,34 @@ class RunJob(BaseTask):
         elif not os.path.exists(project_path):
             logger.debug('Performing fresh clone of {} on this instance.'.format(job.project))
             sync_needs = all_sync_needs
-        elif not job.project.scm_revision:
-            logger.debug('Revision not known for {}, will sync with remote'.format(job.project))
-            sync_needs = all_sync_needs
-        elif job.project.scm_type == 'git':
+        elif job.project.scm_type == 'git' and job.project.scm_revision and (not branch_override):
             git_repo = git.Repo(project_path)
             try:
-                desired_revision = job.project.scm_revision
-                if branch_override:
-                    desired_revision = job.scm_branch  # could be commit or not, but will try as commit
-                current_revision = git_repo.head.commit.hexsha
-                if desired_revision == current_revision:
-                    job_revision = desired_revision
+                if job_revision == git_repo.head.commit.hexsha:
                     logger.debug('Skipping project sync for {} because commit is locally available'.format(job.log_format))
+                    cache_id = str(job.project.last_job_id)
+                    has_cache = os.path.exists(os.path.join(job.project.get_cache_path(), cache_id))
+                    if has_cache:
+                        logger.debug('Using cached roles or collections for {}'.format(job.log_format))
+                    else:
+                        # see if we need a sync because of presence of roles
+                        roles_exist = os.path.exists(os.path.join(project_path, 'roles', 'requirements.yml'))
+                        if roles_exist:
+                            logger.debug('Running project sync for {} for role requirements.'.format(job.log_format))
+                            sync_needs.append('install_roles')
+
+                        collections_exist = os.path.exists(os.path.join(project_path, 'collections', 'requirements.yml'))
+                        if collections_exist:
+                            logger.debug('Running project sync for {} for collection requirements.'.format(job.log_format))
+                            sync_needs.append('install_collections')
                 else:
                     sync_needs = all_sync_needs
             except (ValueError, BadGitName):
                 logger.debug('Needed commit for {} not in local source tree, will sync with remote'.format(job.log_format))
                 sync_needs = all_sync_needs
         else:
+            logger.debug('Project not available locally {}, will sync with remote'.format(job.project))
             sync_needs = all_sync_needs
-        # Galaxy requirements are not supported for manual projects
-        if not sync_needs and job.project.scm_type:
-            has_cache = False
-            if not branch_override:
-                cache_id = str(job.project.last_job_id)
-                has_cache = os.path.exists(os.path.join(job.project.get_cache_path(), cache_id))
-            # see if we need a sync because of presence of roles
-            galaxy_req_path = os.path.join(project_path, 'roles', 'requirements.yml')
-            roles_exist = os.path.exists(galaxy_req_path)
-            if roles_exist and not has_cache:
-                logger.debug('Running project sync for {} because of galaxy role requirements.'.format(job.log_format))
-                sync_needs.append('install_roles')
-            elif roles_exist:
-                logger.debug('Using cached roles for {}'.format(job.log_format))
-
-            galaxy_collections_req_path = os.path.join(project_path, 'collections', 'requirements.yml')
-            collections_exist = os.path.exists(galaxy_collections_req_path)
-            if collections_exist and not has_cache:
-                logger.debug('Running project sync for {} because of galaxy collections requirements.'.format(job.log_format))
-                sync_needs.append('install_collections')
-            elif collections_exist:
-                logger.debug('Using cached collections for {}'.format(job.log_format))
 
         if sync_needs:
             pu_ig = job.instance_group
@@ -2423,7 +2409,7 @@ class RunProjectUpdate(BaseTask):
                 instance.save(update_fields=['scm_revision'])
             # Roles and collection folders copy - both to durable cache and job dir
             stage_path = os.path.join(instance.get_cache_path(), 'stage')
-            if instance.branch_override:
+            if instance.branch_override or instance.job_type == 'check':
                 # We actually do not want to cache these cases, so we just set an id
                 # which we are sure that nothing will reference for its cache
                 cache_id = str(instance.id)
