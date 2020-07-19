@@ -1865,41 +1865,32 @@ class RunJob(BaseTask):
         project_path = job.project.get_project_path(check_if_exists=False)
         job_revision = job.project.scm_revision
         sync_needs = []
-        all_sync_needs = ['update_{}'.format(job.project.scm_type), 'install_roles', 'install_collections']
+        source_update_tag = 'update_{}'.format(job.project.scm_type)
         branch_override = bool(job.scm_branch and job.scm_branch != job.project.scm_branch)
         if not job.project.scm_type:
             pass # manual projects are not synced, user has responsibility for that
         elif not os.path.exists(project_path):
             logger.debug('Performing fresh clone of {} on this instance.'.format(job.project))
-            sync_needs = all_sync_needs
+            sync_needs.append(source_update_tag)
         elif job.project.scm_type == 'git' and job.project.scm_revision and (not branch_override):
             git_repo = git.Repo(project_path)
             try:
                 if job_revision == git_repo.head.commit.hexsha:
                     logger.debug('Skipping project sync for {} because commit is locally available'.format(job.log_format))
-                    cache_id = str(job.project.last_job_id)
-                    has_cache = os.path.exists(os.path.join(job.project.get_cache_path(), cache_id))
-                    if has_cache:
-                        logger.debug('Using cached roles or collections for {}'.format(job.log_format))
-                    else:
-                        # see if we need a sync because of presence of roles
-                        roles_exist = os.path.exists(os.path.join(project_path, 'roles', 'requirements.yml'))
-                        if roles_exist:
-                            logger.debug('Running project sync for {} for role requirements.'.format(job.log_format))
-                            sync_needs.append('install_roles')
-
-                        collections_exist = os.path.exists(os.path.join(project_path, 'collections', 'requirements.yml'))
-                        if collections_exist:
-                            logger.debug('Running project sync for {} for collection requirements.'.format(job.log_format))
-                            sync_needs.append('install_collections')
                 else:
-                    sync_needs = all_sync_needs
+                    sync_needs.append(source_update_tag)
             except (ValueError, BadGitName):
                 logger.debug('Needed commit for {} not in local source tree, will sync with remote'.format(job.log_format))
-                sync_needs = all_sync_needs
+                sync_needs.append(source_update_tag)
         else:
             logger.debug('Project not available locally {}, will sync with remote'.format(job.project))
-            sync_needs = all_sync_needs
+            sync_needs.append(source_update_tag)
+
+        cache_id = str(job.project.last_job_id)
+        has_cache = os.path.exists(os.path.join(job.project.get_cache_path(), cache_id))
+        # Galaxy requirements are not supported for manual projects
+        if (job.project.scm_type and ((not has_cache) or branch_override)):
+            sync_needs.extend(['install_roles', 'install_collections'])
 
         if sync_needs:
             pu_ig = job.instance_group
@@ -2328,6 +2319,9 @@ class RunProjectUpdate(BaseTask):
         if os.path.exists(stage_path):
             logger.warning('{0} cache staging area unexpectedly existed before update.')
             shutil.rmtree(stage_path)
+        # Important - the presence of an empty cache will indicate that a given
+        # project revision did not have any roles or collections
+        os.mkdir(stage_path)
 
     @staticmethod
     def clear_project_cache(cache_dir, keep_value):
@@ -2407,26 +2401,32 @@ class RunProjectUpdate(BaseTask):
             if self.playbook_new_revision:
                 instance.scm_revision = self.playbook_new_revision
                 instance.save(update_fields=['scm_revision'])
-            # Roles and collection folders copy - both to durable cache and job dir
-            stage_path = os.path.join(instance.get_cache_path(), 'stage')
+
+            # Roles and collection folders copy to durable cache
             if instance.branch_override or instance.job_type == 'check':
                 # We actually do not want to cache these cases, so we just set an id
                 # which we are sure that nothing will reference for its cache
                 cache_id = str(instance.id)
             else:
                 cache_id = str(instance.project.last_job_id or instance.id)
-            # Clear other caches before saving this one, and if branch is overridden
-            # do not clear cache for main branch, but do clear it for other branches
-            self.clear_project_cache(instance.get_cache_path(), keep_value=str(instance.project.last_job_id))
-            cache_path = os.path.join(instance.get_cache_path(), cache_id)
-            if os.path.exists(stage_path):
-                if os.path.exists(cache_path):
-                    logger.warning(
-                        'Replacing existing cache {0}, this is'
-                        'unexpected and may negatively affect performance'.format(cache_path))
-                    shutil.rmtree(cache_path)
-                os.rename(stage_path, cache_path)
-                logger.debug('{0} wrote to cache at {1}'.format(instance.log_format, cache_path))
+            base_path = instance.get_cache_path()
+            stage_path = os.path.join(base_path, 'stage')
+            if instance.status == 'successful':
+                # Clear other caches before saving this one, and if branch is overridden
+                # do not clear cache for main branch, but do clear it for other branches
+                self.clear_project_cache(base_path, keep_value=str(instance.project.last_job_id))
+                cache_path = os.path.join(base_path, cache_id)
+                if os.path.exists(stage_path):
+                    if os.path.exists(cache_path):
+                        logger.warning(
+                            'Replacing existing cache {0}, this is'
+                            'unexpected and may negatively affect performance'.format(cache_path))
+                        shutil.rmtree(cache_path)
+                    os.rename(stage_path, cache_path)
+                    logger.debug('{0} wrote to cache at {1}'.format(instance.log_format, cache_path))
+            else:
+                shutil.rmtree(stage_path)  # cannot trust content update produced
+
             if self.job_private_data_dir:
                 # copy project folder before resetting to default branch
                 # because some git-tree-specific resources (like submodules) might matter
