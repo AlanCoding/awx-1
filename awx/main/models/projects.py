@@ -234,6 +234,16 @@ class ProjectOptions(models.Model):
                     break
         return sorted(results, key=lambda x: smart_str(x).lower())
 
+    @property
+    def cache_id(self):
+        if isinstance(self, ProjectUpdate):
+            if self.branch_override or self.job_type == 'check':
+                return str(self.id)
+            else:
+                return str(self.project.last_job_id or self.id)
+        else:
+            return str(self.last_job_id)
+
     def get_lock_file(self):
         '''
         We want the project path in name only, we don't care if it exists or

@@ -1886,7 +1886,7 @@ class RunJob(BaseTask):
             logger.debug('Project not available locally {}, will sync with remote'.format(job.project))
             sync_needs.append(source_update_tag)
 
-        cache_id = str(job.project.last_job_id)
+        cache_id = str(job.project.last_job_id)  # content cache - for roles and collections
         has_cache = os.path.exists(os.path.join(job.project.get_cache_path(), cache_id))
         # Galaxy requirements are not supported for manual projects
         if (job.project.scm_type and ((not has_cache) or branch_override)):
@@ -1940,9 +1940,7 @@ class RunJob(BaseTask):
             if job_revision:
                 job = self.update_model(job.pk, scm_revision=job_revision)
             # Project update does not copy the folder, so copy here
-            RunProjectUpdate.make_local_copy(
-                job.project, private_data_dir, scm_revision=job_revision
-            )
+            RunProjectUpdate.make_local_copy(job.project, private_data_dir, scm_revision=job_revision)
 
         if job.inventory.kind == 'smart':
             # cache smart inventory memberships so that the host_filter query is not
@@ -2338,28 +2336,27 @@ class RunProjectUpdate(BaseTask):
                         logger.warning(f"Could not remove cache directory {old_path}")
 
     @staticmethod
-    def make_local_copy(project, job_private_data_dir, scm_revision=None, cache_id=None):
-        """Copy project content to a job private_data_dir
+    def make_local_copy(p, job_private_data_dir, scm_revision=None):
+        """Copy project content (roles and collections) to a job private_data_dir
 
-        :param object project: Either a project or a project update
-        :param str job_private_data_dir: The root of the ansible-runner folder
+        :param object p: Either a project or a project update
+        :param str job_private_data_dir: The root of the target ansible-runner folder
         :param str scm_revision: For branch_override cases, the git revision to copy
-        :param str cache_id: Identification of the roles and collections cache folder
         """
-        project_path = project.get_project_path(check_if_exists=False)
+        project_path = p.get_project_path(check_if_exists=False)
         destination_folder = os.path.join(job_private_data_dir, 'project')
         if not scm_revision:
-            scm_revision = project.scm_revision
+            scm_revision = p.scm_revision
 
-        if project.scm_type == 'git':
+        if p.scm_type == 'git':
             git_repo = git.Repo(project_path)
             if not os.path.exists(destination_folder):
                 os.mkdir(destination_folder, stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
             tmp_branch_name = 'awx_internal/{}'.format(uuid4())
             # always clone based on specific job revision
-            if not project.scm_revision:
+            if not p.scm_revision:
                 raise RuntimeError('Unexpectedly could not determine a revision to run from project.')
-            source_branch = git_repo.create_head(tmp_branch_name, project.scm_revision)
+            source_branch = git_repo.create_head(tmp_branch_name, p.scm_revision)
             # git clone must take file:// syntax for source repo or else options like depth will be ignored
             source_as_uri = Path(project_path).as_uri()
             git.Repo.clone_from(
@@ -2379,9 +2376,7 @@ class RunProjectUpdate(BaseTask):
             copy_tree(project_path, destination_folder, preserve_symlinks=1)
 
         # copy over the roles and collection cache to job folder
-        if not cache_id:
-            cache_id = str(project.last_job_id)
-        cache_path = os.path.join(project.get_cache_path(), cache_id)
+        cache_path = os.path.join(p.get_cache_path(), p.cache_id)
         subfolders = []
         if settings.AWX_COLLECTIONS_ENABLED:
             subfolders.append('requirements_collections')
@@ -2392,8 +2387,7 @@ class RunProjectUpdate(BaseTask):
             if os.path.exists(cache_subpath):
                 dest_subpath = os.path.join(job_private_data_dir, subfolder)
                 copy_tree(cache_subpath, dest_subpath, preserve_symlinks=1)
-                logger.debug('{0} {1} prepared {2} from cache'.format(
-                    type(project).__name__, project.pk, dest_subpath))
+                logger.debug('{0} {1} prepared {2} from cache'.format(type(p).__name__, p.pk, dest_subpath))
 
     def post_run_hook(self, instance, status):
         # To avoid hangs, very important to release lock even if errors happen here
@@ -2403,19 +2397,13 @@ class RunProjectUpdate(BaseTask):
                 instance.save(update_fields=['scm_revision'])
 
             # Roles and collection folders copy to durable cache
-            if instance.branch_override or instance.job_type == 'check':
-                # We actually do not want to cache these cases, so we just set an id
-                # which we are sure that nothing will reference for its cache
-                cache_id = str(instance.id)
-            else:
-                cache_id = str(instance.project.last_job_id or instance.id)
             base_path = instance.get_cache_path()
             stage_path = os.path.join(base_path, 'stage')
             if instance.status == 'successful':
                 # Clear other caches before saving this one, and if branch is overridden
                 # do not clear cache for main branch, but do clear it for other branches
                 self.clear_project_cache(base_path, keep_value=str(instance.project.last_job_id))
-                cache_path = os.path.join(base_path, cache_id)
+                cache_path = os.path.join(base_path, instance.cache_id)
                 if os.path.exists(stage_path):
                     if os.path.exists(cache_path):
                         logger.warning(
@@ -2430,7 +2418,7 @@ class RunProjectUpdate(BaseTask):
             if self.job_private_data_dir:
                 # copy project folder before resetting to default branch
                 # because some git-tree-specific resources (like submodules) might matter
-                self.make_local_copy(instance, self.job_private_data_dir, cache_id=cache_id)
+                self.make_local_copy(instance, self.job_private_data_dir)
                 if self.original_branch:
                     # for git project syncs, non-default branches can be problems
                     # restore to branch the repo was on before this run
