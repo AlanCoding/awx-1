@@ -234,16 +234,6 @@ class ProjectOptions(models.Model):
                     break
         return sorted(results, key=lambda x: smart_str(x).lower())
 
-    @property
-    def cache_id(self):
-        if isinstance(self, ProjectUpdate):
-            if self.branch_override or self.job_type == 'check':
-                return str(self.id)
-            else:
-                return str(self.project.last_job_id or self.id)
-        else:
-            return str(self.last_job_id)
-
     def get_lock_file(self):
         '''
         We want the project path in name only, we don't care if it exists or
@@ -434,6 +424,10 @@ class Project(UnifiedJobTemplate, ProjectOptions, ResourceMixin, CustomVirtualEn
         return False
 
     @property
+    def cache_id(self):
+        return str(self.last_job_id)
+
+    @property
     def notification_templates(self):
         base_notification_templates = NotificationTemplate.objects
         error_notification_templates = list(base_notification_templates
@@ -580,6 +574,12 @@ class ProjectUpdate(UnifiedJob, ProjectOptions, JobNotificationMixin, TaskManage
         return bool(
             self.scm_branch and self.scm_branch != self.project.scm_branch
         )
+
+    @property
+    def cache_id(self):
+        if self.branch_override or self.job_type == 'check' or (not self.project):
+            return str(self.id)
+        return self.project.cache_id
 
     def result_stdout_raw_limited(self, start_line=0, end_line=None, redact_sensitive=True):
         return self._result_stdout_raw_limited(start_line, end_line, redact_sensitive=redact_sensitive)
