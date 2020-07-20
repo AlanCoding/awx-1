@@ -2669,13 +2669,22 @@ class RunInventoryUpdate(BaseTask):
         source_project = None
         if inventory_update.inventory_source:
             source_project = inventory_update.inventory_source.source_project
-        if (inventory_update.source=='scm' and inventory_update.launch_type!='scm' and source_project):
-            # In project sync, pulling galaxy roles is not needed
+        if (inventory_update.source=='scm' and inventory_update.launch_type!='scm' and
+                source_project and source_project.scm_type):  # never ever update manual projects
+
+            # Check if the content cache exists, so that we do not unnecessarily re-download roles
+            sync_needs = ['update_{}'.format(source_project.scm_type)]
+            cache_id = str(source_project.last_job_id)  # content cache id for roles and collections
+            has_cache = os.path.exists(os.path.join(source_project.get_cache_path(), cache_id))
+            # Galaxy requirements are not supported for manual projects
+            if not has_cache:
+                sync_needs.extend(['install_roles', 'install_collections'])
+
             local_project_sync = source_project.create_project_update(
                 _eager_fields=dict(
                     launch_type="sync",
                     job_type='run',
-                    job_tags='update_{},install_roles,install_collections'.format(source_project.scm_type),  # roles are never valid for inventory
+                    job_tags=','.join(sync_needs),
                     status='running',
                     execution_node=inventory_update.execution_node,
                     instance_group = inventory_update.instance_group,
