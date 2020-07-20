@@ -624,9 +624,7 @@ class ProjectUpdate(UnifiedJob, ProjectOptions, JobNotificationMixin, TaskManage
     def save(self, *args, **kwargs):
         added_update_fields = []
         if not self.job_tags:
-            job_tags = ['update_{}'.format(self.scm_type)]
-            job_tags.append('install_roles')
-            job_tags.append('install_collections')
+            job_tags = ['update_{}'.format(self.scm_type), 'install_roles', 'install_collections']
             self.job_tags = ','.join(job_tags)
             added_update_fields.append('job_tags')
         if self.scm_delete_on_update and 'delete' not in self.job_tags and self.job_type == 'check':
