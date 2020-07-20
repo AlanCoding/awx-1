@@ -566,14 +566,10 @@ class ProjectUpdate(UnifiedJob, ProjectOptions, JobNotificationMixin, TaskManage
 
     @property
     def branch_override(self):
-        """Returns True if using a non-default branch, where the default
-        branch is that defined on the associated project
-        """
+        """Whether a branch other than the project default is used."""
         if not self.project:
             return True
-        return bool(
-            self.scm_branch and self.scm_branch != self.project.scm_branch
-        )
+        return bool(self.scm_branch and self.scm_branch != self.project.scm_branch)
 
     @property
     def cache_id(self):
