@@ -58,9 +58,10 @@ Example of the resultant job `tmp` directory where job is running:
 
 ### Cache Folder Mechanics
 
-Every time a project is manually updated, the roles and collections are
-downloaded. In other words, the content cache is invalidated every time
-a project is updated manually.
+Every time a project is updated as a "check" job
+(via `/api/v2/projects/N/update/` or by a schedule, workflow, etc.),
+the roles and collections are downloaded and saved to the project's content cache.
+In other words, the cache is invalidated every time a project is updated.
 That means that the `ansible-galaxy` commands are ran to download content
 even if the project revision does not change in the course of the update.
 
@@ -78,6 +79,9 @@ For instance, if the cache id is determined to be 63:
 ```
 /var/lib/awx/projects/.__awx_cache/_42__project_name/63
 ```
+
+The cache may be updated by project syncs (the "run" type) which happen before
+job runs. It will populate the cache id set by the last "check" type update.
 
 ### Galaxy Server Selection
 
