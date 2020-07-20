@@ -1889,7 +1889,7 @@ class RunJob(BaseTask):
         cache_id = str(job.project.last_job_id)  # content cache - for roles and collections
         has_cache = os.path.exists(os.path.join(job.project.get_cache_path(), cache_id))
         # Galaxy requirements are not supported for manual projects
-        if (job.project.scm_type and ((not has_cache) or branch_override)):
+        if job.project.scm_type and ((not has_cache) or branch_override):
             sync_needs.extend(['install_roles', 'install_collections'])
 
         if sync_needs:
@@ -2399,7 +2399,7 @@ class RunProjectUpdate(BaseTask):
             # Roles and collection folders copy to durable cache
             base_path = instance.get_cache_path()
             stage_path = os.path.join(base_path, 'stage')
-            if instance.status == 'successful' and 'install_' in instance.job_tags:
+            if status == 'successful' and 'install_' in instance.job_tags:
                 # Clear other caches before saving this one, and if branch is overridden
                 # do not clear cache for main branch, but do clear it for other branches
                 self.clear_project_cache(base_path, keep_value=str(instance.project.last_job_id))
