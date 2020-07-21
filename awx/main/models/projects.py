@@ -5,6 +5,7 @@
 import datetime
 import os
 import urllib.parse as urlparse
+import logging
 
 # Django
 from django.conf import settings
@@ -15,6 +16,9 @@ from django.utils.text import slugify
 from django.core.exceptions import ValidationError
 from django.utils.timezone import now, make_aware, get_default_timezone
 
+# GitPython
+import git
+from gitdb.exc import BadName as BadGitName
 
 # AWX
 from awx.api.versioning import reverse
@@ -45,6 +49,8 @@ from awx.main.models.rbac import (
 from awx.main.fields import JSONField
 
 __all__ = ['Project', 'ProjectUpdate']
+
+logger = logging.getLogger('awx.main.models.projects')
 
 
 class ProjectOptions(models.Model):
@@ -337,30 +343,25 @@ class Project(UnifiedJobTemplate, ProjectOptions, ResourceMixin, CustomVirtualEn
                 raise ValidationError({'organization': _('Organization cannot be changed when in use by job templates.')})
         return self.organization
 
+    def get_auto_local_path(self):
+        """Produce auto-generated string for local_path"""
+        slug_name = slugify(str(self.name)).replace(u'-', u'_')
+        return u'_%d__%s' % (int(self.pk), slug_name)
+
     def save(self, *args, **kwargs):
         new_instance = not bool(self.pk)
         pre_save_vals = getattr(self, '_prior_values_store', {})
         # If update_fields has been specified, add our field names to it,
         # if it hasn't been specified, then we're just doing a normal save.
-        update_fields = kwargs.get('update_fields', [])
         skip_update = bool(kwargs.pop('skip_update', False))
-        # Create auto-generated local path if project uses SCM.
-        if self.pk and self.scm_type and not self.local_path.startswith('_'):
-            slug_name = slugify(str(self.name)).replace(u'-', u'_')
-            self.local_path = u'_%d__%s' % (int(self.pk), slug_name)
-            if 'local_path' not in update_fields:
-                update_fields.append('local_path')
         # Do the actual save.
         super(Project, self).save(*args, **kwargs)
-        if new_instance:
-            update_fields=[]
+        if new_instance and self.scm_type and (not self.local_path.startswith('_')):
             # Generate local_path for SCM after initial save (so we have a PK).
-            if self.scm_type and not self.local_path.startswith('_'):
-                update_fields.append('local_path')
-            if update_fields:
-                from awx.main.signals import disable_activity_stream
-                with disable_activity_stream():
-                    self.save(update_fields=update_fields)
+            self.local_path = self.get_auto_local_path()
+            from awx.main.signals import disable_activity_stream
+            with disable_activity_stream():
+                super(Project, self).save(update_fields=['local_path'])
         # If we just created a new project with SCM, start the initial update.
         # also update if certain fields have changed
         relevant_change = any(
@@ -369,6 +370,38 @@ class Project(UnifiedJobTemplate, ProjectOptions, ResourceMixin, CustomVirtualEn
         )
         if (relevant_change or new_instance) and (not skip_update) and self.scm_type:
             self.update()
+
+    def get_sync_needs(self, scm_branch=None):
+        project_path = self.get_project_path(check_if_exists=False)
+        job_revision = self.scm_revision
+        sync_needs = []
+        source_update_tag = 'update_{}'.format(self.scm_type)
+        branch_override = bool(scm_branch and scm_branch != self.scm_branch)
+        if not self.scm_type:
+            pass # manual projects are not synced, user has responsibility for that
+        elif not os.path.exists(project_path):
+            logger.debug('Performing fresh clone of {} on this instance.'.format(self))
+            sync_needs.append(source_update_tag)
+        elif self.scm_type == 'git' and self.scm_revision and (not branch_override):
+            git_repo = git.Repo(project_path)
+            try:
+                if job_revision == git_repo.head.commit.hexsha:
+                    logger.debug('Skipping project sync for {} because commit is locally available'.format(self.id))
+                else:
+                    sync_needs.append(source_update_tag)
+            except (ValueError, BadGitName):
+                logger.debug('Needed commit for {} not in local source tree, will sync with remote'.format(self.id))
+                sync_needs.append(source_update_tag)
+        else:
+            logger.debug('Project not available locally {}, will sync with remote'.format(self))
+            sync_needs.append(source_update_tag)
+
+        has_cache = os.path.exists(os.path.join(self.get_cache_path(), self.cache_id))
+        # Galaxy requirements are not supported for manual projects
+        if self.scm_type and ((not has_cache) or branch_override):
+            sync_needs.extend(['install_content'])
+
+        return ','.join(sync_needs)
 
     def _get_current_status(self):
         if self.scm_type:
@@ -620,7 +653,7 @@ class ProjectUpdate(UnifiedJob, ProjectOptions, JobNotificationMixin, TaskManage
     def save(self, *args, **kwargs):
         added_update_fields = []
         if not self.job_tags:
-            job_tags = ['update_{}'.format(self.scm_type), 'install_roles', 'install_collections']
+            job_tags = ['update_{}'.format(self.scm_type), 'install_content']
             self.job_tags = ','.join(job_tags)
             added_update_fields.append('job_tags')
         if self.scm_delete_on_update and 'delete' not in self.job_tags and self.job_type == 'check':

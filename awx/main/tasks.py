@@ -43,7 +43,6 @@ from crum import impersonate
 
 # GitPython
 import git
-from gitdb.exc import BadName as BadGitName
 
 # Runner
 import ansible_runner
@@ -1862,35 +1861,9 @@ class RunJob(BaseTask):
             job = self.update_model(job.pk, status='failed', job_explanation=msg)
             raise RuntimeError(msg)
 
-        project_path = job.project.get_project_path(check_if_exists=False)
         job_revision = job.project.scm_revision
-        sync_needs = []
-        source_update_tag = 'update_{}'.format(job.project.scm_type)
-        branch_override = bool(job.scm_branch and job.scm_branch != job.project.scm_branch)
-        if not job.project.scm_type:
-            pass # manual projects are not synced, user has responsibility for that
-        elif not os.path.exists(project_path):
-            logger.debug('Performing fresh clone of {} on this instance.'.format(job.project))
-            sync_needs.append(source_update_tag)
-        elif job.project.scm_type == 'git' and job.project.scm_revision and (not branch_override):
-            git_repo = git.Repo(project_path)
-            try:
-                if job_revision == git_repo.head.commit.hexsha:
-                    logger.debug('Skipping project sync for {} because commit is locally available'.format(job.log_format))
-                else:
-                    sync_needs.append(source_update_tag)
-            except (ValueError, BadGitName):
-                logger.debug('Needed commit for {} not in local source tree, will sync with remote'.format(job.log_format))
-                sync_needs.append(source_update_tag)
-        else:
-            logger.debug('Project not available locally {}, will sync with remote'.format(job.project))
-            sync_needs.append(source_update_tag)
 
-        cache_id = str(job.project.last_job_id)  # content cache - for roles and collections
-        has_cache = os.path.exists(os.path.join(job.project.get_cache_path(), cache_id))
-        # Galaxy requirements are not supported for manual projects
-        if job.project.scm_type and ((not has_cache) or branch_override):
-            sync_needs.extend(['install_roles', 'install_collections'])
+        sync_needs = job.project.get_sync_needs(scm_branch=job.scm_branch)
 
         if sync_needs:
             pu_ig = job.instance_group
@@ -1902,13 +1875,13 @@ class RunJob(BaseTask):
             sync_metafields = dict(
                 launch_type="sync",
                 job_type='run',
-                job_tags=','.join(sync_needs),
+                job_tags=sync_needs,
                 status='running',
                 instance_group = pu_ig,
                 execution_node=pu_en,
                 celery_task_id=job.celery_task_id
             )
-            if branch_override:
+            if job.scm_branch and job.scm_branch != job.project.scm_branch:
                 sync_metafields['scm_branch'] = job.scm_branch
             if 'update_' not in sync_metafields['job_tags']:
                 sync_metafields['scm_revision'] = job_revision
@@ -2151,7 +2124,6 @@ class RunProjectUpdate(BaseTask):
         extra_vars.update({
             'projects_root': settings.PROJECTS_ROOT.rstrip('/'),
             'local_path': os.path.basename(project_update.project.local_path),
-            'project_path': project_update.get_project_path(check_if_exists=False),  # deprecated
             'insights_url': settings.INSIGHTS_URL_BASE,
             'awx_license_type': get_license(show_key=False).get('license_type', 'UNLICENSED'),
             'awx_version': get_awx_version(),
@@ -2663,42 +2635,39 @@ class RunInventoryUpdate(BaseTask):
         if (inventory_update.source=='scm' and inventory_update.launch_type!='scm' and
                 source_project and source_project.scm_type):  # never ever update manual projects
 
-            # Check if the content cache exists, so that we do not unnecessarily re-download roles
-            sync_needs = ['update_{}'.format(source_project.scm_type)]
-            cache_id = str(source_project.last_job_id)  # content cache id for roles and collections
-            has_cache = os.path.exists(os.path.join(source_project.get_cache_path(), cache_id))
-            # Galaxy requirements are not supported for manual projects
-            if not has_cache:
-                sync_needs.extend(['install_roles', 'install_collections'])
+            sync_needs = job.project.get_sync_needs(scm_branch=job.scm_branch)
 
-            local_project_sync = source_project.create_project_update(
-                _eager_fields=dict(
-                    launch_type="sync",
-                    job_type='run',
-                    job_tags=','.join(sync_needs),
-                    status='running',
-                    execution_node=inventory_update.execution_node,
-                    instance_group = inventory_update.instance_group,
-                    celery_task_id=inventory_update.celery_task_id))
-            # associate the inventory update before calling run() so that a
-            # cancel() call on the inventory update can cancel the project update
-            local_project_sync.scm_inventory_updates.add(inventory_update)
+            if sync_needs:
+                local_project_sync = source_project.create_project_update(
+                    _eager_fields=dict(
+                        launch_type="sync",
+                        job_type='run',
+                        job_tags=sync_needs,
+                        status='running',
+                        execution_node=inventory_update.execution_node,
+                        instance_group = inventory_update.instance_group,
+                        celery_task_id=inventory_update.celery_task_id))
+                # associate the inventory update before calling run() so that a
+                # cancel() call on the inventory update can cancel the project update
+                local_project_sync.scm_inventory_updates.add(inventory_update)
 
-            project_update_task = local_project_sync._get_task_class()
-            try:
-                sync_task = project_update_task(job_private_data_dir=private_data_dir)
-                sync_task.run(local_project_sync.id)
-                local_project_sync.refresh_from_db()
-                inventory_update.inventory_source.scm_last_revision = local_project_sync.scm_revision
-                inventory_update.inventory_source.save(update_fields=['scm_last_revision'])
-            except Exception:
-                inventory_update = self.update_model(
-                    inventory_update.pk, status='failed',
-                    job_explanation=('Previous Task Failed: {"job_type": "%s", "job_name": "%s", "job_id": "%s"}' %
-                                     ('project_update', local_project_sync.name, local_project_sync.id)))
-                raise
-        elif inventory_update.source == 'scm' and inventory_update.launch_type == 'scm' and source_project:
-            # This follows update, not sync, so make copy here
+                project_update_task = local_project_sync._get_task_class()
+                try:
+                    sync_task = project_update_task(job_private_data_dir=private_data_dir)
+                    sync_task.run(local_project_sync.id)
+                    local_project_sync.refresh_from_db()
+                    inventory_update.inventory_source.scm_last_revision = local_project_sync.scm_revision
+                    inventory_update.inventory_source.save(update_fields=['scm_last_revision'])
+                except Exception:
+                    inventory_update = self.update_model(
+                        inventory_update.pk, status='failed',
+                        job_explanation=('Previous Task Failed: {"job_type": "%s", "job_name": "%s", "job_id": "%s"}' %
+                                         ('project_update', local_project_sync.name, local_project_sync.id)))
+                    raise
+            else:
+                RunProjectUpdate.make_local_copy(source_project, private_data_dir)
+
+        if inventory_update.source == 'scm':
             RunProjectUpdate.make_local_copy(source_project, private_data_dir)
 
 
