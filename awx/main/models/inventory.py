@@ -1827,9 +1827,10 @@ class ec2(PluginFileInjector):
             'ec2_state_code': 'state.code',
             'ec2_state_reason': 'state_reason.message if state_reason is defined else ""',
             'ec2_sourceDestCheck': 'source_dest_check | default(false) | lower | string',  # snake_case syntax intended
-            'ec2_account_id': 'owner_id',
+            # work around the fact that the string filter is not reliable on native jinja
+            'ec2_account_id': '''owner_id | string | regex_replace('^(.*)$', '"\\1"')''',
             # vars that just need ec2_ prefix
-            'ec2_ami_launch_index': 'ami_launch_index | string',
+            'ec2_ami_launch_index': '''ami_launch_index | string | regex_replace('^(.*)$', '"\\1"')''',
             'ec2_architecture': 'architecture',
             'ec2_client_token': 'client_token',
             'ec2_ebs_optimized': 'ebs_optimized',
