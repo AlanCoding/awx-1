@@ -2213,7 +2213,6 @@ class TestInventoryUpdateCredentials(TestJobExecution):
         task = tasks.RunInventoryUpdate()
         tower = CredentialType.defaults['tower']()
         inventory_update.source = 'tower'
-        inventory_update.instance_filters = '12345'
         inputs = {
             'host': 'https://tower.example.org',
             'username': 'bob',
@@ -2245,7 +2244,6 @@ class TestInventoryUpdateCredentials(TestJobExecution):
         task = tasks.RunInventoryUpdate()
         tower = CredentialType.defaults['tower']()
         inventory_update.source = 'tower'
-        inventory_update.instance_filters = '12345'
         inputs = {
             'host': 'https://tower.example.org',
             'username': 'bob',
