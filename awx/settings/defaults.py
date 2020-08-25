@@ -68,7 +68,9 @@ AWX_CONTAINER_GROUP_DEFAULT_IMAGE = 'ansible/ansible-runner'
 
 # AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE = 'quay.io/ansible/ansible-runner:devel'
 # slightly more up-to-date at this exact moment
-AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE = 'quay.io/alancoding/ansible-runner:devel'
+# AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE = 'quay.io/alancoding/ansible-runner:devel'
+# okay lets do this
+AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE = 'quay.io/alancoding/awx-ee:latest'
 
 # Internationalization
 # https://docs.djangoproject.com/en/dev/topics/i18n/
