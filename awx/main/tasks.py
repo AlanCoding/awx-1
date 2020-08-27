@@ -859,6 +859,9 @@ class BaseTask(object):
             return venv_exe
         return shutil.which(executable)
 
+    def build_execution_environment_params(self, instance):
+        return {}
+
     def build_private_data(self, instance, private_data_dir):
         '''
         Return SSH private key data (only if stored in DB as ssh_key_data).
@@ -1101,12 +1104,13 @@ class BaseTask(object):
             for hostname, hv in script_data.get('_meta', {}).get('hostvars', {}).items()
         }
         json_data = json.dumps(script_data)
-        handle, path = tempfile.mkstemp(dir=private_data_dir)
-        f = os.fdopen(handle, 'w')
-        f.write('#! /usr/bin/env python\n# -*- coding: utf-8 -*-\nprint(%r)\n' % json_data)
-        f.close()
-        os.chmod(path, stat.S_IRUSR | stat.S_IXUSR | stat.S_IWUSR)
-        return path
+        path = os.path.join(private_data_dir, 'inventory')
+        os.makedirs(path, mode=0o700)
+        fn = os.path.join(path, 'hosts')
+        with open(fn, 'w') as f:
+            os.chmod(fn, stat.S_IRUSR | stat.S_IXUSR | stat.S_IWUSR)
+            f.write('#! /usr/bin/env python3\n# -*- coding: utf-8 -*-\nprint(%r)\n' % json_data)
+        return fn
 
     def build_args(self, instance, private_data_dir, passwords):
         raise NotImplementedError
@@ -1387,6 +1391,7 @@ class BaseTask(object):
             process_isolation_params = self.build_params_process_isolation(self.instance,
                                                                            private_data_dir,
                                                                            cwd)
+            execution_environment_params = self.build_execution_environment_params(self.instance)
             env = self.build_env(self.instance, private_data_dir, isolated,
                                  private_data_files=private_data_files)
             self.safe_env = build_safe_env(env)
@@ -1421,7 +1426,8 @@ class BaseTask(object):
                 'settings': {
                     'job_timeout': self.get_instance_timeout(self.instance),
                     'suppress_ansible_output': True,
-                    **process_isolation_params,
+                    #**process_isolation_params,
+                    **execution_environment_params,
                     **resource_profiling_params,
                 },
             }
@@ -1969,6 +1975,14 @@ class RunJob(BaseTask):
             if inventory is not None:
                 update_inventory_computed_fields.delay(inventory.id)
 
+    def build_execution_environment_params(self, instance):
+        execution_environment_params = {
+            "container_image": settings.AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE,
+            "process_isolation": True
+        }
+        return execution_environment_params
+
+
 
 @task(queue=get_local_queuename)
 class RunProjectUpdate(BaseTask):
@@ -2169,7 +2183,7 @@ class RunProjectUpdate(BaseTask):
         self._write_extra_vars_file(private_data_dir, extra_vars)
 
     def build_cwd(self, project_update, private_data_dir):
-        return self.get_path_to('..', 'playbooks')
+        return os.path.join(private_data_dir, 'project')
 
     def build_playbook_path_relative_to_cwd(self, project_update, private_data_dir):
         return os.path.join('project_update.yml')
@@ -2293,10 +2307,14 @@ class RunProjectUpdate(BaseTask):
         # re-create root project folder if a natural disaster has destroyed it
         if not os.path.exists(settings.PROJECTS_ROOT):
             os.mkdir(settings.PROJECTS_ROOT)
+        project_path = instance.project.get_project_path(check_if_exists=False)
+        if not os.path.exists(project_path):
+            os.makedirs(project_path)  # used as container mount
+
         self.acquire_lock(instance)
+
         self.original_branch = None
         if instance.scm_type == 'git' and instance.branch_override:
-            project_path = instance.project.get_project_path(check_if_exists=False)
             if os.path.exists(project_path):
                 git_repo = git.Repo(project_path)
                 if git_repo.head.is_detached:
@@ -2309,6 +2327,13 @@ class RunProjectUpdate(BaseTask):
             logger.warning('{0} unexpectedly existed before update'.format(stage_path))
             shutil.rmtree(stage_path)
         os.makedirs(stage_path)  # presence of empty cache indicates lack of roles or collections
+
+        # the project update playbook is not in a git repo, but uses a vendoring directory
+        # to be consistent with the ansible-runner model,
+        # that is moved into the runner projecct folder here
+        awx_playbooks = self.get_path_to('..', 'playbooks')
+        copy_tree(awx_playbooks, os.path.join(private_data_dir, 'project'))
+
 
     @staticmethod
     def clear_project_cache(cache_dir, keep_value):
@@ -2438,6 +2463,20 @@ class RunProjectUpdate(BaseTask):
         Return whether this task should use proot.
         '''
         return getattr(settings, 'AWX_PROOT_ENABLED', False)
+
+    def build_execution_environment_params(self, instance):
+        project_path = instance.get_project_path(check_if_exists=False)
+        cache_path = instance.get_cache_path()
+        execution_environment_params = {
+            "process_isolation": True,
+            "container_image": settings.AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE,
+            "container_volume_mounts": [
+                f"{project_path}:{project_path}:Z",
+                f"{cache_path}:{cache_path}:Z",
+            ]
+
+        }
+        return execution_environment_params
 
 
 @task(queue=get_local_queuename)
@@ -2890,6 +2929,13 @@ class RunAdHocCommand(BaseTask):
         super(RunAdHocCommand, self).final_run_hook(adhoc_job, status, private_data_dir, fact_modification_times)
         if isolated_manager_instance:
             isolated_manager_instance.cleanup()
+
+    def build_execution_environment_params(self, instance):
+        execution_environment_params = {
+            "container_image": settings.AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE,
+            "process_isolation": True
+        }
+        return execution_environment_params
 
 
 @task(queue=get_local_queuename)
