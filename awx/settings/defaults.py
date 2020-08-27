@@ -66,14 +66,7 @@ AWX_CONTAINER_GROUP_POD_LAUNCH_RETRY_DELAY = 5
 AWX_CONTAINER_GROUP_DEFAULT_NAMESPACE = 'default'
 AWX_CONTAINER_GROUP_DEFAULT_IMAGE = 'ansible/ansible-runner'
 
-# AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE = 'quay.io/ansible/ansible-runner:devel'
-# slightly more up-to-date at this exact moment
-# AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE = 'quay.io/alancoding/ansible-runner:devel'
-# okay lets do this
-# AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE = 'quay.io/alancoding/awx-ee:latest'
-# that still fails most stuff, so made a 2.9 version
-# this should fail fewer things
-AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE = 'quay.io/alancoding/awx-ee:2.9'
+AWX_EXECUTION_ENVIRONMENT_DEFAULT_IMAGE = 'quay.io/ansible/ansible-runner:devel'
 
 # Internationalization
 # https://docs.djangoproject.com/en/dev/topics/i18n/
