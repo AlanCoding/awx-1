@@ -1033,7 +1033,10 @@ class BaseTask(object):
 
     def add_awx_venv(self, env):
         env['VIRTUAL_ENV'] = settings.AWX_VENV_PATH
-        env['PATH'] = os.path.join(settings.AWX_VENV_PATH, "bin") + ":" + env['PATH']
+        if 'PATH' in env:
+            env['PATH'] = os.path.join(settings.AWX_VENV_PATH, "bin") + ":" + env['PATH']
+        else:
+            env['PATH'] = os.path.join(settings.AWX_VENV_PATH, "bin")
 
     def build_env(self, instance, private_data_dir, isolated, private_data_files=None):
         '''
