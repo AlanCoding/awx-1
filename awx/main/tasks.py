@@ -1676,7 +1676,8 @@ class RunJob(BaseTask):
                 for path in config_values[config_setting].split(':'):
                     if path not in paths:
                         paths = [config_values[config_setting]] + paths
-            paths = [os.path.join(private_data_dir, folder)] + paths
+            # FIXME: again, figure out more elegant way for inside container
+            paths = [os.path.join('/runner', folder)] + paths
             env[env_key] = os.pathsep.join(paths)
 
         return env
@@ -2441,10 +2442,6 @@ class RunInventoryUpdate(BaseTask):
     event_model = InventoryUpdateEvent
     event_data_key = 'inventory_update_id'
 
-    @property
-    def proot_show_paths(self):
-        return [settings.AWX_ANSIBLE_COLLECTIONS_PATHS]
-
     def build_private_data(self, inventory_update, private_data_dir):
         """
         Return private data needed for inventory update.
@@ -2520,7 +2517,8 @@ class RunInventoryUpdate(BaseTask):
                 for path in config_values[config_setting].split(':'):
                     if path not in paths:
                         paths = [config_values[config_setting]] + paths
-            paths = [os.path.join(private_data_dir, folder)] + paths
+            # FIXME: containers
+            paths = [os.path.join('/runner', folder)] + paths
             env[env_key] = os.pathsep.join(paths)
 
         return env
@@ -2766,7 +2764,8 @@ class RunAdHocCommand(BaseTask):
         cp_dir = os.path.join(private_data_dir, 'cp')
         if not os.path.exists(cp_dir):
             os.mkdir(cp_dir, 0o700)
-        env['ANSIBLE_SSH_CONTROL_PATH'] = cp_dir
+        # FIXME: more elegant way to manage this path in container
+        env['ANSIBLE_SSH_CONTROL_PATH'] = '/runner/cp'
 
         return env
 
