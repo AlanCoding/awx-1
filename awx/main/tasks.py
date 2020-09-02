@@ -2927,7 +2927,7 @@ class RunSystemJob(BaseTask):
         return path
 
     def build_env(self, instance, private_data_dir, isolated=False, private_data_files=None):
-        env = super(RunSystemJob, self).build_env(instance, private_data_dir,
+        base_env = super(RunSystemJob, self).build_env(instance, private_data_dir,
                                                   isolated=isolated,
                                                   private_data_files=private_data_files)
         # TODO: this is able to run by turning off isolation
