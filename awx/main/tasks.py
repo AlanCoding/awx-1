@@ -845,13 +845,6 @@ class BaseTask(object):
         '''
         return os.path.abspath(os.path.join(os.path.dirname(__file__), *args))
 
-    def get_path_to_ansible(self, instance, executable='ansible-playbook', **kwargs):
-        venv_path = getattr(instance, 'ansible_virtualenv_path', settings.ANSIBLE_VENV_PATH)
-        venv_exe = os.path.join(venv_path, 'bin', executable)
-        if os.path.exists(venv_exe):
-            return venv_exe
-        return shutil.which(executable)
-
     def build_execution_environment_params(self, instance):
         return {}
 
@@ -2475,13 +2468,17 @@ class RunInventoryUpdate(BaseTask):
         injectors. The primary purpose this still serves is to
         still point to the inventory update INI or config file.
         """
-        env = super(RunInventoryUpdate, self).build_env(inventory_update,
+        base_env = super(RunInventoryUpdate, self).build_env(inventory_update,
                                                         private_data_dir,
                                                         isolated,
                                                         private_data_files=private_data_files)
+        # TODO: this is able to run by turning off isolation
+        # the goal is to run it a container instead
+        env = dict(os.environ.items())
+        env.update(base_env)
+
         if private_data_files is None:
             private_data_files = {}
-        self.add_awx_venv(env)
         # Pass inventory source ID to inventory script.
         env['INVENTORY_SOURCE_ID'] = str(inventory_update.inventory_source_id)
         env['INVENTORY_UPDATE_ID'] = str(inventory_update.pk)
@@ -2933,7 +2930,10 @@ class RunSystemJob(BaseTask):
         env = super(RunSystemJob, self).build_env(instance, private_data_dir,
                                                   isolated=isolated,
                                                   private_data_files=private_data_files)
-        self.add_awx_venv(env)
+        # TODO: this is able to run by turning off isolation
+        # the goal is to run it a container instead
+        env = dict(os.environ.items())
+        env.update(base_env)
         return env
 
     def build_cwd(self, instance, private_data_dir):
