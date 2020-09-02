@@ -1,1 +1,1 @@
-git+git://github.com/ansible/ansible-runner@devel#egg=ansible-runner
+git+git://github.com/alancoding/ansible-runner@make_roles_work#egg=ansible-runner
