@@ -197,9 +197,8 @@ def main():
 
     # Attempt to look up inventory source based on the provided name and inventory ID
     inventory_id = module.resolve_name_to_id('inventories', inventory)
-    inventory_source = module.get_one('inventory_sources', **{
+    inventory_source, name = module.get_one('inventory_sources', name_or_id=name, **{
         'data': {
-            'name': name,
             'inventory': inventory_id,
         }
     })
