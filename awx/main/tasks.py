@@ -1483,10 +1483,11 @@ class BaseTask(object):
                     module_args = ansible_runner.utils.args2cmdline(
                         params.get('module_args'),
                     )
-                shutil.move(
-                    params.pop('inventory'),
-                    os.path.join(private_data_dir, 'inventory')
-                )
+                if params.get('inventory') != os.path.join(private_data_dir, 'inventory'):
+                    shutil.move(
+                        params.pop('inventory'),
+                        os.path.join(private_data_dir, 'inventory')
+                    )
 
                 ansible_runner.utils.dump_artifacts(params)
                 isolated_manager_instance = isolated_manager.IsolatedManager(
