@@ -1040,10 +1040,6 @@ class BaseTask(object):
             mem_poll_interval = settings.AWX_RESOURCE_PROFILING_MEMORY_POLL_INTERVAL
             pid_poll_interval = settings.AWX_RESOURCE_PROFILING_PID_POLL_INTERVAL
 
-            results_dir = os.path.join(private_data_dir, 'artifacts/playbook_profiling')
-            if not os.path.isdir(results_dir):
-                os.makedirs(results_dir, stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC)
-
             logger.debug('Collected the following resource profiling intervals: cpu: {} mem: {} pid: {}'
                          .format(cpu_poll_interval, mem_poll_interval, pid_poll_interval))
 
@@ -1051,8 +1047,7 @@ class BaseTask(object):
                                               'resource_profiling_base_cgroup': 'ansible-runner',
                                               'resource_profiling_cpu_poll_interval': cpu_poll_interval,
                                               'resource_profiling_memory_poll_interval': mem_poll_interval,
-                                              'resource_profiling_pid_poll_interval': pid_poll_interval,
-                                              'resource_profiling_results_dir': results_dir})
+                                              'resource_profiling_pid_poll_interval': pid_poll_interval})
 
         return resource_profiling_params
 
@@ -1193,7 +1188,7 @@ class BaseTask(object):
         '''
         Hook for any steps to run after job/task is marked as complete.
         '''
-        job_profiling_dir = os.path.join(private_data_dir, 'artifacts/playbook_profiling')
+        job_profiling_dir = os.path.join(private_data_dir, 'profiling_data')
         awx_profiling_dir = '/var/log/tower/playbook_profiling/'
         if not os.path.exists(awx_profiling_dir):
             os.mkdir(awx_profiling_dir)

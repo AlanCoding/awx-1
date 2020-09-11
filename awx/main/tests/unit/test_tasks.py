@@ -548,7 +548,6 @@ class TestGenericRun():
         assert resource_profiling_params['resource_profiling_cpu_poll_interval'] == '0.25'
         assert resource_profiling_params['resource_profiling_memory_poll_interval'] == '0.25'
         assert resource_profiling_params['resource_profiling_pid_poll_interval'] == '0.25'
-        assert resource_profiling_params['resource_profiling_results_dir'] == '/fake_private_data_dir/artifacts/playbook_profiling'
 
 
     @pytest.mark.parametrize("scenario, profiling_enabled", [
