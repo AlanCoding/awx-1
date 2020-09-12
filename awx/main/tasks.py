@@ -1440,7 +1440,7 @@ class BaseTask(object):
                     'job_timeout': self.get_instance_timeout(self.instance),
                     'suppress_ansible_output': True,
                     #**process_isolation_params,
-                    **execution_environment_params,
+                    # **execution_environment_params,
                     **resource_profiling_params,
                 },
             }
@@ -1449,6 +1449,8 @@ class BaseTask(object):
                 # We don't want HOME passed through to container groups.
                 # TODO: remove this conditional after everything is containerized
                 params['envvars'].pop('HOME', None)
+            else:
+                params['settings'].update(execution_environment_params)
 
             if isinstance(self.instance, AdHocCommand):
                 params['module'] = self.build_module_name(self.instance)
