@@ -2460,10 +2460,15 @@ class RunProjectUpdate(BaseTask):
         params = super(RunProjectUpdate, self).build_execution_environment_params(instance)
         project_path = instance.get_project_path(check_if_exists=False)
         cache_path = instance.get_cache_path()
+        stage_path = os.path.join(instance.get_cache_path(), 'stage')
         params.setdefault('container_volume_mounts', [])
         params['container_volume_mounts'].extend([
+            # the clone is written to the same location for host and container
             f"{project_path}:{project_path}:Z",
-            f"{cache_path}:{cache_path}:Z",
+            # using ansible-galaxy collection install requires more permission than
+            # doing a git clone or a role install (possible bug)
+            # in the container, /home/runner is more permissive than /var/lib/awx
+            f"{stage_path}:/home/runner/collections:Z",  # playbook var: content_path
         ])
         return params
 

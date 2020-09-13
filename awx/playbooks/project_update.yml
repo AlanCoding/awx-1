@@ -157,6 +157,10 @@
   gather_facts: false
   connection: local
   name: Install content with ansible-galaxy command if necessary
+  vars:
+    # The runner user of the base image must have permission to this folder
+    # and this must be mounted to the expected location for .__awx_cache
+    content_path: /home/runner/collections
   tasks:
 
     - block:
@@ -168,7 +172,7 @@
         - name: fetch galaxy roles from requirements.yml
           command: >
             ansible-galaxy role install -r roles/requirements.yml
-            --roles-path {{projects_root}}/.__awx_cache/{{local_path}}/stage/requirements_roles
+            --roles-path {{content_path}}/requirements_roles
             {{ ' -' + 'v' * ansible_verbosity if ansible_verbosity else '' }}
           args:
             chdir: "{{project_path|quote}}"
@@ -192,7 +196,7 @@
         - name: fetch galaxy collections from collections/requirements.yml
           command: >
             ansible-galaxy collection install -r collections/requirements.yml
-            --collections-path {{projects_root}}/.__awx_cache/{{local_path}}/stage/requirements_collections
+            --collections-path {{content_path}}/requirements_collections
             {{ ' -' + 'v' * ansible_verbosity if ansible_verbosity else '' }}
           args:
             chdir: "{{project_path|quote}}"
@@ -201,7 +205,7 @@
           changed_when: "'Installing ' in galaxy_collection_result.stdout"
           environment:
             ANSIBLE_FORCE_COLOR: false
-            ANSIBLE_COLLECTIONS_PATHS: "{{projects_root}}/.__awx_cache/{{local_path}}/stage/requirements_collections"
+            ANSIBLE_COLLECTIONS_PATHS: "{{content_path}}/requirements_collections"
             GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"
 
       when:
