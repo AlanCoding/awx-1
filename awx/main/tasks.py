@@ -895,11 +895,12 @@ class BaseTask(object):
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         if settings.AWX_CLEANUP_PATHS:
             self.cleanup_paths.append(path)
-        runner_project_folder = os.path.join(path, 'project')
-        if not os.path.exists(runner_project_folder):
-            # Ansible Runner requires that this directory exists.
-            # Specifically, when using process isolation
-            os.mkdir(runner_project_folder)
+        # Ansible runner requires that project exists,
+        # and we will write files in the other folders without pre-creating
+        for subfolder in ('project', 'inventory', 'env'):
+            runner_subfolder = os.path.join(path, subfolder)
+            if not os.path.exists(runner_subfolder):
+                os.mkdir(runner_subfolder)
         return path
 
     def build_private_data_files(self, instance, private_data_dir):
@@ -943,7 +944,7 @@ class BaseTask(object):
                 # Instead, ssh private key file is explicitly passed via an
                 # env variable.
                 else:
-                    handle, path = tempfile.mkstemp(dir=private_data_dir)
+                    handle, path = tempfile.mkstemp(dir=os.path.join(private_data_dir, 'env'))
                     f = os.fdopen(handle, 'w')
                     f.write(data)
                     f.close()
@@ -1123,7 +1124,7 @@ class BaseTask(object):
             for hostname, hv in script_data.get('_meta', {}).get('hostvars', {}).items()
         }
         json_data = json.dumps(script_data)
-        handle, path = tempfile.mkstemp(dir=private_data_dir)
+        handle, path = tempfile.mkstemp(dir=os.path.join(private_data_dir, 'inventory'))
         f = os.fdopen(handle, 'w')
         f.write('#! /usr/bin/env python\n# -*- coding: utf-8 -*-\nprint(%r)\n' % json_data)
         f.close()
@@ -1485,10 +1486,6 @@ class BaseTask(object):
                     module_args = ansible_runner.utils.args2cmdline(
                         params.get('module_args'),
                     )
-                shutil.move(
-                    params.pop('inventory'),
-                    os.path.join(private_data_dir, 'inventory')
-                )
 
                 ansible_runner.utils.dump_artifacts(params)
                 isolated_manager_instance = isolated_manager.IsolatedManager(
@@ -2626,14 +2623,14 @@ class RunInventoryUpdate(BaseTask):
         if injector is not None:
             content = injector.inventory_contents(inventory_update, private_data_dir)
             # must be a statically named file
-            inventory_path = os.path.join(private_data_dir, injector.filename)
+            inventory_path = os.path.join(private_data_dir, 'inventory', injector.filename)
             with open(inventory_path, 'w') as f:
                 f.write(content)
             os.chmod(inventory_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         elif src == 'scm':
             inventory_path = os.path.join(private_data_dir, 'project', inventory_update.source_path)
         elif src == 'custom':
-            handle, inventory_path = tempfile.mkstemp(dir=private_data_dir)
+            handle, inventory_path = tempfile.mkstemp(dir=os.path.join(private_data_dir, 'inventory'))
             f = os.fdopen(handle, 'w')
             if inventory_update.source_script is None:
                 raise RuntimeError('Inventory Script does not exist')
