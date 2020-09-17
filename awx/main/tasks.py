@@ -895,14 +895,12 @@ class BaseTask(object):
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         if settings.AWX_CLEANUP_PATHS:
             self.cleanup_paths.append(path)
-        runner_project_folder = os.path.join(path, 'project')
-        if not os.path.exists(runner_project_folder):
-            # Ansible Runner requires that this directory exists.
-            # Specifically, when using process isolation
-            os.mkdir(runner_project_folder)
-        runner_inventory_folder = os.path.join(path, 'inventory')
-        if not os.path.exists(runner_inventory_folder):
-            os.mkdir(runner_inventory_folder)
+        # Ansible runner requires that project exists,
+        # and we will write files in the other folders without pre-creating
+        for subfolder in ('project', 'inventory', 'user'):
+            runner_subfolder = os.path.join(path, subfolder)
+            if not os.path.exists(runner_subfolder):
+                os.mkdir(runner_subfolder)
         return path
 
     def build_private_data_files(self, instance, private_data_dir):
@@ -946,7 +944,7 @@ class BaseTask(object):
                 # Instead, ssh private key file is explicitly passed via an
                 # env variable.
                 else:
-                    handle, path = tempfile.mkstemp(dir=private_data_dir)
+                    handle, path = tempfile.mkstemp(dir=os.path.join(private_data_dir, 'user'))
                     f = os.fdopen(handle, 'w')
                     f.write(data)
                     f.close()
@@ -1131,7 +1129,7 @@ class BaseTask(object):
         f.write('#! /usr/bin/env python\n# -*- coding: utf-8 -*-\nprint(%r)\n' % json_data)
         f.close()
         os.chmod(path, stat.S_IRUSR | stat.S_IXUSR | stat.S_IWUSR)
-        return path
+        return os.path.basename(path)
 
     def build_args(self, instance, private_data_dir, passwords):
         raise NotImplementedError
@@ -1456,7 +1454,7 @@ class BaseTask(object):
                 os.path.join(private_data_dir, item)
             )]
             if private_files:
-                logger.warn('{} has files in {}, list: {}'.format(
+                raise Exception('alan: {} has files in {}, list: {}'.format(
                     self.instance.log_format, private_data_dir, ', '.join(private_files)
                 ))
 
@@ -2644,14 +2642,14 @@ class RunInventoryUpdate(BaseTask):
         elif src == 'scm':
             inventory_path = os.path.join(private_data_dir, 'project', inventory_update.source_path)
         elif src == 'custom':
-            handle, inventory_path = tempfile.mkstemp(dir=private_data_dir)
+            handle, inventory_path = tempfile.mkstemp(dir=os.path.join(private_data_dir, 'inventory'))
             f = os.fdopen(handle, 'w')
             if inventory_update.source_script is None:
                 raise RuntimeError('Inventory Script does not exist')
             f.write(inventory_update.source_script.script)
             f.close()
             os.chmod(inventory_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-        return inventory_path
+        return os.path.basename(inventory_path)
 
     def build_cwd(self, inventory_update, private_data_dir):
         '''
