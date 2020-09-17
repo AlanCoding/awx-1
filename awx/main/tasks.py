@@ -1129,7 +1129,7 @@ class BaseTask(object):
         f.write('#! /usr/bin/env python\n# -*- coding: utf-8 -*-\nprint(%r)\n' % json_data)
         f.close()
         os.chmod(path, stat.S_IRUSR | stat.S_IXUSR | stat.S_IWUSR)
-        return os.path.basename(path)
+        return path
 
     def build_args(self, instance, private_data_dir, passwords):
         raise NotImplementedError
@@ -1488,10 +1488,6 @@ class BaseTask(object):
                     module_args = ansible_runner.utils.args2cmdline(
                         params.get('module_args'),
                     )
-                shutil.move(
-                    params.pop('inventory'),
-                    os.path.join(private_data_dir, 'inventory')
-                )
 
                 ansible_runner.utils.dump_artifacts(params)
                 isolated_manager_instance = isolated_manager.IsolatedManager(
@@ -2649,7 +2645,7 @@ class RunInventoryUpdate(BaseTask):
             f.write(inventory_update.source_script.script)
             f.close()
             os.chmod(inventory_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-        return os.path.basename(inventory_path)
+        return inventory_path
 
     def build_cwd(self, inventory_update, private_data_dir):
         '''
