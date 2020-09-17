@@ -1450,8 +1450,8 @@ class BaseTask(object):
             }
 
             # assure that the private data dir only contains folders
-            private_files = [item for item in os.listdir(private_data_dir) if not os.path.isdir(
-                os.path.join(private_data_dir, item)
+            private_files = [item for item in os.listdir(private_data_dir) if (not os.path.isdir(
+                os.path.join(private_data_dir, item)) and item != 'args'
             )]
             if private_files:
                 raise Exception('alan: {} has files in {}, list: {}'.format(
