@@ -900,6 +900,9 @@ class BaseTask(object):
             # Ansible Runner requires that this directory exists.
             # Specifically, when using process isolation
             os.mkdir(runner_project_folder)
+        runner_inventory_folder = os.path.join(path, 'inventory')
+        if not os.path.exists(runner_inventory_folder):
+            os.mkdir(runner_inventory_folder)
         return path
 
     def build_private_data_files(self, instance, private_data_dir):
@@ -1123,7 +1126,7 @@ class BaseTask(object):
             for hostname, hv in script_data.get('_meta', {}).get('hostvars', {}).items()
         }
         json_data = json.dumps(script_data)
-        handle, path = tempfile.mkstemp(dir=private_data_dir)
+        handle, path = tempfile.mkstemp(dir=os.path.join(private_data_dir, 'inventory'))
         f = os.fdopen(handle, 'w')
         f.write('#! /usr/bin/env python\n# -*- coding: utf-8 -*-\nprint(%r)\n' % json_data)
         f.close()
@@ -1447,6 +1450,15 @@ class BaseTask(object):
                     **resource_profiling_params,
                 },
             }
+
+            # assure that the private data dir only contains folders
+            private_files = [item for item in os.listdir(private_data_dir) if not os.path.isdir(
+                os.path.join(private_data_dir, item)
+            )]
+            if private_files:
+                logger.warn('{} has files in {}, list: {}'.format(
+                    self.instance.log_format, private_data_dir, ', '.join(private_files)
+                ))
 
             if containerized:
                 # We don't want HOME passed through to container groups.
