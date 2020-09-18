@@ -149,9 +149,13 @@ class AnsibleInventoryLoader(object):
         kwargs = {}
         if self.is_custom:
             # use source's tmp dir for proot, task manager will delete folder
-            logger.debug("Using provided directory '{}' for isolation.".format(self.source_dir))
-            kwargs['proot_temp_dir'] = self.source_dir
-            cwd = self.source_dir
+            if self.source_dir.strip('/').endswith('inventory'):
+                private_data_dir = os.path.dirname(self.source_dir)
+            else:
+                private_data_dir = self.source_dir
+            logger.debug("Using provided directory '{}' for isolation.".format(private_data_dir))
+            kwargs['proot_temp_dir'] = private_data_dir
+            cwd = private_data_dir
         else:
             # we cannot safely store tmp data in source dir or trust script contents
             if env['AWX_PRIVATE_DATA_DIR']:
