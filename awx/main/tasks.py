@@ -897,7 +897,7 @@ class BaseTask(object):
             self.cleanup_paths.append(path)
         # Ansible runner requires that project exists,
         # and we will write files in the other folders without pre-creating
-        for subfolder in ('project', 'inventory', 'user'):
+        for subfolder in ('project', 'inventory'):
             runner_subfolder = os.path.join(path, subfolder)
             if not os.path.exists(runner_subfolder):
                 os.mkdir(runner_subfolder)
@@ -944,7 +944,7 @@ class BaseTask(object):
                 # Instead, ssh private key file is explicitly passed via an
                 # env variable.
                 else:
-                    handle, path = tempfile.mkstemp(dir=os.path.join(private_data_dir, 'user'))
+                    handle, path = tempfile.mkstemp(dir=os.path.join(private_data_dir, 'env'))
                     f = os.fdopen(handle, 'w')
                     f.write(data)
                     f.close()
