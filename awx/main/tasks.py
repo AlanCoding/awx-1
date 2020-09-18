@@ -897,7 +897,7 @@ class BaseTask(object):
             self.cleanup_paths.append(path)
         # Ansible runner requires that project exists,
         # and we will write files in the other folders without pre-creating
-        for subfolder in ('project', 'inventory'):
+        for subfolder in ('project', 'inventory', 'env'):
             runner_subfolder = os.path.join(path, subfolder)
             if not os.path.exists(runner_subfolder):
                 os.mkdir(runner_subfolder)
