@@ -49,6 +49,10 @@ class TestJobExecution(object):
 @pytest.fixture
 def private_data_dir():
     private_data = tempfile.mkdtemp(prefix='awx_')
+    for subfolder in ('inventory', 'env'):
+        runner_subfolder = os.path.join(private_data, subfolder)
+        if not os.path.exists(runner_subfolder):
+            os.mkdir(runner_subfolder)
     yield private_data
     shutil.rmtree(private_data, True)
 
@@ -721,6 +725,10 @@ class TestIsolatedExecution(TestJobExecution):
         job.credentials.add(credential)
 
         private_data = tempfile.mkdtemp(prefix='awx_')
+        for subfolder in ('inventory', 'env'):
+            runner_subfolder = os.path.join(private_data, subfolder)
+            if not os.path.exists(runner_subfolder):
+                os.mkdir(runner_subfolder)
         self.task.build_private_data_dir = mock.Mock(return_value=private_data)
 
         def _mock_job_artifacts(*args, **kw):
@@ -763,6 +771,10 @@ class TestIsolatedExecution(TestJobExecution):
         self.instance.credentials.add(credential)
 
         private_data = tempfile.mkdtemp(prefix='awx_')
+        for subfolder in ('inventory', 'env'):
+            runner_subfolder = os.path.join(private_data, subfolder)
+            if not os.path.exists(runner_subfolder):
+                os.mkdir(runner_subfolder)
         self.task.build_private_data_dir = mock.Mock(return_value=private_data)
         inventory = json.dumps({"all": {"hosts": ["localhost"]}})
 
