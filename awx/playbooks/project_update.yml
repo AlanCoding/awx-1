@@ -207,6 +207,9 @@
             ANSIBLE_FORCE_COLOR: false
             ANSIBLE_COLLECTIONS_PATHS: "{{content_path}}/requirements_collections"
             GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"
+            # Put the local tmp directory in same volume as collection destination
+            # otherwise, files cannot be moved accross volumes and will cause error
+            ANSIBLE_LOCAL_TEMP: "{{content_path}}//tmp"
 
       when:
         - "ansible_version.full is version_compare('2.9', '>=')"
