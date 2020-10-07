@@ -827,7 +827,7 @@ class Command(BaseCommand):
         # special check for tower-type inventory sources
         # but only if running the plugin
         TOWER_SOURCE_FILES = ['tower.yml', 'tower.yaml']
-        if self.inventory_source.source == 'tower' and any(f in self.source for f in TOWER_SOURCE_FILES):
+        if self.inventory_source.source == 'tower' and any(f in self.inventory_source.source_path for f in TOWER_SOURCE_FILES):
             # only if this is the 2nd call to license check, we cannot compare before running plugin
             if hasattr(self, 'all_group'):
                 self.remote_tower_license_compare(local_license_type)
@@ -1051,9 +1051,9 @@ class Command(BaseCommand):
                         self.check_org_host_limit()
                 except CommandError as e:
                     if license_fail:
-                        self.mark_license_failure()
+                        self.mark_license_failure(save=True)
                     else:
-                        self.mark_org_limits_failure()
+                        self.mark_org_limits_failure(save=True)
                     raise e
 
                 if settings.SQL_DEBUG:
