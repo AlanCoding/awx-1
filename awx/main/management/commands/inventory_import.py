@@ -1046,6 +1046,7 @@ class Command(BaseCommand):
 
             # Update inventory update for this command line invocation.
             with ignore_inventory_computed_fields():
+                # TODO: move this to before perform_update
                 iu = self.inventory_update
                 if iu.status != 'running':
                     with transaction.atomic():

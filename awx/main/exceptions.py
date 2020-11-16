@@ -32,5 +32,7 @@ class _AwxTaskError():
 AwxTaskError = _AwxTaskError()
 
 
-class LateCancel(Exception):
-    pass
+class PostRunError(Exception):
+    def __init__(self, msg, status='failed'):
+        self.status = status
+        super(PostRunError, self).__init__(msg)

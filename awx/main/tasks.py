@@ -63,7 +63,7 @@ from awx.main.models import (
     build_safe_env, enforce_bigint_pk_migration
 )
 from awx.main.constants import ACTIVE_STATES
-from awx.main.exceptions import AwxTaskError, LateCancel
+from awx.main.exceptions import AwxTaskError, PostRunError
 from awx.main.queue import CallbackQueueDispatcher
 from awx.main.isolated import manager as isolated_manager
 from awx.main.dispatch.publish import task
@@ -1534,9 +1534,9 @@ class BaseTask(object):
 
         try:
             self.post_run_hook(self.instance, status)
-        except LateCancel as exc:
+        except PostRunError as exc:
             if status == 'successful':
-                status = 'canceled'
+                status = exc.status
                 extra_update_fields['job_explanation'] = exc.args[0]
         except Exception:
             logger.exception('{} Post run hook errored.'.format(self.instance.log_format))
@@ -2765,9 +2765,9 @@ class RunInventoryUpdate(BaseTask):
                 if this_time - self.last_check > 0.5:
                     self.last_check = this_time
                     if self.cancel_callback():
-                        raise LateCancel('Inventory update has been canceled')
+                        raise PostRunError('Inventory update has been canceled', status='canceled')
                 if self.job_timeout and ((this_time - self.job_start) > self.job_timeout):
-                    raise LateCancel('Inventory update has timed out')
+                    raise PostRunError('Inventory update has timed out', status='canceled')
 
                 # skip logging for low severity logs
                 if record.levelno < self.skip_level:
@@ -2800,9 +2800,15 @@ class RunInventoryUpdate(BaseTask):
 
         from awx.main.management.commands.inventory_import import Command as InventoryImportCommand
         cmd = InventoryImportCommand()
-        # save the inventory data to database.
-        # exceptions will be handled in the global post_run_hook
-        cmd.perform_update(options, data, inventory_update)
+        try:
+            # save the inventory data to database.
+            # canceling exceptions will be handled in the global post_run_hook
+            cmd.perform_update(options, data, inventory_update)
+        except CommandError as exc:
+            if 'Host limit for organization' not in str(exc) and 'License' not in str(exc):
+                raise
+            else:
+                raise PostRunError(str(exc))
 
 
 @task(queue=get_local_queuename)
