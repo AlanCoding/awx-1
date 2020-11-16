@@ -63,7 +63,7 @@ from awx.main.models import (
     build_safe_env, enforce_bigint_pk_migration
 )
 from awx.main.constants import ACTIVE_STATES
-from awx.main.exceptions import AwxTaskError
+from awx.main.exceptions import AwxTaskError, LateCancel
 from awx.main.queue import CallbackQueueDispatcher
 from awx.main.isolated import manager as isolated_manager
 from awx.main.dispatch.publish import task
@@ -1534,6 +1534,10 @@ class BaseTask(object):
 
         try:
             self.post_run_hook(self.instance, status)
+        except LateCancel as exc:
+            if status == 'successful':
+                status = 'canceled'
+                extra_update_fields['job_explanation'] = exc.args[0]
         except Exception:
             logger.exception('{} Post run hook errored.'.format(self.instance.log_format))
 
@@ -2761,9 +2765,9 @@ class RunInventoryUpdate(BaseTask):
                 if this_time - self.last_check > 0.5:
                     self.last_check = this_time
                     if self.cancel_callback():
-                        raise RuntimeError('Inventory update has been canceled')
+                        raise LateCancel('Inventory update has been canceled')
                 if self.job_timeout and ((this_time - self.job_start) > self.job_timeout):
-                    raise RuntimeError('Inventory update has timed out')
+                    raise LateCancel('Inventory update has timed out')
 
                 # skip logging for low severity logs
                 if record.levelno < self.skip_level:
@@ -2796,36 +2800,9 @@ class RunInventoryUpdate(BaseTask):
 
         from awx.main.management.commands.inventory_import import Command as InventoryImportCommand
         cmd = InventoryImportCommand()
-        exc = None
-        try:
-            # note that we are only using the management command to
-            # save the inventory data to the database.
-            # we are not asking it to actually fetch hosts / groups.
-            # that work was taken care of earlier, when
-            # BaseTask.run called ansible-inventory (by way of ansible-runner)
-            # for us.
-            save_status, tb, exc = cmd.perform_update(options, data, inventory_update)
-        except Exception as raw_exc:
-            if exc is None:
-                exc = raw_exc
-            # Ignore license errors specifically
-            if 'Host limit for organization' not in str(exc) and 'License' not in str(exc):
-                raise raw_exc
-
-        model_updates = {}
-        if save_status != status:
-            model_updates['status'] = save_status
-        if tb:
-            model_updates['result_traceback'] = tb
-
-        if model_updates:
-            logger.info('{} had problems saving to database with {}'.format(
-                inventory_update.log_format, ', '.join(list(model_updates.keys()))
-            ))
-            model_updates['job_explanation'] = 'Update failed to save all changes to database properly.'
-            if exc:
-                model_updates['job_explanation'] += ' {}'.format(exc)
-            self.update_model(inventory_update.pk, **model_updates)
+        # save the inventory data to database.
+        # exceptions will be handled in the global post_run_hook
+        cmd.perform_update(options, data, inventory_update)
 
 
 @task(queue=get_local_queuename)

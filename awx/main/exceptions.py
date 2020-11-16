@@ -30,3 +30,7 @@ class _AwxTaskError():
 
 
 AwxTaskError = _AwxTaskError()
+
+
+class LateCancel(Exception):
+    pass
