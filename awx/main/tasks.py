@@ -34,6 +34,7 @@ from django.contrib.auth.models import User
 from django.utils.translation import ugettext_lazy as _, gettext_noop
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
+from django.core.management.base import CommandError
 
 # Kubernetes
 from kubernetes.client.rest import ApiException
@@ -1229,14 +1230,7 @@ class BaseTask(object):
         # ansible-inventory and the awx.main.commands.inventory_import
         # logger
         if isinstance(self, RunInventoryUpdate):
-            if not getattr(self, 'end_line', None):
-                # this is the very first event
-                # note the end_line
-                self.end_line = event_data['end_line']
-            else:
-                num_lines = event_data['end_line'] - event_data['start_line']
-                event_data['start_line'] = self.end_line + 1
-                self.end_line = event_data['end_line'] = event_data['start_line'] + num_lines
+            self.end_line = event_data['end_line']
 
         if event_data.get(self.event_data_key, None):
             if self.event_data_key != 'job_id':
@@ -2775,16 +2769,17 @@ class RunInventoryUpdate(BaseTask):
 
                 self.counter += 1
                 msg = self.format(record)
-                n_lines = msg.strip().count('\n')  # don't count new-lines at boundry of text
+                n_lines = len(msg.strip().split('\n'))  # don't count new-lines at boundry of text
+                logger.info('stuff {}'.format(msg.strip().split('\n')))
                 dispatch_data = dict(
                     created=now().isoformat(),
                     event='verbose',
                     counter=self.counter,
-                    stdout=msg + '\n',
+                    stdout=msg,
                     start_line=self._start_line,
                     end_line=self._start_line + n_lines
                 )
-                self._start_line += n_lines + 1
+                self._start_line += n_lines
 
                 self.event_handler(dispatch_data)
 
@@ -2794,6 +2789,7 @@ class RunInventoryUpdate(BaseTask):
             job_timeout=self.get_instance_timeout(self.instance),
             counter=self.event_ct
         )
+        handler._start_line = self.end_line
         inv_logger = logging.getLogger('awx.main.commands.inventory_import')
         handler.formatter = inv_logger.handlers[0].formatter
         inv_logger.handlers[0] = handler
