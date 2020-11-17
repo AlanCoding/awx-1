@@ -19,6 +19,9 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.utils.encoding import smart_text
 
+# DRF error class to distinguish license exceptions
+from rest_framework.exceptions import PermissionDenied
+
 # AWX inventory imports
 from awx.main.models.inventory import (
     Inventory,
@@ -839,9 +842,9 @@ class Command(BaseCommand):
         source_vars = self.all_group.variables
         remote_license_type = source_vars.get('tower_metadata', {}).get('license_type', None)
         if remote_license_type is None:
-            raise CommandError('Unexpected Error: Tower inventory plugin missing needed metadata!')
+            raise PermissionDenied('Unexpected Error: Tower inventory plugin missing needed metadata!')
         if local_license_type != remote_license_type:
-            raise CommandError('Tower server licenses must match: source: {} local: {}'.format(
+            raise PermissionDenied('Tower server licenses must match: source: {} local: {}'.format(
                 remote_license_type, local_license_type
             ))
 
@@ -850,7 +853,7 @@ class Command(BaseCommand):
         local_license_type = license_info.get('license_type', 'UNLICENSED')
         if local_license_type == 'UNLICENSED':
             logger.error(LICENSE_NON_EXISTANT_MESSAGE)
-            raise CommandError('No license found!')
+            raise PermissionDenied('No license found!')
         elif local_license_type == 'open':
             return
         available_instances = license_info.get('available_instances', 0)
@@ -861,7 +864,7 @@ class Command(BaseCommand):
         if time_remaining <= 0:
             if hard_error:
                 logger.error(LICENSE_EXPIRED_MESSAGE)
-                raise CommandError("License has expired!")
+                raise PermissionDenied("License has expired!")
             else:
                 logger.warning(LICENSE_EXPIRED_MESSAGE)
         # special check for tower-type inventory sources
@@ -878,7 +881,7 @@ class Command(BaseCommand):
             }
             if hard_error:
                 logger.error(LICENSE_MESSAGE % d)
-                raise CommandError('License count exceeded!')
+                raise PermissionDenied('License count exceeded!')
             else:
                 logger.warning(LICENSE_MESSAGE % d)
 
@@ -893,7 +896,7 @@ class Command(BaseCommand):
 
         active_count = Host.objects.org_active_count(org.id)
         if active_count > org.max_hosts:
-            raise CommandError('Host limit for organization exceeded!')
+            raise PermissionDenied('Host limit for organization exceeded!')
 
     def mark_license_failure(self, save=True):
         self.inventory_update.license_error = True
@@ -964,14 +967,11 @@ class Command(BaseCommand):
                 self.perform_update(options, data, inventory_update)
                 status = 'successful'
             except Exception as e:
+                exc = e
                 if isinstance(e, KeyboardInterrupt):
                     status = 'canceled'
-                    exc = e
-                elif isinstance(e, CommandError):
-                    exc = e
                 else:
                     tb = traceback.format_exc()
-                    exc = e
 
             with ignore_inventory_computed_fields():
                 inventory_update = InventoryUpdate.objects.get(pk=inventory_update.pk)

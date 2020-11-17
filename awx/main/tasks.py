@@ -1532,6 +1532,8 @@ class BaseTask(object):
             if status == 'successful':
                 status = exc.status
                 extra_update_fields['job_explanation'] = exc.args[0]
+                if exc.tb:
+                    extra_update_fields['result_traceback'] = exc.tb
         except Exception:
             logger.exception('{} Post run hook errored.'.format(self.instance.log_format))
 
@@ -2799,11 +2801,8 @@ class RunInventoryUpdate(BaseTask):
             # save the inventory data to database.
             # canceling exceptions will be handled in the global post_run_hook
             cmd.perform_update(options, data, inventory_update)
-        except CommandError as exc:
-            if 'Host limit for organization' not in str(exc) and 'License' not in str(exc):
-                raise
-            else:
-                raise PostRunError(str(exc))
+        except (CommandError, PermissionDenied) as exc:
+            raise PostRunError(str(exc), status='error', tb=traceback.format_exc())
 
 
 @task(queue=get_local_queuename)

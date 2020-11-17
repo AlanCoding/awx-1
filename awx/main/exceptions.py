@@ -33,6 +33,7 @@ AwxTaskError = _AwxTaskError()
 
 
 class PostRunError(Exception):
-    def __init__(self, msg, status='failed'):
+    def __init__(self, msg, status='failed', tb=''):
         self.status = status
+        self.tb = tb
         super(PostRunError, self).__init__(msg)
