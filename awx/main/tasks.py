@@ -2770,7 +2770,6 @@ class RunInventoryUpdate(BaseTask):
                 self.counter += 1
                 msg = self.format(record)
                 n_lines = len(msg.strip().split('\n'))  # don't count new-lines at boundry of text
-                logger.info('stuff {}'.format(msg.strip().split('\n')))
                 dispatch_data = dict(
                     created=now().isoformat(),
                     event='verbose',
