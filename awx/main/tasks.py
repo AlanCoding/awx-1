@@ -2743,17 +2743,15 @@ class RunInventoryUpdate(BaseTask):
         # Mock ansible-runner events
         class CallbackHandler(logging.Handler):
             def __init__(self, event_handler, cancel_callback, job_timeout, verbosity,
-                         counter=0, **kwargs):
+                         counter=0, initial_line=0, **kwargs):
                 self.event_handler = event_handler
                 self.cancel_callback = cancel_callback
                 self.job_timeout = job_timeout
                 self.job_start = time.time()
                 self.last_check = self.job_start
-                # TODO: we do not have events from the ansible-inventory process
-                # so there is no way to know initial counter of start line
                 self.counter = counter
                 self.skip_level = [logging.WARNING, logging.INFO, logging.DEBUG, 0][verbosity]
-                self._start_line = 0
+                self._start_line = initial_line
                 super(CallbackHandler, self).__init__(**kwargs)
 
             def emit(self, record):
@@ -2788,9 +2786,8 @@ class RunInventoryUpdate(BaseTask):
             self.event_handler, self.cancel_callback,
             verbosity=inventory_update.verbosity,
             job_timeout=self.get_instance_timeout(self.instance),
-            counter=self.event_ct
+            counter=self.event_ct, initial_line=self.end_line
         )
-        handler._start_line = self.end_line
         inv_logger = logging.getLogger('awx.main.commands.inventory_import')
         handler.formatter = inv_logger.handlers[0].formatter
         inv_logger.handlers[0] = handler
