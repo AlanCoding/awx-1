@@ -18,6 +18,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.utils.encoding import smart_text
+from django.core.cache import cache
 
 # DRF error class to distinguish license exceptions
 from rest_framework.exceptions import PermissionDenied
@@ -1133,3 +1134,7 @@ class Command(BaseCommand):
                 logger.warning('Inventory import required %d queries '
                                'taking %0.3fs', len(queries_this_import),
                                sqltime)
+
+        # reset the license cache, this should not be necessary but has been found
+        # to prevent some errors on same worker from stale values
+        cache.delete('LICENSE')
