@@ -2790,7 +2790,7 @@ class RunInventoryUpdate(BaseTask):
         )
         inv_logger = logging.getLogger('awx.main.commands.inventory_import')
         handler.formatter = inv_logger.handlers[0].formatter
-        inv_logger.handlers[0] = handler
+        # inv_logger.handlers[0] = handler
 
         from awx.main.management.commands.inventory_import import Command as InventoryImportCommand
         cmd = InventoryImportCommand()
