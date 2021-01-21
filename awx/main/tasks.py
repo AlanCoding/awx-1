@@ -24,7 +24,6 @@ from pathlib import Path
 from uuid import uuid4
 import urllib.parse as urlparse
 import socket
-import threading
 import concurrent.futures
 from base64 import b64encode
 
@@ -3024,43 +3023,61 @@ class AWXReceptorJob:
         # Create a socketpair. Where the left side will be used for writing our payload
         # (private data dir, kwargs). The right side will be passed to Receptor for
         # reading.
-        sockin, sockout = socket.socketpair()
+        transmit_socket_in, transmit_socket_out = socket.socketpair()
 
-        threading.Thread(target=self.transmit, args=[sockin]).start()
-
-        # We establish a connection to the Receptor socket and submit our work, passing
-        # in the right side of our socketpair for reading.
-        receptor_ctl = ReceptorControl('/var/run/receptor/receptor.sock')
-        result = receptor_ctl.submit_work(worktype=self.work_type,
-                                          payload=sockout.makefile('rb'),
-                                          params=self.receptor_params)
-        unit_id = result['unitid']
-
-        sockin.close()
-        sockout.close()
-
-        resultsock, resultfile = receptor_ctl.get_work_results(unit_id,
-                                                               return_socket=True,
-                                                               return_sockfile=True)
-        # Both "processor" and "cancel_watcher" are spawned in separate threads.
-        # We wait for the first one to return. If cancel_watcher returns first,
-        # we yank the socket out from underneath the processor, which will cause it
+        # Methods "transmit" then "processor" are spawned in a separate thread.
+        # If cancel happens before transmitting or processing finishes,
+        # we yank the socket out from underneath the thread, .close(), which will cause it
         # to exit. A reference to the processor_future is passed into the cancel_watcher_future,
         # Which exits if the job has finished normally. The context manager ensures we do not
         # leave any threads laying around.
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            processor_future = executor.submit(self.processor, resultfile)
-            cancel_watcher_future = executor.submit(self.cancel_watcher, processor_future)
-            futures = [processor_future, cancel_watcher_future]
-            first_future = concurrent.futures.wait(futures,
-                                                   return_when=concurrent.futures.FIRST_COMPLETED)
+            transmit_future = executor.submit(self.transmit, transmit_socket_in)
 
-            res = list(first_future.done)[0].result()
-            if res.status == 'canceled':
-                receptor_ctl.simple_command(f"work cancel {unit_id}")
-                resultsock.shutdown(socket.SHUT_RDWR)
-                resultfile.close()
-            elif res.status == 'error':
+            # We establish a connection to the Receptor socket and submit our work, passing
+            # in the right side of our socketpair for reading.
+            receptor_ctl = ReceptorControl('/var/run/receptor/receptor.sock')
+            # TODO: depending on the result of this timing, we may do submit_work as a thread
+            transmit_sockfile_out = transmit_socket_out.makefile('rb')
+            result = receptor_ctl.submit_work(worktype=self.work_type,
+                                              payload=transmit_sockfile_out,
+                                              params=self.receptor_params)
+            unit_id = result['unitid']
+
+            while True:
+                if transmit_future.done():
+                    break
+
+                if self.task.cancel_callback():
+                    receptor_ctl.simple_command(f"work cancel {unit_id}")
+                    transmit_socket_in.shutdown(socket.SHUT_RDWR)
+                    transmit_sockfile_out.close()
+                    return namedtuple('result', ['status', 'rc'])('canceled', 1)
+                time.sleep(1)
+
+            transmit_socket_in.close()
+            transmit_socket_out.close()
+
+            result_socket_out, result_sockfile_out = receptor_ctl.get_work_results(
+                unit_id, return_socket=True, return_sockfile=True)
+
+
+            processor_future = executor.submit(self.processor, result_sockfile_out)
+
+            while True:
+                if processor_future.done():
+                    break
+
+                if self.task.cancel_callback():
+                    receptor_ctl.simple_command(f"work cancel {unit_id}")
+                    result_socket_out.shutdown(socket.SHUT_RDWR)
+                    result_sockfile_out.close()
+                    return namedtuple('result', ['status', 'rc'])('canceled', 1)
+                time.sleep(1)
+
+            res = processor_future.result()
+
+            if res.status == 'error':
                 # TODO: There should be a more efficient way of getting this information
                 receptor_work_list = receptor_ctl.simple_command("work list")
                 raise RuntimeError(receptor_work_list[unit_id]['Detail'])
@@ -3081,10 +3098,10 @@ class AWXReceptorJob:
         # Socket must be shutdown here, or the reader will hang forever.
         _socket.shutdown(socket.SHUT_WR)
 
-    def processor(self, resultfile):
+    def processor(self, result_sockfile_out):
         return ansible_runner.interface.run(streamer='process',
                                             quiet=True,
-                                            _input=resultfile,
+                                            _input=result_sockfile_out,
                                             event_handler=self.task.event_handler,
                                             finished_callback=self.task.finished_callback,
                                             status_handler=self.task.status_handler,
@@ -3118,16 +3135,6 @@ class AWXReceptorJob:
             work_type = 'local'
 
         return work_type
-
-    def cancel_watcher(self, processor_future):
-        while True:
-            if processor_future.done():
-                return processor_future.result()
-
-            if self.task.cancel_callback():
-                result = namedtuple('result', ['status', 'rc'])
-                return result('canceled', 1)
-            time.sleep(1)
 
     @property
     def pod_definition(self):
