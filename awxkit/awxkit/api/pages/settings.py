@@ -36,7 +36,7 @@ class Settings(page.PageList, Setting):
         base_url = '{0}{1}/'.format(self.endpoint, endpoint)
         return self.walk(base_url)
 
-    def silent_delete(self):
+    def delete(self):
         raise Exception('Setting attempted deletion attempted')
 
     get_setting = get_endpoint
