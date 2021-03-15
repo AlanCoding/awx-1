@@ -81,6 +81,11 @@ options:
         - list of Ansible Galaxy credentials to associate to the organization
       type: list
       elements: str
+    instance_groups:
+      description:
+        - list of Ansible Tower instance groups to associate to the organization
+      type: list
+      elements: str
 extends_documentation_fragment: awx.awx.auth
 '''
 
@@ -107,6 +112,15 @@ EXAMPLES = '''
     galaxy_credentials:
       - Ansible Galaxy
     tower_config_file: "~/tower_cli.cfg"
+
+- name: Create tower organization and assign instance groups
+  tower_organization:
+    name: "Foo"
+    state: present
+    instance_groups:
+      - tokyo
+      - osaka
+    tower_config_file: "~/tower_cli.cfg"
 '''
 
 from ..module_utils.tower_api import TowerAPIModule
@@ -126,6 +140,7 @@ def main():
         notification_templates_error=dict(type="list", elements='str'),
         notification_templates_approvals=dict(type="list", elements='str'),
         galaxy_credentials=dict(type="list", elements='str'),
+        instance_groups=dict(type="list", elements='str'),
         state=dict(choices=['present', 'absent'], default='present'),
     )
 
@@ -184,6 +199,12 @@ def main():
         association_fields['galaxy_credentials'] = []
         for item in galaxy_credentials:
             association_fields['galaxy_credentials'].append(module.resolve_name_to_id('credentials', item))
+
+    instance_groups = module.params.get('instance_groups')
+    if instance_groups is not None:
+        association_fields['instance_groups']  = []
+        for item in instance_groups:
+            association_fields['instance_groups'].append(module.resolve_name_to_id('instance_groups', item))
 
     # Create the data that gets sent for create and update
     org_fields = {'name': module.get_item_name(organization) if organization else name}
