@@ -58,4 +58,4 @@ uWSGI
 uwsgitop
 wheel
 pip==19.3.1  # see UPGRADE BLOCKERs
-setuptools==41.6.0  # see UPGRADE BLOCKERs
+setuptools==56.0.0  # see UPGRADE BLOCKERs
