@@ -817,7 +817,8 @@ class BaseTask(object):
         self.parent_workflow_job_id = None
         self.host_map = {}
         self.guid = GuidMiddleware.get_guid()
-        self.recent_event_timings = deque(maxlen=settings.MAX_WEBSOCKET_EVENT_RATE)
+        self.last_event_websocket = None
+        self.event_websocket_max_rate = None
 
     def update_model(self, pk, _attempt=0, **updates):
         """Reload the model instance from the database and update the
@@ -1227,26 +1228,38 @@ class BaseTask(object):
             event_data['event_data']['guid'] = self.guid
 
         # To prevent overwhelming the broadcast queue, skip some websocket messages
-        if self.recent_event_timings:
-            cpu_time = time.time()
-            first_window_time = self.recent_event_timings[0]
-            last_window_time = self.recent_event_timings[-1]
-            inverse_effective_rate = cpu_time - first_window_time
-            # if last 30 events (which we sent websockets for) came in under 1 second ago
-            should_skip = bool(
-                inverse_effective_rate < 1.0
-                and self.recent_event_timings.maxlen * (cpu_time - last_window_time) < 1.0
-                and (len(self.recent_event_timings) == self.recent_event_timings.maxlen)
-            )
-            if should_skip:
+        cpu_time = time.time()
+        if 'counter' in event_data and event_data['counter'] > 100:
+            if self.event_websocket_max_rate is None:
+                # avoid hitting settings every time
+                self.event_websocket_max_rate = settings.MAX_WEBSOCKET_EVENT_RATE
+            if self.last_event_websocket and ((cpu_time - self.last_event_websocket) * self.event_websocket_max_rate < 1.0):
                 event_data.setdefault('event_data', {})
                 event_data['event_data']['skip_websocket_message'] = True
             else:
-                if self.recent_event_timings[0] == self.recent_event_timings[-1]:
-                    logger.debug('Starting a window of event emission')
-                self.recent_event_timings.append(cpu_time)
-        elif self.recent_event_timings.maxlen:
-            self.recent_event_timings.append(time.time())
+                self.last_event_websocket = cpu_time
+        else:
+            self.last_event_websocket = cpu_time
+        # logger.info('event data {}'.format(event_data))
+        # if self.recent_event_timings:
+        #     cpu_time = time.time()
+        #     first_window_time = self.recent_event_timings[0]
+        #     last_window_time = self.recent_event_timings[-1]
+        #     # if last 30 events (which we sent websockets for) came in under 1 second ago
+        #     should_skip = bool(
+        #         (cpu_time - first_window_time < 1.0)
+        #         and (self.recent_event_timings.maxlen * (cpu_time - last_window_time) < 1.0)
+        #         and (len(self.recent_event_timings) == self.recent_event_timings.maxlen)
+        #     )
+        #     if should_skip:
+        #         event_data.setdefault('event_data', {})
+        #         event_data['event_data']['skip_websocket_message'] = True
+        #     else:
+        #         if self.recent_event_timings[0] == self.recent_event_timings[-1]:
+        #             logger.debug('Starting a window of event emission')
+        #         self.recent_event_timings.append(cpu_time)
+        # elif self.recent_event_timings.maxlen:
+        #     self.recent_event_timings.append(time.time())
 
         event_data.setdefault(self.event_data_key, self.instance.id)
         self.dispatcher.dispatch(event_data)
