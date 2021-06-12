@@ -4,12 +4,15 @@
 # Python
 import json
 import logging
+import stat
 import os
 import re
 import subprocess
 import sys
 import time
 import traceback
+import tempfile
+from base64 import b64encode
 
 # Django
 from django.conf import settings
@@ -75,7 +78,22 @@ class AnsibleInventoryLoader(object):
         bargs.extend(['-v', '{0}:{0}:Z'.format(self.source)])
         for key, value in STANDARD_INVENTORY_UPDATE_ENV.items():
             bargs.extend(['-e', '{0}={1}'.format(key, value)])
-        bargs.extend([get_default_execution_environment().image])
+        default_ee = get_default_execution_environment()
+        bargs.extend([default_ee.image])
+
+        if default_ee.credential:
+            path = tempfile.NamedTemporaryFile().name
+            with open(path, 'w') as authfile:
+                os.chmod(authfile.name, stat.S_IRUSR | stat.S_IWUSR)
+
+                host = default_ee.credential.get_input('host')
+                username = default_ee.credential.get_input('username')
+                password = default_ee.credential.get_input('password')
+                token = "{}:{}".format(username, password)
+                auth_data = {'auths': {host: {'auth': b64encode(token.encode('UTF-8')).decode('UTF-8')}}}
+                authfile.write(json.dumps(auth_data, indent=4))
+            bargs.append(f'--authfile={authfile.name}')
+
         bargs.extend(['ansible-inventory', '-i', self.source])
         bargs.extend(['--playbook-dir', functioning_dir(self.source)])
         if self.verbosity:
