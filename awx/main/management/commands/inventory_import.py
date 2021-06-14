@@ -72,7 +72,7 @@ class AnsibleInventoryLoader(object):
 
     def get_base_args(self):
         bargs = ['podman', 'run', '--user=root', '--quiet']
-        bargs.extend(['-v', '{0}:{0}:Z'.format(self.source)])
+        bargs.extend(['-v', '{0}:{0}:z'.format(self.source)])
         for key, value in STANDARD_INVENTORY_UPDATE_ENV.items():
             bargs.extend(['-e', '{0}={1}'.format(key, value)])
         bargs.extend([get_default_execution_environment().image])
